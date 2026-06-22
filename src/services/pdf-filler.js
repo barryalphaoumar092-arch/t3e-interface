@@ -47,7 +47,7 @@ async function fillTemplatePdf(templateBuffer, projet, materiaux, devisTexte, fi
   w(projet.adresse || '', 125, 588);             // ADRESSE
 
   // ===== IDENTIFICATION - CHECKBOXES =====
-  w('X', 251, 500, { size: 10, font: fontBold });   // Fiche technique ☑
+  page.drawRectangle({ x: 253, y: 501, width: 8, height: 8, color: bleu });  // Fiche technique ☑
 
   // Ligne numéro
   w('1', 500, 537);                               // Ligne numéro (ligne Dessin d'atelier)
@@ -62,7 +62,7 @@ async function fillTemplatePdf(templateBuffer, projet, materiaux, devisTexte, fi
   w(mat.fabricant || '', 360, 438);               // Fabricant
 
   // ===== TEL QUE PLANS / EQUIVALENCE =====
-  w('X', 251, 420, { size: 10, font: fontBold });   // Tel que plans et devis ☑
+  page.drawRectangle({ x: 253, y: 421, width: 8, height: 8, color: bleu });  // Tel que plans et devis ☑
   w(sectionItem || '', 395, 420, { size: 8 });    // Section (item)
   w(article || '', 355, 402, { size: 8 });        // Article
   w(delai || '', 110, 388, { size: 8 });          // Délai
