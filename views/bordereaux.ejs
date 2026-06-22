@@ -1,0 +1,46 @@
+<%- include('partials/header', { title: 'Bordereaux techniques', page: 'bordereaux' }) %>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2><i class="bi bi-file-earmark-text"></i> Bordereaux techniques</h2>
+  <a href="/bordereaux/nouveau" class="btn btn-warning"><i class="bi bi-plus-circle"></i> Nouveau bordereau</a>
+</div>
+
+<div class="table-responsive">
+  <table class="table table-hover">
+    <thead>
+      <tr><th>#</th><th>Projet</th><th>Titre</th><th>Statut</th><th>Créé par</th><th>Date</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      <% bordereaux.forEach(function(b) { %>
+      <tr>
+        <td><%= b.id %></td>
+        <td><strong><%= b.numero_projet || '-' %></strong></td>
+        <td><%= b.titre %></td>
+        <td>
+          <span class="badge badge-<%= b.statut %>">
+            <% if (b.statut === 'brouillon') { %><i class="bi bi-pencil"></i><% } %>
+            <% if (b.statut === 'revise') { %><i class="bi bi-eye"></i><% } %>
+            <% if (b.statut === 'approuve') { %><i class="bi bi-check-circle"></i><% } %>
+            <%= b.statut.charAt(0).toUpperCase() + b.statut.slice(1) %>
+          </span>
+        </td>
+        <td><%= b.cree_par || '-' %></td>
+        <td><%= b.created_at || '-' %></td>
+        <td>
+          <a href="/bordereaux/editer/<%= b.id %>" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i></a>
+          <a href="/bordereaux/pdf/<%= b.id %>" class="btn btn-sm btn-outline-success"><i class="bi bi-file-pdf"></i> PDF</a>
+        </td>
+      </tr>
+      <% }) %>
+      <% if (bordereaux.length === 0) { %>
+      <tr><td colspan="7" class="text-center text-muted py-5">
+        <i class="bi bi-inbox" style="font-size:3rem;"></i><br>
+        Aucun bordereau créé.<br>
+        <a href="/bordereaux/nouveau" class="btn btn-warning mt-2">Créer votre premier bordereau</a>
+      </td></tr>
+      <% } %>
+    </tbody>
+  </table>
+</div>
+
+<%- include('partials/footer', { scripts: [] }) %>

@@ -1,0 +1,95 @@
+<%- include('partials/header', { title: 'Recherche intelligente', page: 'recherche' }) %>
+
+<div class="row justify-content-center mb-4">
+  <div class="col-md-8 text-center">
+    <h2><i class="bi bi-search"></i> Recherche intelligente</h2>
+    <p class="text-muted">Recherchez dans les documents, matériaux, fiches techniques et architectes</p>
+    <div class="input-group input-group-lg">
+      <input type="text" id="searchInput" class="form-control search-box" placeholder="Ex: membrane SBS, Soprema, drain RD-24, NBL..." autofocus>
+      <button class="btn btn-primary" onclick="lancer()"><i class="bi bi-search"></i> Rechercher</button>
+    </div>
+  </div>
+</div>
+
+<div id="resultats-recherche"></div>
+
+<script>
+const input = document.getElementById('searchInput');
+let timer;
+input.addEventListener('keyup', function(e) {
+  clearTimeout(timer);
+  if (e.key === 'Enter') { lancer(); return; }
+  timer = setTimeout(lancer, 400);
+});
+
+async function lancer() {
+  const q = input.value.trim();
+  if (!q) { document.getElementById('resultats-recherche').innerHTML = ''; return; }
+
+  const res = await fetch('/api/recherche?q=' + encodeURIComponent(q));
+  const data = await res.json();
+
+  let html = '';
+  const total = data.documents.length + data.materiaux.length + data.architectes.length;
+  html += '<p class="text-muted mb-3">' + total + ' résultat(s) trouvé(s)</p>';
+
+  if (data.documents.length > 0) {
+    html += '<h5><i class="bi bi-file-earmark-pdf text-primary"></i> Documents (' + data.documents.length + ')</h5>';
+    html += '<div class="row g-3 mb-4">';
+    data.documents.forEach(function(d) {
+      html += '<div class="col-md-6"><div class="card doc-card p-3">';
+      html += '<h6>' + d.titre + '</h6>';
+      html += '<span class="badge bg-secondary mb-1">' + d.categorie + '</span>';
+      if (d.annee) html += ' <span class="badge bg-info">' + d.annee + '</span>';
+      html += '<p class="text-muted small mb-1">' + (d.description || '') + '</p>';
+      html += '<small>Source: ' + (d.source || '-') + '</small>';
+      html += '<div class="mt-2"><a href="/documents/' + encodeURIComponent(d.fichier) + '" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i> Ouvrir</a></div>';
+      html += '</div></div>';
+    });
+    html += '</div>';
+  }
+
+  if (data.materiaux.length > 0) {
+    html += '<h5><i class="bi bi-box-seam text-success"></i> Matériaux (' + data.materiaux.length + ')</h5>';
+    html += '<div class="table-responsive mb-4"><table class="table table-sm table-hover"><thead><tr>';
+    html += '<th>Produit</th><th>Fabricant</th><th>Type</th><th>Système</th><th>Dimension</th><th>Fiches</th></tr></thead><tbody>';
+    data.materiaux.forEach(function(m) {
+      html += '<tr>';
+      html += '<td><strong>' + m.nom + '</strong></td>';
+      html += '<td>' + m.fabricant + '</td>';
+      html += '<td><span class="badge bg-secondary">' + m.type_produit + '</span></td>';
+      html += '<td>' + m.type_systeme + '</td>';
+      html += '<td>' + (m.dimension || '-') + '</td>';
+      html += '<td>';
+      if (m.lien_ft && m.lien_ft.startsWith('http')) html += '<a href="' + m.lien_ft + '" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-file-earmark-text"></i> FT</a> ';
+      if (m.lien_sds && m.lien_sds.startsWith('http')) html += '<a href="' + m.lien_sds + '" target="_blank" class="btn btn-sm btn-outline-danger"><i class="bi bi-shield-exclamation"></i> SDS</a>';
+      html += '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+
+  if (data.architectes.length > 0) {
+    html += '<h5><i class="bi bi-people text-info"></i> Architectes (' + data.architectes.length + ')</h5>';
+    html += '<div class="row g-3 mb-4">';
+    data.architectes.forEach(function(a) {
+      html += '<div class="col-md-4"><div class="card doc-card p-3">';
+      html += '<h6>' + a.firme + '</h6>';
+      if (a.contact) html += '<p class="mb-1"><i class="bi bi-person"></i> ' + a.contact + '</p>';
+      if (a.telephone) html += '<p class="mb-1"><i class="bi bi-telephone"></i> ' + a.telephone + '</p>';
+      if (a.email) html += '<p class="mb-1"><i class="bi bi-envelope"></i> <a href="mailto:' + a.email + '">' + a.email + '</a></p>';
+      if (a.ville) html += '<p class="mb-1"><i class="bi bi-geo-alt"></i> ' + a.ville + '</p>';
+      if (a.site_web) html += '<p class="mb-0"><a href="' + (a.site_web.startsWith('http') ? a.site_web : 'https://' + a.site_web) + '" target="_blank"><i class="bi bi-globe"></i> Site web</a></p>';
+      html += '</div></div>';
+    });
+    html += '</div>';
+  }
+
+  if (total === 0) {
+    html = '<div class="text-center py-5"><i class="bi bi-search" style="font-size:3rem;color:#ccc;"></i><p class="text-muted mt-2">Aucun résultat pour "' + q + '"</p></div>';
+  }
+
+  document.getElementById('resultats-recherche').innerHTML = html;
+}
+</script>
+
+<%- include('partials/footer', { scripts: [] }) %>

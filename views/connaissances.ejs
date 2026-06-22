@@ -1,0 +1,200 @@
+<%- include('partials/header', { title: 'Base de connaissances', page: 'connaissances' }) %>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2><i class="bi bi-book"></i> Base de connaissances</h2>
+  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalAjouter">
+    <i class="bi bi-plus-circle"></i> Ajouter un document
+  </button>
+</div>
+
+<script>
+  if (window.location.search.includes('error=mdp')) {
+    alert('Mot de passe administrateur incorrect. Action refusée.');
+    history.replaceState(null, '', window.location.pathname);
+  }
+</script>
+
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item">
+    <a class="nav-link <%= tab === 'documents' ? 'active' : '' %>" href="/connaissances?tab=documents">
+      <i class="bi bi-file-earmark-pdf"></i> Documents (<%= documents.length %>)
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link <%= tab === 'materiaux' ? 'active' : '' %>" href="/connaissances?tab=materiaux">
+      <i class="bi bi-box-seam"></i> Matériaux (<%= materiaux.length %>)
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link <%= tab === 'architectes' ? 'active' : '' %>" href="/connaissances?tab=architectes">
+      <i class="bi bi-people"></i> Architectes (<%= architectes.length %>)
+    </a>
+  </li>
+</ul>
+
+<form class="row g-2 mb-3" method="GET" action="/connaissances">
+  <input type="hidden" name="tab" value="<%= tab %>">
+  <div class="col-md-8">
+    <input type="text" name="q" class="form-control search-box" placeholder="Rechercher..." value="<%= search %>">
+  </div>
+  <% if (tab === 'documents') { %>
+  <div class="col-md-3">
+    <select name="categorie" class="form-select">
+      <option value="">Toutes les catégories</option>
+      <% catList.forEach(function(c) { %>
+        <option value="<%= c[1] %>" <%= catFilter === c[1] ? 'selected' : '' %>><%= c[1] %></option>
+      <% }) %>
+    </select>
+  </div>
+  <% } %>
+  <div class="col-md-1">
+    <button type="submit" class="btn btn-primary w-100"><i class="bi bi-search"></i></button>
+  </div>
+</form>
+
+<% if (tab === 'documents') { %>
+<div class="table-responsive">
+  <table class="table table-hover">
+    <thead>
+      <tr><th>Titre</th><th>Catégorie</th><th>Type</th><th>Source</th><th>Année</th><th>Taille</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      <% documents.forEach(function(d) { %>
+      <tr>
+        <td><strong><%= d.titre %></strong><br><small class="text-muted"><%= d.description || '' %></small></td>
+        <td><span class="badge bg-secondary"><%= d.categorie %></span></td>
+        <td><span class="badge bg-info"><%= d.type_fichier %></span></td>
+        <td><%= d.source || '-' %></td>
+        <td><%= d.annee || '-' %></td>
+        <td><%= d.taille_mb %> Mo</td>
+        <td>
+          <a href="/documents/<%= encodeURIComponent(d.nom_fichier) %>" target="_blank" class="btn btn-sm btn-outline-primary" title="Ouvrir"><i class="bi bi-eye"></i></a>
+          <form method="POST" action="/connaissances/supprimer/<%= d.id %>" class="d-inline" onsubmit="var mdp = prompt('Mot de passe administrateur :'); if (!mdp) return false; this.querySelector('[name=mdp_admin]').value = mdp; return true;">
+            <input type="hidden" name="mdp_admin" value="">
+            <button type="submit" class="btn btn-sm btn-outline-danger" title="Retirer"><i class="bi bi-trash"></i></button>
+          </form>
+        </td>
+      </tr>
+      <% }) %>
+      <% if (documents.length === 0) { %>
+      <tr><td colspan="7" class="text-center text-muted py-4">Aucun document trouvé</td></tr>
+      <% } %>
+    </tbody>
+  </table>
+</div>
+<% } %>
+
+<% if (tab === 'materiaux') { %>
+<div class="table-responsive" style="max-height: 70vh; overflow-y: auto;">
+  <table class="table table-hover table-sm">
+    <thead>
+      <tr><th>Produit</th><th>Fabricant</th><th>Type</th><th>Système</th><th>Dimension</th><th>Fiches</th></tr>
+    </thead>
+    <tbody>
+      <% materiaux.forEach(function(m) { %>
+      <tr>
+        <td><strong><%= m.nom %></strong></td>
+        <td><%= m.fabricant %></td>
+        <td><span class="badge bg-secondary"><%= m.type_produit %></span></td>
+        <td><%= m.type_systeme %></td>
+        <td><%= m.dimension || '-' %></td>
+        <td class="fiche-link">
+          <% if (m.lien_ft && m.lien_ft.startsWith('http')) { %>
+            <a href="<%= m.lien_ft %>" target="_blank" title="Fiche technique"><i class="bi bi-file-earmark-text text-primary"></i> FT</a>
+          <% } %>
+          <% if (m.lien_sds && m.lien_sds.startsWith('http')) { %>
+            <a href="<%= m.lien_sds %>" target="_blank" title="Fiche SDS" class="ms-2"><i class="bi bi-shield-exclamation text-danger"></i> SDS</a>
+          <% } %>
+        </td>
+      </tr>
+      <% }) %>
+      <% if (materiaux.length === 0) { %>
+      <tr><td colspan="6" class="text-center text-muted py-4">Aucun matériau trouvé</td></tr>
+      <% } %>
+    </tbody>
+  </table>
+</div>
+<% } %>
+
+<% if (tab === 'architectes') { %>
+<div class="table-responsive">
+  <table class="table table-hover">
+    <thead>
+      <tr><th>Firme</th><th>Contact</th><th>Téléphone</th><th>Email</th><th>Ville</th><th>Site web</th></tr>
+    </thead>
+    <tbody>
+      <% architectes.forEach(function(a) { %>
+      <tr>
+        <td><strong><%= a.firme %></strong></td>
+        <td><%= a.contact || '-' %></td>
+        <td><%= a.telephone || '-' %></td>
+        <td><% if (a.email) { %><a href="mailto:<%= a.email %>"><%= a.email %></a><% } else { %>-<% } %></td>
+        <td><%= a.ville || '-' %></td>
+        <td><% if (a.site_web) { %><a href="<%= a.site_web.startsWith('http') ? a.site_web : 'https://'+a.site_web %>" target="_blank"><%= a.site_web %></a><% } else { %>-<% } %></td>
+      </tr>
+      <% }) %>
+      <% if (architectes.length === 0) { %>
+      <tr><td colspan="6" class="text-center text-muted py-4">Aucun architecte trouvé</td></tr>
+      <% } %>
+    </tbody>
+  </table>
+</div>
+<% } %>
+
+<!-- Modal Ajouter -->
+<div class="modal fade" id="modalAjouter" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <form method="POST" action="/connaissances/ajouter" enctype="multipart/form-data">
+        <div class="modal-header"><h5 class="modal-title"><i class="bi bi-plus-circle"></i> Ajouter un document</h5></div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Titre *</label>
+            <input type="text" name="titre" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Catégorie *</label>
+            <select name="categorie_id" class="form-select" required>
+              <% catList.forEach(function(c) { %>
+                <option value="<%= c[0] %>"><%= c[1] %></option>
+              <% }) %>
+            </select>
+          </div>
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Source</label>
+              <input type="text" name="source" class="form-control" placeholder="Ex: AMCQ, Soprema...">
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Année</label>
+              <input type="text" name="annee" class="form-control" placeholder="Ex: 2025">
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Description</label>
+            <textarea name="description" class="form-control" rows="2"></textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Mots-clés</label>
+            <input type="text" name="mots_cles" class="form-control" placeholder="Séparés par des virgules">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Fichier *</label>
+            <input type="file" name="fichier" class="form-control" required>
+          </div>
+          <hr>
+          <div class="mb-3">
+            <label class="form-label"><i class="bi bi-lock"></i> Mot de passe administrateur *</label>
+            <input type="password" name="mdp_admin" class="form-control" required placeholder="Requis pour modifier la base">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+          <button type="submit" class="btn btn-primary"><i class="bi bi-upload"></i> Ajouter</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<%- include('partials/footer', { scripts: [] }) %>

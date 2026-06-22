@@ -1,0 +1,148 @@
+<%- include('partials/header', { title: 'Éditer bordereau', page: 'bordereaux' }) %>
+
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="/bordereaux">Bordereaux</a></li>
+    <li class="breadcrumb-item active">Éditer #<%= bordereau.id %></li>
+  </ol>
+</nav>
+
+<div class="row">
+  <div class="col-md-8">
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-pencil"></i> Bordereau #<%= bordereau.id %></h5>
+        <span class="badge badge-<%= bordereau.statut %>" style="font-size: 1rem;">
+          <%= bordereau.statut.charAt(0).toUpperCase() + bordereau.statut.slice(1) %>
+        </span>
+      </div>
+      <div class="card-body">
+        <form method="POST" action="/bordereaux/sauvegarder/<%= bordereau.id %>">
+          <div class="row mb-3">
+            <div class="col-md-4">
+              <label class="form-label">Numéro de projet</label>
+              <input type="text" name="numero_projet" class="form-control" value="<%= bordereau.numero_projet || '' %>" <%= bordereau.statut === 'approuve' ? 'readonly' : '' %>>
+            </div>
+            <div class="col-md-8">
+              <label class="form-label">Titre</label>
+              <input type="text" name="titre" class="form-control" value="<%= bordereau.titre %>" <%= bordereau.statut === 'approuve' ? 'readonly' : '' %>>
+            </div>
+          </div>
+
+          <% if (bordereau.contenu.source_fichier) { %>
+          <div class="alert alert-info">
+            <i class="bi bi-file-earmark"></i> Document source : <strong><%= bordereau.contenu.source_fichier %></strong>
+          </div>
+          <% } %>
+
+          <% if (bordereau.contenu.donnees && bordereau.contenu.donnees.length > 0) { %>
+          <h6>Données extraites du document source</h6>
+          <div class="table-responsive mb-3" style="max-height: 300px; overflow-y: auto;">
+            <table class="table table-sm table-bordered">
+              <thead>
+                <tr>
+                  <% (bordereau.contenu.colonnes || []).forEach(function(col) { %>
+                    <th><%= col %></th>
+                  <% }) %>
+                </tr>
+              </thead>
+              <tbody>
+                <% bordereau.contenu.donnees.forEach(function(row) { %>
+                <tr>
+                  <% (bordereau.contenu.colonnes || []).forEach(function(col) { %>
+                    <td><%= row[col] || '' %></td>
+                  <% }) %>
+                </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+          <% } %>
+
+          <% if (bordereau.contenu.materiaux_suggeres && bordereau.contenu.materiaux_suggeres.length > 0) { %>
+          <h6><i class="bi bi-box-seam"></i> Matériaux suggérés depuis la base de données</h6>
+          <div class="table-responsive mb-3">
+            <table class="table table-sm">
+              <thead><tr><th>Produit</th><th>Fabricant</th><th>Type</th><th>Fiche technique</th></tr></thead>
+              <tbody>
+                <% bordereau.contenu.materiaux_suggeres.forEach(function(m) { %>
+                <tr>
+                  <td><%= m.nom %></td>
+                  <td><%= m.fabricant %></td>
+                  <td><%= m.type %></td>
+                  <td><% if (m.fiche && m.fiche.startsWith('http')) { %><a href="<%= m.fiche %>" target="_blank"><i class="bi bi-file-earmark-text"></i> Voir</a><% } else { %>-<% } %></td>
+                </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+          <% } %>
+
+          <div class="mb-3">
+            <label class="form-label">Contenu JSON (modifiable)</label>
+            <textarea name="contenu_json" class="form-control" rows="6" <%= bordereau.statut === 'approuve' ? 'readonly' : '' %>><%= JSON.stringify(bordereau.contenu, null, 2) %></textarea>
+          </div>
+
+          <% if (bordereau.statut !== 'approuve') { %>
+          <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Sauvegarder</button>
+          <% } %>
+          <a href="/bordereaux/pdf/<%= bordereau.id %>" class="btn btn-success"><i class="bi bi-file-pdf"></i> Télécharger PDF</a>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-4">
+    <!-- Statut -->
+    <div class="card mb-3">
+      <div class="card-header"><h6 class="mb-0">Cycle d'approbation</h6></div>
+      <div class="card-body">
+        <div class="status-timeline mb-3">
+          <span class="status-step <%= bordereau.statut === 'brouillon' ? 'active bg-secondary' : 'inactive' %>">Brouillon</span>
+          <span class="status-arrow"><i class="bi bi-arrow-right"></i></span>
+          <span class="status-step <%= bordereau.statut === 'revise' ? 'active bg-warning' : 'inactive' %>">Révisé</span>
+          <span class="status-arrow"><i class="bi bi-arrow-right"></i></span>
+          <span class="status-step <%= bordereau.statut === 'approuve' ? 'active bg-success' : 'inactive' %>">Approuvé</span>
+        </div>
+
+        <% if (bordereau.statut === 'brouillon') { %>
+        <form method="POST" action="/approbation/changer-statut/<%= bordereau.id %>">
+          <input type="hidden" name="nouveau_statut" value="revise">
+          <input type="text" name="effectue_par" class="form-control mb-2" placeholder="Révisé par...">
+          <input type="text" name="commentaire" class="form-control mb-2" placeholder="Commentaire">
+          <button type="submit" class="btn btn-warning w-100"><i class="bi bi-eye"></i> Marquer comme Révisé</button>
+        </form>
+        <% } else if (bordereau.statut === 'revise') { %>
+        <form method="POST" action="/approbation/changer-statut/<%= bordereau.id %>">
+          <input type="hidden" name="nouveau_statut" value="approuve">
+          <input type="text" name="effectue_par" class="form-control mb-2" placeholder="Approuvé par...">
+          <input type="text" name="commentaire" class="form-control mb-2" placeholder="Commentaire">
+          <button type="submit" class="btn btn-success w-100"><i class="bi bi-check-circle"></i> Approuver</button>
+        </form>
+        <% } else { %>
+        <div class="alert alert-success mb-0"><i class="bi bi-check-circle"></i> Ce bordereau est approuvé.</div>
+        <% } %>
+      </div>
+    </div>
+
+    <!-- Historique -->
+    <div class="card">
+      <div class="card-header"><h6 class="mb-0">Historique</h6></div>
+      <ul class="list-group list-group-flush">
+        <% historique.forEach(function(h) { %>
+        <li class="list-group-item">
+          <small class="text-muted"><%= h.date %></small><br>
+          <strong><%= h.par %></strong> : <%= h.action %>
+          <% if (h.nouveau) { %><span class="badge badge-<%= h.nouveau %>"><%= h.nouveau %></span><% } %>
+          <% if (h.commentaire) { %><br><small><%= h.commentaire %></small><% } %>
+        </li>
+        <% }) %>
+        <% if (historique.length === 0) { %>
+        <li class="list-group-item text-muted">Aucun historique</li>
+        <% } %>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<%- include('partials/footer', { scripts: [] }) %>
