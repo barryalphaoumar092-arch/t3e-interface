@@ -225,58 +225,124 @@ router.post('/sauvegarder/:id', async (req, res) => {
   res.redirect(`/bordereaux/editer/${id}?success=saved`);
 });
 
-router.get('/pdf/:id', async (req, res) => {
+// POST pour sauvegarder + générer PDF en une seule action
+router.post('/generer-pdf/:id', async (req, res) => {
   const db = req.db;
-  const r = await db.execute({ sql: 'SELECT * FROM bordereaux WHERE id = ?', args: [parseInt(req.params.id)] });
-  if (r.rows.length === 0) return res.status(404).send('Bordereau non trouvé');
+  const id = parseInt(req.params.id);
+  const { titre, numero_projet, client, adresse, architecte, materiaux_json, fiches_json } = req.body;
 
-  const row = r.rows[0];
+  // 1. Sauvegarder d'abord
+  const current = await db.execute({ sql: 'SELECT * FROM bordereaux WHERE id = ?', args: [id] });
+  if (current.rows.length === 0) return res.status(404).send('Bordereau non trouvé');
+
+  const row = current.rows[0];
   const contenu = JSON.parse(row.contenu || '{}');
+  contenu.projet = contenu.projet || {};
+  if (titre) contenu.projet.numero = numero_projet || '';
+  if (client) contenu.projet.client = client || '';
+  if (adresse) contenu.projet.adresse = adresse || '';
+  if (architecte) contenu.projet.architecte = architecte || '';
+  if (materiaux_json) { try { contenu.materiaux_matches = JSON.parse(materiaux_json); } catch (e) {} }
+  if (fiches_json) { try { contenu.fiches_selectionnees = JSON.parse(fiches_json); } catch (e) {} }
+
+  await db.execute({
+    sql: "UPDATE bordereaux SET titre = ?, numero_projet = ?, contenu = ?, updated_at = datetime('now') WHERE id = ?",
+    args: [titre || row.titre, numero_projet || row.numero_projet, JSON.stringify(contenu), id]
+  });
+
   const projet = contenu.projet || {};
   const fichesSelectionnees = contenu.fiches_selectionnees || [];
+  const materiaux = (contenu.materiaux_matches || []).filter(m => m.confirmed !== false);
 
+  // 2. Construire le PDF final
   const finalPdf = await PDFLib.create();
-
   let templateLoaded = false;
 
+  // 2a. Copier le template original
   if (row.template_data) {
     try {
       const templateBuffer = Buffer.from(row.template_data, 'base64');
-      const isPdf = templateBuffer.length > 4 && templateBuffer.slice(0, 5).toString() === '%PDF-';
-      if (isPdf) {
+      if (templateBuffer.length > 4 && templateBuffer.slice(0, 5).toString() === '%PDF-') {
         const templateDoc = await PDFLib.load(templateBuffer, { ignoreEncryption: true });
         const pages = await finalPdf.copyPages(templateDoc, templateDoc.getPageIndices());
         pages.forEach(p => finalPdf.addPage(p));
         templateLoaded = true;
       }
     } catch (err) {
-      console.error('Erreur chargement template:', err.message);
+      console.error('Erreur template:', err.message);
     }
   }
 
-  if (!templateLoaded && row.template_chemin && fs.existsSync(row.template_chemin)) {
-    try {
-      const buf = fs.readFileSync(row.template_chemin);
-      if (buf.length > 4 && buf.slice(0, 5).toString() === '%PDF-') {
-        const templateDoc = await PDFLib.load(buf, { ignoreEncryption: true });
-        const pages = await finalPdf.copyPages(templateDoc, templateDoc.getPageIndices());
-        pages.forEach(p => finalPdf.addPage(p));
-        templateLoaded = true;
-      }
-    } catch (err) {
-      console.error('Erreur chargement template fichier:', err.message);
-    }
+  // 2b. Ajouter la page résumé remplie
+  const PDFDocument = require('pdfkit');
+  const chunks = [];
+  const summaryDoc = new PDFDocument({ size: 'LETTER', margin: 50 });
+  summaryDoc.on('data', c => chunks.push(c));
+  const summaryDone = new Promise(resolve => summaryDoc.on('end', () => resolve(Buffer.concat(chunks))));
+
+  summaryDoc.rect(50, 40, 512, 35).fill('#003366');
+  summaryDoc.fillColor('white').fontSize(14).font('Helvetica-Bold');
+  summaryDoc.text('TOITURES 3 ÉTOILES — BORDEREAU REMPLI', 60, 50, { width: 492, align: 'center' });
+  summaryDoc.fillColor('black').moveDown(1.5);
+
+  summaryDoc.fontSize(10).font('Helvetica-Bold');
+  summaryDoc.text(`Projet: ${projet.numero || 'N/A'}`, 50);
+  summaryDoc.font('Helvetica').text(`Titre: ${titre || row.titre || ''}`);
+  if (projet.client) summaryDoc.text(`Client: ${projet.client}`);
+  if (projet.architecte) summaryDoc.text(`Architecte: ${projet.architecte}`);
+  if (projet.adresse) summaryDoc.text(`Adresse: ${projet.adresse}`);
+  summaryDoc.text(`Préparé par: ${row.cree_par || ''} | Date: ${row.created_at || ''}`);
+  summaryDoc.text(`Statut: ${(row.statut || 'brouillon').toUpperCase()}`);
+  summaryDoc.moveDown();
+
+  summaryDoc.moveTo(50, summaryDoc.y).lineTo(562, summaryDoc.y).stroke('#003366');
+  summaryDoc.moveDown(0.5);
+
+  if (materiaux.length > 0) {
+    summaryDoc.fontSize(12).font('Helvetica-Bold').text('MATÉRIAUX ET FICHES TECHNIQUES');
+    summaryDoc.moveDown(0.5);
+    summaryDoc.fontSize(8).font('Helvetica');
+
+    materiaux.forEach((m, i) => {
+      if (summaryDoc.y > 680) summaryDoc.addPage();
+      summaryDoc.font('Helvetica-Bold').fontSize(9).text(`${i + 1}. ${m.nom || ''} — ${m.fabricant || ''}`);
+      summaryDoc.font('Helvetica').fontSize(8);
+      if (m.type_produit) summaryDoc.text(`   Type: ${m.type_produit}${m.type_systeme ? ' | Système: ' + m.type_systeme : ''}`);
+      if (m.dimension) summaryDoc.text(`   Dimension: ${m.dimension}${m.unite ? ' (' + m.unite + ')' : ''}`);
+      if (m.lien_fiche_technique) summaryDoc.fillColor('blue').text(`   Fiche technique: ${m.lien_fiche_technique}`, { link: m.lien_fiche_technique }).fillColor('black');
+      if (m.lien_fiche_securite) summaryDoc.fillColor('blue').text(`   Fiche SDS: ${m.lien_fiche_securite}`, { link: m.lien_fiche_securite }).fillColor('black');
+      summaryDoc.moveDown(0.3);
+    });
   }
 
-  if (!templateLoaded) {
-    const page = finalPdf.addPage();
-    page.drawText('ERREUR: Le bordereau soumis n\'est pas un vrai PDF.', { x: 50, y: 700, size: 14 });
-    page.drawText('Pour obtenir une copie exacte, ouvrez le fichier Word dans Microsoft Word', { x: 50, y: 670, size: 11 });
-    page.drawText('puis faites: Fichier > Enregistrer sous > PDF', { x: 50, y: 650, size: 11 });
-    page.drawText('Ensuite, recréez le bordereau avec ce fichier PDF.', { x: 50, y: 630, size: 11 });
+  if (fichesSelectionnees.length > 0) {
+    summaryDoc.moveDown();
+    summaryDoc.fontSize(12).font('Helvetica-Bold').text('FICHES TECHNIQUES JOINTES');
+    summaryDoc.moveDown(0.3);
+    summaryDoc.fontSize(9).font('Helvetica');
+    fichesSelectionnees.forEach((f, i) => {
+      summaryDoc.text(`${i + 1}. ${f.titre} (${f.source || ''})`);
+    });
   }
 
-  // 2. Ajouter les fiches techniques sélectionnées
+  summaryDoc.moveDown(2);
+  summaryDoc.moveTo(50, summaryDoc.y).lineTo(562, summaryDoc.y).stroke();
+  summaryDoc.moveDown();
+  summaryDoc.fontSize(9);
+  summaryDoc.text('Préparé par: ___________________________    Date: _______________');
+  summaryDoc.moveDown(0.6);
+  summaryDoc.text('Révisé par:  ___________________________    Date: _______________');
+  summaryDoc.moveDown(0.6);
+  summaryDoc.text('Approuvé par: __________________________    Date: _______________');
+
+  summaryDoc.end();
+  const summaryBuffer = await summaryDone;
+
+  const summaryPdfDoc = await PDFLib.load(summaryBuffer);
+  const summaryPages = await finalPdf.copyPages(summaryPdfDoc, summaryPdfDoc.getPageIndices());
+  summaryPages.forEach(p => finalPdf.addPage(p));
+
+  // 2c. Ajouter les fiches techniques PDF sélectionnées
   for (const fiche of fichesSelectionnees) {
     const ftPath = fiche.chemin_fichier ? path.join(__dirname, '..', '..', fiche.chemin_fichier) : null;
     if (ftPath && fs.existsSync(ftPath) && ftPath.toLowerCase().endsWith('.pdf')) {
@@ -291,9 +357,14 @@ router.get('/pdf/:id', async (req, res) => {
     }
   }
 
+  if (finalPdf.getPageCount() === 0) {
+    const page = finalPdf.addPage();
+    page.drawText('Aucun contenu genere.', { x: 50, y: 700, size: 14 });
+  }
+
   const finalBuffer = await finalPdf.save();
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="bordereau-${projet.numero || row.id}.pdf"`);
+  res.setHeader('Content-Disposition', `attachment; filename="bordereau-${projet.numero || id}.pdf"`);
   res.send(Buffer.from(finalBuffer));
 });
 

@@ -181,10 +181,10 @@
       <% if (bordereau.statut !== 'approuve') { %>
       <div class="d-flex gap-2 mb-3">
         <button type="submit" class="btn btn-primary btn-lg"><i class="bi bi-save"></i> Sauvegarder</button>
-        <a href="/bordereaux/pdf/<%= bordereau.id %>" class="btn btn-success btn-lg"><i class="bi bi-file-pdf"></i> Télécharger PDF</a>
+        <button type="submit" formaction="/bordereaux/generer-pdf/<%= bordereau.id %>" class="btn btn-success btn-lg"><i class="bi bi-file-pdf"></i> Télécharger PDF</button>
       </div>
       <% } else { %>
-      <a href="/bordereaux/pdf/<%= bordereau.id %>" class="btn btn-success btn-lg mb-3"><i class="bi bi-file-pdf"></i> Télécharger PDF</a>
+      <button type="submit" formaction="/bordereaux/generer-pdf/<%= bordereau.id %>" class="btn btn-success btn-lg mb-3"><i class="bi bi-file-pdf"></i> Télécharger PDF</button>
       <% } %>
 
     </form>
