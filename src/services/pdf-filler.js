@@ -4,113 +4,104 @@ async function fillTemplatePdf(templateBuffer, projet, materiaux, devisTexte, fi
   const pdfDoc = await PDFDocument.load(templateBuffer, { ignoreEncryption: true });
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-  const bleu = rgb(0, 0, 0.7);
+  const bleu = rgb(0, 0, 0.6);
 
   const pages = pdfDoc.getPages();
   if (pages.length === 0) return pdfDoc;
 
-  const firstPage = pages[0];
-  const { width, height } = firstPage.getSize();
+  const page = pages[0];
+  const { height } = page.getSize();
 
-  // Utiliser les matériaux matchés, sinon créer des données depuis les fiches sélectionnées
   let mat = {};
   if (materiaux && materiaux.length > 0) {
     mat = materiaux[0];
   } else if (fichesSelectionnees && fichesSelectionnees.length > 0) {
     const f = fichesSelectionnees[0];
-    mat = {
-      nom: f.titre || '',
-      fabricant: f.source || '',
-      type_produit: 'Fiche technique',
-    };
+    mat = { nom: f.titre || '', fabricant: f.source || '', type_produit: 'Fiche technique' };
   }
+
   const description = [mat.type_produit, mat.type_systeme, mat.dimension].filter(Boolean).join(' — ');
+  const sectionItem = extract(devisTexte, /section\s*[:#(]?\s*([^\n\r]{1,40})/i);
+  const article = extract(devisTexte, /article\s*[:#]?\s*([^\n\r]{1,40})/i);
+  const revision = extract(devisTexte, /r[ée]vision\s*[:#]?\s*([^\n\r]{1,20})/i);
+  const delai = extract(devisTexte, /d[ée]lai\s*[:#]?\s*([^\n\r]{1,30})/i);
+  const numDessin = extract(devisTexte, /(?:dessin|drawing)\s*(?:no|num|#|:)\s*([^\n\r]{1,20})/i);
+  const nbFeuilles = fichesSelectionnees ? String(fichesSelectionnees.length) : '1';
 
-  const sectionItem = extractFromDevis(devisTexte, /section\s*[:#(]?\s*([^\n\r]{1,40})/i);
-  const article = extractFromDevis(devisTexte, /article\s*[:#]?\s*([^\n\r]{1,40})/i);
-  const revision = extractFromDevis(devisTexte, /r[ée]vision\s*[:#]?\s*([^\n\r]{1,20})/i);
-  const delai = extractFromDevis(devisTexte, /d[ée]lai\s*[:#]?\s*([^\n\r]{1,30})/i);
-  const numDessin = extractFromDevis(devisTexte, /(?:dessin|drawing)\s*(?:no|num|#|:)\s*([^\n\r]{1,20})/i);
-
-  // Positions calibrées pour le bordereau T3E (LETTER 612x792)
-  // Les Y sont mesurés depuis le BAS de la page
-  const fields = [
-    // Infos projet
-    { val: projet.client || '', x: 200, y: height - 97, size: 10 },
-    { val: projet.numero || '', x: 200, y: height - 115, size: 10 },
-
-    // Entrepreneur
-    { val: 'Toitures Trois Étoiles', x: 105, y: height - 165, size: 9 },
-    { val: 'Couvreur', x: 130, y: height - 182, size: 9 },
-    { val: projet.adresse || '', x: 120, y: height - 199, size: 8 },
-
-    // Identification - Cocher "Fiche technique"
-    { val: 'X', x: 65, y: height - 273, size: 10, font: fontBold },
-
-    // Ligne numéro
-    { val: '1', x: 430, y: height - 249, size: 9 },
-
-    // Titre
-    { val: mat.nom || '', x: 100, y: height - 295, size: 9 },
-
-    // Numéro de dessins / Nombre feuilles / Révision
-    { val: numDessin || '', x: 155, y: height - 313, size: 8 },
-    { val: materiaux ? String(materiaux.length) : '1', x: 340, y: height - 313, size: 8 },
-    { val: revision || '', x: 490, y: height - 313, size: 8 },
-
-    // Description
-    { val: description || '', x: 120, y: height - 332, size: 8 },
-
-    // Fournisseur / Fabricant
-    { val: mat.fabricant || '', x: 120, y: height - 350, size: 9 },
-    { val: mat.fabricant || '', x: 370, y: height - 350, size: 9 },
-
-    // Cocher "Tel que plans et devis"
-    { val: 'X', x: 65, y: height - 370, size: 10, font: fontBold },
-
-    // Section (item)
-    { val: sectionItem || '', x: 400, y: height - 370, size: 8 },
-
-    // Article
-    { val: article || '', x: 400, y: height - 390, size: 8 },
-
-    // Délai
-    { val: delai || '', x: 100, y: height - 408, size: 8 },
-
-    // Remarque
-    { val: buildRemarque(materiaux, fichesSelectionnees), x: 120, y: height - 435, size: 7 },
-  ];
-
-  for (const f of fields) {
-    if (f.val) {
-      firstPage.drawText(String(f.val), {
-        x: f.x,
-        y: f.y,
-        size: f.size || 9,
-        font: f.font || font,
-        color: bleu,
-      });
-    }
+  function w(val, x, y, opts) {
+    if (!val) return;
+    page.drawText(String(val), {
+      x, y, size: (opts && opts.size) || 9,
+      font: (opts && opts.font) || font,
+      color: bleu,
+    });
   }
+
+  // === NOM DU PROJET / NUMÉRO DU PROJET ===
+  w(projet.client || projet.numero || '', 148, height - 143);
+  w(projet.numero || '', 165, height - 158);
+
+  // === IDENTIFICATION DE L'ENTREPRENEUR ===
+  w('Toitures Trois Étoiles', 90, height - 195);
+  w('Couvreur', 385, height - 195);
+  w(projet.adresse || '', 115, height - 222);
+
+  // === IDENTIFICATION - Checkboxes ===
+  // Cocher "Fiche technique" (3ème checkbox)
+  w('X', 213, height - 365, { size: 11, font: fontBold });
+
+  // Ligne numéro
+  w('1', 490, height - 325, { size: 10 });
+
+  // Titre
+  w(mat.nom || '', 108, height - 393, { size: 10 });
+
+  // Numéro de dessins / Nombre feuilles / Révision
+  w(numDessin || '', 168, height - 417);
+  w(nbFeuilles, 362, height - 417);
+  w(revision || '', 468, height - 417);
+
+  // Description
+  w(description || '', 133, height - 441, { size: 8 });
+
+  // Fournisseur / Fabricant
+  w(mat.fabricant || '', 140, height - 461);
+  w(mat.fabricant || '', 335, height - 461);
+
+  // Cocher "Tel que plans et devis"
+  w('X', 213, height - 481, { size: 11, font: fontBold });
+
+  // Section (item)
+  w(sectionItem || '', 365, height - 481);
+
+  // Article
+  w(article || '', 325, height - 501);
+
+  // Délai
+  w(delai || '', 108, height - 521);
+
+  // Remarque
+  const remarque = buildRemarque(materiaux, fichesSelectionnees);
+  w(remarque, 135, height - 552, { size: 7 });
 
   return pdfDoc;
 }
 
-function extractFromDevis(text, regex) {
+function extract(text, regex) {
   if (!text) return '';
-  const match = text.match(regex);
-  return match ? match[1].trim() : '';
+  const m = text.match(regex);
+  return m ? m[1].trim() : '';
 }
 
 function buildRemarque(materiaux, fichesSelectionnees) {
   const parts = [];
   if (materiaux && materiaux.length > 1) {
-    parts.push('Materiaux: ' + materiaux.slice(1, 4).map(m => m.nom).filter(Boolean).join(', '));
+    parts.push('Autres: ' + materiaux.slice(1, 4).map(m => m.nom).filter(Boolean).join(', '));
   }
   if (fichesSelectionnees && fichesSelectionnees.length > 0) {
-    parts.push('FT jointes: ' + fichesSelectionnees.map(f => f.titre).slice(0, 3).join(', '));
+    parts.push('FT: ' + fichesSelectionnees.map(f => f.titre).slice(0, 3).join(', '));
   }
-  return parts.join(' | ').substring(0, 120);
+  return parts.join(' | ').substring(0, 130);
 }
 
 module.exports = { fillTemplatePdf };
