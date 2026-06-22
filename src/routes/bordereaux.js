@@ -104,9 +104,17 @@ router.post('/creer', uploadFields, async (req, res) => {
 
   if (!contenu.projet.numero) contenu.projet.numero = numero_projet || '';
 
+  let templateData = null;
+  if (templateFile && fs.existsSync(templateFile.path)) {
+    const ext = path.extname(templateFile.originalname).toLowerCase();
+    if (ext === '.pdf') {
+      templateData = fs.readFileSync(templateFile.path).toString('base64');
+    }
+  }
+
   const result = await db.execute({
-    sql: `INSERT INTO bordereaux (numero_projet, titre, contenu, statut, cree_par, devis_fichier, devis_texte, template_fichier, template_texte, template_chemin)
-          VALUES (?, ?, ?, 'brouillon', ?, ?, ?, ?, ?, ?)`,
+    sql: `INSERT INTO bordereaux (numero_projet, titre, contenu, statut, cree_par, devis_fichier, devis_texte, template_fichier, template_texte, template_chemin, template_data)
+          VALUES (?, ?, ?, 'brouillon', ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       contenu.projet.numero || numero_projet || '',
       titre || 'Bordereau sans titre',
@@ -117,6 +125,7 @@ router.post('/creer', uploadFields, async (req, res) => {
       templateFile ? templateFile.originalname : null,
       templateTexte.substring(0, 10000) || null,
       templateChemin,
+      templateData,
     ]
   });
 
@@ -196,24 +205,39 @@ router.get('/pdf/:id', async (req, res) => {
 
   const finalPdf = await PDFLib.create();
 
-  // 1. Copier le template EXACT tel quel
-  if (row.template_chemin && fs.existsSync(row.template_chemin)) {
-    const ext = path.extname(row.template_chemin).toLowerCase();
-    if (ext === '.pdf') {
-      try {
-        const templateBuffer = fs.readFileSync(row.template_chemin);
-        const templateDoc = await PDFLib.load(templateBuffer, { ignoreEncryption: true });
-        const pages = await finalPdf.copyPages(templateDoc, templateDoc.getPageIndices());
-        pages.forEach(p => finalPdf.addPage(p));
-      } catch (err) {
-        console.error('Erreur chargement template PDF:', err.message);
-      }
+  // 1. Copier le template EXACT tel quel depuis la base de données
+  let templateLoaded = false;
+
+  // D'abord essayer depuis la DB (base64)
+  if (row.template_data) {
+    try {
+      const templateBuffer = Buffer.from(row.template_data, 'base64');
+      const templateDoc = await PDFLib.load(templateBuffer, { ignoreEncryption: true });
+      const pages = await finalPdf.copyPages(templateDoc, templateDoc.getPageIndices());
+      pages.forEach(p => finalPdf.addPage(p));
+      templateLoaded = true;
+    } catch (err) {
+      console.error('Erreur chargement template depuis DB:', err.message);
     }
   }
 
-  // Si pas de template PDF, on a au moins une page vide
-  if (finalPdf.getPageCount() === 0) {
-    finalPdf.addPage();
+  // Sinon essayer depuis le fichier local
+  if (!templateLoaded && row.template_chemin && fs.existsSync(row.template_chemin)) {
+    try {
+      const templateBuffer = fs.readFileSync(row.template_chemin);
+      const templateDoc = await PDFLib.load(templateBuffer, { ignoreEncryption: true });
+      const pages = await finalPdf.copyPages(templateDoc, templateDoc.getPageIndices());
+      pages.forEach(p => finalPdf.addPage(p));
+      templateLoaded = true;
+    } catch (err) {
+      console.error('Erreur chargement template fichier:', err.message);
+    }
+  }
+
+  if (!templateLoaded) {
+    const page = finalPdf.addPage();
+    const { rgb } = require('pdf-lib');
+    page.drawText('Aucun template PDF trouve. Veuillez soumettre votre bordereau en format PDF.', { x: 50, y: 700, size: 14 });
   }
 
   // 2. Ajouter les fiches techniques sélectionnées
