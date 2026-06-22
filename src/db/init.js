@@ -17,6 +17,16 @@ if (url && url.startsWith('libsql://')) {
 async function initDb() {
   const r = await db.execute('SELECT COUNT(*) as c FROM categories');
   console.log(`Base de donnees connectee (${r.rows[0].c} categories)`);
+
+  const migrations = [
+    'ALTER TABLE bordereaux ADD COLUMN devis_fichier TEXT',
+    'ALTER TABLE bordereaux ADD COLUMN devis_texte TEXT',
+    'ALTER TABLE bordereaux ADD COLUMN template_fichier TEXT',
+    'ALTER TABLE bordereaux ADD COLUMN template_texte TEXT',
+  ];
+  for (const sql of migrations) {
+    try { await db.execute(sql); } catch (e) { /* colonne deja existante */ }
+  }
 }
 
 function getDb() {

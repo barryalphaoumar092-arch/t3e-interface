@@ -7,93 +7,209 @@
   </ol>
 </nav>
 
+<% if (typeof success !== 'undefined' || (typeof req !== 'undefined' && req.query && req.query.success)) { %>
+<div class="alert alert-success alert-dismissible fade show">
+  <i class="bi bi-check-circle"></i> Bordereau sauvegardé avec succès.
+  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+<% } %>
+
 <div class="row">
+  <!-- COLONNE PRINCIPALE -->
   <div class="col-md-8">
-    <div class="card mb-3">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <h5 class="mb-0"><i class="bi bi-pencil"></i> Bordereau #<%= bordereau.id %></h5>
-        <span class="badge badge-<%= bordereau.statut %>" style="font-size: 1rem;">
-          <%= bordereau.statut.charAt(0).toUpperCase() + bordereau.statut.slice(1) %>
-        </span>
-      </div>
-      <div class="card-body">
-        <form method="POST" action="/bordereaux/sauvegarder/<%= bordereau.id %>">
-          <div class="row mb-3">
+    <form method="POST" action="/bordereaux/sauvegarder/<%= bordereau.id %>" id="formEdit">
+
+      <!-- Infos projet -->
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h5 class="mb-0"><i class="bi bi-building"></i> Informations du projet</h5>
+          <span class="badge badge-<%= bordereau.statut %>" style="font-size: 1rem;"><%= bordereau.statut.charAt(0).toUpperCase() + bordereau.statut.slice(1) %></span>
+        </div>
+        <div class="card-body">
+          <% var readonly = bordereau.statut === 'approuve' ? 'readonly' : ''; %>
+          <% var projet = bordereau.contenu.projet || {}; %>
+          <div class="row mb-2">
             <div class="col-md-4">
               <label class="form-label">Numéro de projet</label>
-              <input type="text" name="numero_projet" class="form-control" value="<%= bordereau.numero_projet || '' %>" <%= bordereau.statut === 'approuve' ? 'readonly' : '' %>>
+              <input type="text" name="numero_projet" class="form-control" value="<%= projet.numero || bordereau.numero_projet || '' %>" <%= readonly %>>
             </div>
             <div class="col-md-8">
               <label class="form-label">Titre</label>
-              <input type="text" name="titre" class="form-control" value="<%= bordereau.titre %>" <%= bordereau.statut === 'approuve' ? 'readonly' : '' %>>
+              <input type="text" name="titre" class="form-control" value="<%= bordereau.titre %>" <%= readonly %>>
             </div>
           </div>
-
-          <% if (bordereau.contenu.source_fichier) { %>
-          <div class="alert alert-info">
-            <i class="bi bi-file-earmark"></i> Document source : <strong><%= bordereau.contenu.source_fichier %></strong>
+          <div class="row mb-2">
+            <div class="col-md-4">
+              <label class="form-label">Client</label>
+              <input type="text" name="client" class="form-control" value="<%= projet.client || '' %>" <%= readonly %>>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Architecte</label>
+              <input type="text" name="architecte" class="form-control" value="<%= projet.architecte || '' %>" <%= readonly %>>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Adresse</label>
+              <input type="text" name="adresse" class="form-control" value="<%= projet.adresse || '' %>" <%= readonly %>>
+            </div>
           </div>
-          <% } %>
+        </div>
+      </div>
 
-          <% if (bordereau.contenu.donnees && bordereau.contenu.donnees.length > 0) { %>
-          <h6>Données extraites du document source</h6>
-          <div class="table-responsive mb-3" style="max-height: 300px; overflow-y: auto;">
-            <table class="table table-sm table-bordered">
-              <thead>
+      <!-- Matériaux -->
+      <div class="card mb-3">
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+          <h5 class="mb-0"><i class="bi bi-box-seam"></i> Matériaux et fiches techniques</h5>
+          <span class="badge bg-light text-dark" id="countMat">0</span>
+        </div>
+        <div class="card-body p-0">
+          <% var materiaux = bordereau.contenu.materiaux_matches || []; %>
+          <% if (materiaux.length > 0) { %>
+          <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0" id="tableMat">
+              <thead class="table-light">
                 <tr>
-                  <% (bordereau.contenu.colonnes || []).forEach(function(col) { %>
-                    <th><%= col %></th>
-                  <% }) %>
+                  <th style="width:35px"><input type="checkbox" id="checkAll" checked></th>
+                  <th>Produit</th>
+                  <th>Fabricant</th>
+                  <th>Type</th>
+                  <th style="width:40px">FT</th>
+                  <th style="width:40px">SDS</th>
+                  <th style="width:55px">Score</th>
+                  <th style="width:35px"></th>
                 </tr>
               </thead>
               <tbody>
-                <% bordereau.contenu.donnees.forEach(function(row) { %>
-                <tr>
-                  <% (bordereau.contenu.colonnes || []).forEach(function(col) { %>
-                    <td><%= row[col] || '' %></td>
-                  <% }) %>
+                <% materiaux.forEach(function(m, i) { %>
+                <tr class="mat-row" data-index="<%= i %>">
+                  <td><input type="checkbox" class="mat-check" data-index="<%= i %>" <%= m.confirmed !== false ? 'checked' : '' %>></td>
+                  <td><%= m.nom || '' %></td>
+                  <td><%= m.fabricant || '' %></td>
+                  <td><span class="badge bg-secondary"><%= m.type_produit || '' %></span></td>
+                  <td>
+                    <% if (m.lien_fiche_technique) { %>
+                      <a href="<%= m.lien_fiche_technique %>" target="_blank" title="Fiche technique"><i class="bi bi-file-earmark-check text-success"></i></a>
+                    <% } else { %>
+                      <i class="bi bi-dash text-muted"></i>
+                    <% } %>
+                  </td>
+                  <td>
+                    <% if (m.lien_fiche_securite) { %>
+                      <a href="<%= m.lien_fiche_securite %>" target="_blank" title="Fiche SDS"><i class="bi bi-shield-check text-success"></i></a>
+                    <% } else { %>
+                      <i class="bi bi-dash text-muted"></i>
+                    <% } %>
+                  </td>
+                  <td>
+                    <% var scoreColor = m.score >= 60 ? 'success' : m.score >= 30 ? 'warning' : 'danger'; %>
+                    <span class="badge bg-<%= scoreColor %>"><%= m.score || 0 %></span>
+                  </td>
+                  <td><button type="button" class="btn btn-sm btn-outline-danger btn-remove" data-index="<%= i %>" title="Retirer"><i class="bi bi-x"></i></button></td>
                 </tr>
                 <% }) %>
               </tbody>
             </table>
           </div>
-          <% } %>
-
-          <% if (bordereau.contenu.materiaux_suggeres && bordereau.contenu.materiaux_suggeres.length > 0) { %>
-          <h6><i class="bi bi-box-seam"></i> Matériaux suggérés depuis la base de données</h6>
-          <div class="table-responsive mb-3">
-            <table class="table table-sm">
-              <thead><tr><th>Produit</th><th>Fabricant</th><th>Type</th><th>Fiche technique</th></tr></thead>
-              <tbody>
-                <% bordereau.contenu.materiaux_suggeres.forEach(function(m) { %>
-                <tr>
-                  <td><%= m.nom %></td>
-                  <td><%= m.fabricant %></td>
-                  <td><%= m.type %></td>
-                  <td><% if (m.fiche && m.fiche.startsWith('http')) { %><a href="<%= m.fiche %>" target="_blank"><i class="bi bi-file-earmark-text"></i> Voir</a><% } else { %>-<% } %></td>
-                </tr>
-                <% }) %>
-              </tbody>
-            </table>
+          <% } else { %>
+          <div class="p-3 text-muted text-center">
+            <i class="bi bi-info-circle"></i> Aucun matériau trouvé automatiquement. Utilisez la recherche ci-dessous pour en ajouter.
           </div>
           <% } %>
-
-          <div class="mb-3">
-            <label class="form-label">Contenu JSON (modifiable)</label>
-            <textarea name="contenu_json" class="form-control" rows="6" <%= bordereau.statut === 'approuve' ? 'readonly' : '' %>><%= JSON.stringify(bordereau.contenu, null, 2) %></textarea>
-          </div>
 
           <% if (bordereau.statut !== 'approuve') { %>
-          <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Sauvegarder</button>
+          <div class="p-3 border-top">
+            <div class="input-group">
+              <input type="text" id="searchMat" class="form-control" placeholder="Rechercher un matériau dans la base...">
+              <button type="button" class="btn btn-outline-primary" id="btnSearch"><i class="bi bi-search"></i> Chercher</button>
+            </div>
+            <div id="searchResults" class="mt-2" style="display:none;"></div>
+          </div>
           <% } %>
-          <a href="/bordereaux/pdf/<%= bordereau.id %>" class="btn btn-success"><i class="bi bi-file-pdf"></i> Télécharger PDF</a>
-        </form>
+        </div>
       </div>
-    </div>
+
+      <!-- Devis (pliable) -->
+      <% if (bordereau.contenu.devis) { %>
+      <div class="card mb-3">
+        <div class="card-header" style="cursor:pointer" data-bs-toggle="collapse" data-bs-target="#collapseDevis">
+          <i class="bi bi-file-earmark-text"></i> Devis source : <strong><%= bordereau.contenu.devis.source_fichier || bordereau.devis_fichier || '' %></strong>
+          <i class="bi bi-chevron-down float-end"></i>
+        </div>
+        <div class="collapse" id="collapseDevis">
+          <div class="card-body">
+            <% if (bordereau.contenu.devis.erreur) { %>
+              <div class="alert alert-warning"><%= bordereau.contenu.devis.erreur %></div>
+            <% } %>
+            <% if (bordereau.contenu.devis.tables && bordereau.contenu.devis.tables.length > 0) { %>
+              <% bordereau.contenu.devis.tables.forEach(function(table) { %>
+                <div class="table-responsive" style="max-height:300px;overflow-y:auto;">
+                  <table class="table table-sm table-bordered">
+                    <thead><tr><% (table.colonnes || []).forEach(function(c) { %><th><%= c %></th><% }) %></tr></thead>
+                    <tbody><% (table.donnees || []).slice(0,50).forEach(function(row) { %><tr><% (table.colonnes || []).forEach(function(c) { %><td><%= row[c] || '' %></td><% }) %></tr><% }) %></tbody>
+                  </table>
+                </div>
+              <% }) %>
+            <% } %>
+            <% if (bordereau.contenu.devis.texte_preview) { %>
+              <pre style="max-height:200px;overflow-y:auto;font-size:0.75rem;background:#f8f9fa;padding:10px;border-radius:4px;white-space:pre-wrap;"><%= bordereau.contenu.devis.texte_preview %></pre>
+            <% } %>
+          </div>
+        </div>
+      </div>
+      <% } %>
+
+      <!-- Template (pliable) -->
+      <% if (bordereau.contenu.template) { %>
+      <div class="card mb-3">
+        <div class="card-header" style="cursor:pointer" data-bs-toggle="collapse" data-bs-target="#collapseTemplate">
+          <i class="bi bi-file-earmark-word"></i> Modèle : <strong><%= bordereau.contenu.template.source_fichier || bordereau.template_fichier || '' %></strong>
+          <i class="bi bi-chevron-down float-end"></i>
+        </div>
+        <div class="collapse" id="collapseTemplate">
+          <div class="card-body">
+            <% if (bordereau.contenu.template.erreur) { %>
+              <div class="alert alert-warning"><%= bordereau.contenu.template.erreur %></div>
+            <% } else if (bordereau.contenu.template.texte_preview) { %>
+              <pre style="max-height:200px;overflow-y:auto;font-size:0.75rem;background:#f8f9fa;padding:10px;border-radius:4px;white-space:pre-wrap;"><%= bordereau.contenu.template.texte_preview %></pre>
+            <% } %>
+          </div>
+        </div>
+      </div>
+      <% } %>
+
+      <!-- Hidden JSON des matériaux -->
+      <input type="hidden" name="materiaux_json" id="materiauxJson" value='<%= JSON.stringify(materiaux) %>'>
+
+      <% if (bordereau.statut !== 'approuve') { %>
+      <div class="d-flex gap-2 mb-3">
+        <button type="submit" class="btn btn-primary btn-lg"><i class="bi bi-save"></i> Sauvegarder</button>
+        <a href="/bordereaux/pdf/<%= bordereau.id %>" class="btn btn-success btn-lg"><i class="bi bi-file-pdf"></i> Télécharger PDF</a>
+      </div>
+      <% } else { %>
+      <a href="/bordereaux/pdf/<%= bordereau.id %>" class="btn btn-success btn-lg mb-3"><i class="bi bi-file-pdf"></i> Télécharger PDF</a>
+      <% } %>
+
+    </form>
   </div>
 
+  <!-- SIDEBAR -->
   <div class="col-md-4">
-    <!-- Statut -->
+    <!-- Résumé -->
+    <div class="card mb-3">
+      <div class="card-header"><h6 class="mb-0"><i class="bi bi-bar-chart"></i> Résumé</h6></div>
+      <div class="card-body">
+        <% var nbFt = materiaux.filter(function(m){ return m.lien_fiche_technique; }).length; %>
+        <% var nbSds = materiaux.filter(function(m){ return m.lien_fiche_securite; }).length; %>
+        <div class="d-flex justify-content-between mb-1"><span>Matériaux trouvés</span><strong id="statTotal"><%= materiaux.length %></strong></div>
+        <div class="d-flex justify-content-between mb-1"><span>Avec fiche technique</span><strong class="text-success"><%= nbFt %></strong></div>
+        <div class="d-flex justify-content-between mb-1"><span>Avec fiche SDS</span><strong class="text-success"><%= nbSds %></strong></div>
+        <% var nbMissing = materiaux.filter(function(m){ return !m.lien_fiche_technique; }).length; %>
+        <% if (nbMissing > 0) { %>
+        <div class="d-flex justify-content-between"><span>Sans fiche technique</span><strong class="text-warning"><%= nbMissing %></strong></div>
+        <% } %>
+      </div>
+    </div>
+
+    <!-- Approbation -->
     <div class="card mb-3">
       <div class="card-header"><h6 class="mb-0">Cycle d'approbation</h6></div>
       <div class="card-body">
@@ -104,7 +220,6 @@
           <span class="status-arrow"><i class="bi bi-arrow-right"></i></span>
           <span class="status-step <%= bordereau.statut === 'approuve' ? 'active bg-success' : 'inactive' %>">Approuvé</span>
         </div>
-
         <% if (bordereau.statut === 'brouillon') { %>
         <form method="POST" action="/approbation/changer-statut/<%= bordereau.id %>">
           <input type="hidden" name="nouveau_statut" value="revise">
@@ -144,5 +259,81 @@
     </div>
   </div>
 </div>
+
+<script>
+var materiaux = <%= JSON.stringify(materiaux) %>;
+
+function updateHidden() {
+  document.getElementById('materiauxJson').value = JSON.stringify(materiaux);
+  document.getElementById('countMat').textContent = materiaux.filter(function(m) { return m.confirmed !== false; }).length;
+}
+updateHidden();
+
+document.getElementById('checkAll').addEventListener('change', function() {
+  var checked = this.checked;
+  materiaux.forEach(function(m) { m.confirmed = checked; });
+  document.querySelectorAll('.mat-check').forEach(function(cb) { cb.checked = checked; });
+  updateHidden();
+});
+
+document.querySelectorAll('.mat-check').forEach(function(cb) {
+  cb.addEventListener('change', function() {
+    var idx = parseInt(this.dataset.index);
+    materiaux[idx].confirmed = this.checked;
+    updateHidden();
+  });
+});
+
+document.querySelectorAll('.btn-remove').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var idx = parseInt(this.dataset.index);
+    materiaux.splice(idx, 1);
+    this.closest('tr').remove();
+    updateHidden();
+  });
+});
+
+document.getElementById('btnSearch').addEventListener('click', function() {
+  var q = document.getElementById('searchMat').value.trim();
+  if (!q) return;
+  fetch('/api/materiaux?q=' + encodeURIComponent(q))
+    .then(function(r) { return r.json(); })
+    .then(function(results) {
+      var div = document.getElementById('searchResults');
+      div.style.display = 'block';
+      if (results.length === 0) { div.innerHTML = '<p class="text-muted">Aucun résultat</p>'; return; }
+      var html = '<div class="list-group">';
+      results.slice(0, 10).forEach(function(m) {
+        html += '<button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center btn-add-mat" ' +
+          'data-mat=\'' + JSON.stringify(m).replace(/'/g, '&#39;') + '\'>' +
+          '<span><strong>' + (m.nom || '') + '</strong> — ' + (m.fabricant || '') + ' <span class="badge bg-secondary">' + (m.type_produit || '') + '</span></span>' +
+          '<span>' + (m.lien_ft ? '<i class="bi bi-file-earmark-check text-success me-1"></i>' : '') + (m.lien_sds ? '<i class="bi bi-shield-check text-success"></i>' : '') + '</span>' +
+          '</button>';
+      });
+      html += '</div>';
+      div.innerHTML = html;
+      div.querySelectorAll('.btn-add-mat').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var m = JSON.parse(this.dataset.mat);
+          materiaux.push({
+            id: m.id, nom: m.nom, fabricant: m.fabricant,
+            type_produit: m.type_produit, type_systeme: m.type_systeme,
+            dimension: m.dimension, unite: m.unite,
+            lien_fiche_technique: m.lien_ft, lien_fiche_securite: m.lien_sds,
+            score: 0, confirmed: true, source: 'manuel'
+          });
+          updateHidden();
+          this.classList.add('list-group-item-success');
+          this.disabled = true;
+          this.innerHTML = '<span><i class="bi bi-check"></i> Ajouté</span>';
+        });
+      });
+    });
+});
+
+document.getElementById('searchMat').addEventListener('keypress', function(e) {
+  if (e.key === 'Enter') { e.preventDefault(); document.getElementById('btnSearch').click(); }
+});
+</script>
 
 <%- include('partials/footer', { scripts: [] }) %>

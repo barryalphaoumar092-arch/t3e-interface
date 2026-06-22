@@ -21,8 +21,11 @@
     "@libsql/client": "^0.17.4",
     "ejs": "^6.0.1",
     "express": "^5.2.1",
+    "mammoth": "^1.12.0",
     "multer": "^2.2.0",
+    "pdf-parse": "^2.4.5",
     "pdfkit": "^0.19.1",
+    "word-extractor": "^1.0.4",
     "xlsx": "^0.18.5"
   }
 }
