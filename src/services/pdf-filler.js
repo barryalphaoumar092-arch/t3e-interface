@@ -10,7 +10,7 @@ async function fillTemplatePdf(templateBuffer, projet, materiaux, devisTexte, fi
   if (pages.length === 0) return pdfDoc;
 
   const page = pages[0];
-  const { height } = page.getSize();
+  const H = page.getSize().height;
 
   let mat = {};
   if (materiaux && materiaux.length > 0) {
@@ -20,12 +20,12 @@ async function fillTemplatePdf(templateBuffer, projet, materiaux, devisTexte, fi
     mat = { nom: f.titre || '', fabricant: f.source || '', type_produit: 'Fiche technique' };
   }
 
-  const description = [mat.type_produit, mat.type_systeme, mat.dimension].filter(Boolean).join(' — ');
-  const sectionItem = extract(devisTexte, /section\s*[:#(]?\s*([^\n\r]{1,40})/i);
-  const article = extract(devisTexte, /article\s*[:#]?\s*([^\n\r]{1,40})/i);
-  const revision = extract(devisTexte, /r[ée]vision\s*[:#]?\s*([^\n\r]{1,20})/i);
-  const delai = extract(devisTexte, /d[ée]lai\s*[:#]?\s*([^\n\r]{1,30})/i);
-  const numDessin = extract(devisTexte, /(?:dessin|drawing)\s*(?:no|num|#|:)\s*([^\n\r]{1,20})/i);
+  const desc = [mat.type_produit, mat.type_systeme, mat.dimension].filter(Boolean).join(' — ');
+  const sectionItem = ext(devisTexte, /section\s*[:#(]?\s*([^\n\r]{1,40})/i);
+  const article = ext(devisTexte, /article\s*[:#]?\s*([^\n\r]{1,40})/i);
+  const revision = ext(devisTexte, /r[ée]vision\s*[:#]?\s*([^\n\r]{1,20})/i);
+  const delai = ext(devisTexte, /d[ée]lai\s*[:#]?\s*([^\n\r]{1,30})/i);
+  const numDessin = ext(devisTexte, /(?:dessin|drawing)\s*(?:no|num|#|:)\s*([^\n\r]{1,20})/i);
   const nbFeuilles = fichesSelectionnees ? String(fichesSelectionnees.length) : '1';
 
   function w(val, x, y, opts) {
@@ -37,57 +37,42 @@ async function fillTemplatePdf(templateBuffer, projet, materiaux, devisTexte, fi
     });
   }
 
-  // === NOM DU PROJET / NUMÉRO DU PROJET ===
-  w(projet.client || projet.numero || '', 148, height - 143);
-  w(projet.numero || '', 165, height - 158);
+  // ===== EN-TÊTE PROJET =====
+  w(projet.client || '', 150, H - 128);
+  w(projet.numero || '', 168, H - 145);
 
-  // === IDENTIFICATION DE L'ENTREPRENEUR ===
-  w('Toitures Trois Étoiles', 90, height - 195);
-  w('Couvreur', 385, height - 195);
-  w(projet.adresse || '', 115, height - 222);
+  // ===== ENTREPRENEUR =====
+  w('Toitures Trois Étoiles', 88, H - 188);
+  w('Couvreur', 375, H - 188);
+  w(projet.adresse || '', 112, H - 213);
 
-  // === IDENTIFICATION - Checkboxes ===
-  // Cocher "Fiche technique" (3ème checkbox)
-  w('X', 213, height - 365, { size: 11, font: fontBold });
+  // ===== IDENTIFICATION - CHECKBOXES =====
+  w('X', 214, H - 318, { size: 10, font: fontBold });   // Fiche technique ☑
+  w('1', 488, H - 278, { size: 9 });                     // Ligne numéro
 
-  // Ligne numéro
-  w('1', 490, height - 325, { size: 10 });
+  // ===== CHAMPS IDENTIFICATION =====
+  w(mat.nom || '', 105, H - 338, { size: 9 });           // Titre
+  w(numDessin || '', 165, H - 357, { size: 8 });         // Numéro de dessins
+  w(nbFeuilles, 360, H - 357, { size: 8 });              // Nombre feuilles
+  w(revision || '', 468, H - 357, { size: 8 });          // Révision
+  w(desc || '', 130, H - 376, { size: 8 });              // Description
+  w(mat.fabricant || '', 138, H - 395, { size: 9 });     // Fournisseur
+  w(mat.fabricant || '', 332, H - 395, { size: 9 });     // Fabricant
 
-  // Titre
-  w(mat.nom || '', 108, height - 393, { size: 10 });
+  // ===== TEL QUE PLANS / EQUIVALENCE =====
+  w('X', 214, H - 414, { size: 10, font: fontBold });    // Tel que plans et devis ☑
+  w(sectionItem || '', 362, H - 414, { size: 8 });       // Section (item)
+  w(article || '', 320, H - 434, { size: 8 });           // Article
+  w(delai || '', 105, H - 453, { size: 8 });             // Délai
 
-  // Numéro de dessins / Nombre feuilles / Révision
-  w(numDessin || '', 168, height - 417);
-  w(nbFeuilles, 362, height - 417);
-  w(revision || '', 468, height - 417);
-
-  // Description
-  w(description || '', 133, height - 441, { size: 8 });
-
-  // Fournisseur / Fabricant
-  w(mat.fabricant || '', 140, height - 461);
-  w(mat.fabricant || '', 335, height - 461);
-
-  // Cocher "Tel que plans et devis"
-  w('X', 213, height - 481, { size: 11, font: fontBold });
-
-  // Section (item)
-  w(sectionItem || '', 365, height - 481);
-
-  // Article
-  w(article || '', 325, height - 501);
-
-  // Délai
-  w(delai || '', 108, height - 521);
-
-  // Remarque
+  // ===== REMARQUE =====
   const remarque = buildRemarque(materiaux, fichesSelectionnees);
-  w(remarque, 135, height - 552, { size: 7 });
+  w(remarque, 132, H - 480, { size: 7 });
 
   return pdfDoc;
 }
 
-function extract(text, regex) {
+function ext(text, regex) {
   if (!text) return '';
   const m = text.match(regex);
   return m ? m[1].trim() : '';
