@@ -255,94 +255,33 @@ router.post('/generer-pdf/:id', async (req, res) => {
   const materiaux = (contenu.materiaux_matches || []).filter(m => m.confirmed !== false);
 
   // 2. Construire le PDF final
+  const { fillTemplatePdf } = require('../services/pdf-filler');
   const finalPdf = await PDFLib.create();
   let templateLoaded = false;
 
-  // 2a. Copier le template original
+  // 2a. Charger le template et le REMPLIR avec les données
   if (row.template_data) {
     try {
       const templateBuffer = Buffer.from(row.template_data, 'base64');
       if (templateBuffer.length > 4 && templateBuffer.slice(0, 5).toString() === '%PDF-') {
-        const templateDoc = await PDFLib.load(templateBuffer, { ignoreEncryption: true });
-        const pages = await finalPdf.copyPages(templateDoc, templateDoc.getPageIndices());
+        const filledDoc = await fillTemplatePdf(templateBuffer, projet, materiaux);
+        const filledBuffer = await filledDoc.save();
+        const filledLoaded = await PDFLib.load(filledBuffer);
+        const pages = await finalPdf.copyPages(filledLoaded, filledLoaded.getPageIndices());
         pages.forEach(p => finalPdf.addPage(p));
         templateLoaded = true;
       }
     } catch (err) {
-      console.error('Erreur template:', err.message);
+      console.error('Erreur remplissage template:', err.message);
     }
   }
 
-  // 2b. Ajouter la page résumé remplie
-  const PDFDocument = require('pdfkit');
-  const chunks = [];
-  const summaryDoc = new PDFDocument({ size: 'LETTER', margin: 50 });
-  summaryDoc.on('data', c => chunks.push(c));
-  const summaryDone = new Promise(resolve => summaryDoc.on('end', () => resolve(Buffer.concat(chunks))));
-
-  summaryDoc.rect(50, 40, 512, 35).fill('#003366');
-  summaryDoc.fillColor('white').fontSize(14).font('Helvetica-Bold');
-  summaryDoc.text('TOITURES 3 ÉTOILES — BORDEREAU REMPLI', 60, 50, { width: 492, align: 'center' });
-  summaryDoc.fillColor('black').moveDown(1.5);
-
-  summaryDoc.fontSize(10).font('Helvetica-Bold');
-  summaryDoc.text(`Projet: ${projet.numero || 'N/A'}`, 50);
-  summaryDoc.font('Helvetica').text(`Titre: ${titre || row.titre || ''}`);
-  if (projet.client) summaryDoc.text(`Client: ${projet.client}`);
-  if (projet.architecte) summaryDoc.text(`Architecte: ${projet.architecte}`);
-  if (projet.adresse) summaryDoc.text(`Adresse: ${projet.adresse}`);
-  summaryDoc.text(`Préparé par: ${row.cree_par || ''} | Date: ${row.created_at || ''}`);
-  summaryDoc.text(`Statut: ${(row.statut || 'brouillon').toUpperCase()}`);
-  summaryDoc.moveDown();
-
-  summaryDoc.moveTo(50, summaryDoc.y).lineTo(562, summaryDoc.y).stroke('#003366');
-  summaryDoc.moveDown(0.5);
-
-  if (materiaux.length > 0) {
-    summaryDoc.fontSize(12).font('Helvetica-Bold').text('MATÉRIAUX ET FICHES TECHNIQUES');
-    summaryDoc.moveDown(0.5);
-    summaryDoc.fontSize(8).font('Helvetica');
-
-    materiaux.forEach((m, i) => {
-      if (summaryDoc.y > 680) summaryDoc.addPage();
-      summaryDoc.font('Helvetica-Bold').fontSize(9).text(`${i + 1}. ${m.nom || ''} — ${m.fabricant || ''}`);
-      summaryDoc.font('Helvetica').fontSize(8);
-      if (m.type_produit) summaryDoc.text(`   Type: ${m.type_produit}${m.type_systeme ? ' | Système: ' + m.type_systeme : ''}`);
-      if (m.dimension) summaryDoc.text(`   Dimension: ${m.dimension}${m.unite ? ' (' + m.unite + ')' : ''}`);
-      if (m.lien_fiche_technique) summaryDoc.fillColor('blue').text(`   Fiche technique: ${m.lien_fiche_technique}`, { link: m.lien_fiche_technique }).fillColor('black');
-      if (m.lien_fiche_securite) summaryDoc.fillColor('blue').text(`   Fiche SDS: ${m.lien_fiche_securite}`, { link: m.lien_fiche_securite }).fillColor('black');
-      summaryDoc.moveDown(0.3);
-    });
+  if (!templateLoaded) {
+    const page = finalPdf.addPage();
+    page.drawText('Template PDF non disponible. Veuillez soumettre un vrai fichier PDF.', { x: 50, y: 700, size: 12 });
   }
 
-  if (fichesSelectionnees.length > 0) {
-    summaryDoc.moveDown();
-    summaryDoc.fontSize(12).font('Helvetica-Bold').text('FICHES TECHNIQUES JOINTES');
-    summaryDoc.moveDown(0.3);
-    summaryDoc.fontSize(9).font('Helvetica');
-    fichesSelectionnees.forEach((f, i) => {
-      summaryDoc.text(`${i + 1}. ${f.titre} (${f.source || ''})`);
-    });
-  }
-
-  summaryDoc.moveDown(2);
-  summaryDoc.moveTo(50, summaryDoc.y).lineTo(562, summaryDoc.y).stroke();
-  summaryDoc.moveDown();
-  summaryDoc.fontSize(9);
-  summaryDoc.text('Préparé par: ___________________________    Date: _______________');
-  summaryDoc.moveDown(0.6);
-  summaryDoc.text('Révisé par:  ___________________________    Date: _______________');
-  summaryDoc.moveDown(0.6);
-  summaryDoc.text('Approuvé par: __________________________    Date: _______________');
-
-  summaryDoc.end();
-  const summaryBuffer = await summaryDone;
-
-  const summaryPdfDoc = await PDFLib.load(summaryBuffer);
-  const summaryPages = await finalPdf.copyPages(summaryPdfDoc, summaryPdfDoc.getPageIndices());
-  summaryPages.forEach(p => finalPdf.addPage(p));
-
-  // 2c. Ajouter les fiches techniques PDF sélectionnées
+  // 3. Ajouter les fiches techniques PDF sélectionnées
   for (const fiche of fichesSelectionnees) {
     const ftPath = fiche.chemin_fichier ? path.join(__dirname, '..', '..', fiche.chemin_fichier) : null;
     if (ftPath && fs.existsSync(ftPath) && ftPath.toLowerCase().endsWith('.pdf')) {
