@@ -109,6 +109,28 @@ router.post('/creer', uploadFields, async (req, res) => {
     const ext = path.extname(templateFile.originalname).toLowerCase();
     if (ext === '.pdf') {
       templateData = fs.readFileSync(templateFile.path).toString('base64');
+    } else if (ext === '.doc' || ext === '.docx') {
+      const PDFDocument = require('pdfkit');
+      const wordText = templateTexte || 'Bordereau';
+      const pdfChunks = [];
+      const wordPdf = new PDFDocument({ size: 'LETTER', margin: 50 });
+      wordPdf.on('data', c => pdfChunks.push(c));
+      const wordPdfDone = new Promise(resolve => wordPdf.on('end', () => resolve(Buffer.concat(pdfChunks))));
+      wordPdf.fontSize(11).font('Helvetica');
+      const lines = wordText.split('\n');
+      for (const line of lines) {
+        if (wordPdf.y > 720) wordPdf.addPage();
+        const trimmed = line.trim();
+        if (trimmed.length > 0 && trimmed === trimmed.toUpperCase() && trimmed.length > 3) {
+          wordPdf.font('Helvetica-Bold').text(trimmed);
+          wordPdf.font('Helvetica');
+        } else {
+          wordPdf.text(line);
+        }
+      }
+      wordPdf.end();
+      const wordBuffer = await wordPdfDone;
+      templateData = wordBuffer.toString('base64');
     }
   }
 
