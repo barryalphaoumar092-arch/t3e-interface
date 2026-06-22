@@ -7,13 +7,6 @@
   </ol>
 </nav>
 
-<% if (typeof success !== 'undefined' || (typeof req !== 'undefined' && req.query && req.query.success)) { %>
-<div class="alert alert-success alert-dismissible fade show">
-  <i class="bi bi-check-circle"></i> Bordereau sauvegardé avec succès.
-  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-</div>
-<% } %>
-
 <div class="row">
   <!-- COLONNE PRINCIPALE -->
   <div class="col-md-8">
@@ -55,75 +48,86 @@
         </div>
       </div>
 
-      <!-- Matériaux -->
+      <!-- Matériaux trouvés automatiquement -->
+      <% var materiaux = bordereau.contenu.materiaux_matches || []; %>
+      <% if (materiaux.length > 0) { %>
       <div class="card mb-3">
-        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-          <h5 class="mb-0"><i class="bi bi-box-seam"></i> Matériaux et fiches techniques</h5>
-          <span class="badge bg-light text-dark" id="countMat">0</span>
+        <div class="card-header bg-info text-white">
+          <h5 class="mb-0"><i class="bi bi-box-seam"></i> Matériaux détectés dans le devis</h5>
         </div>
         <div class="card-body p-0">
-          <% var materiaux = bordereau.contenu.materiaux_matches || []; %>
-          <% if (materiaux.length > 0) { %>
           <div class="table-responsive">
-            <table class="table table-sm table-hover mb-0" id="tableMat">
+            <table class="table table-sm table-hover mb-0">
               <thead class="table-light">
-                <tr>
-                  <th style="width:35px"><input type="checkbox" id="checkAll" checked></th>
-                  <th>Produit</th>
-                  <th>Fabricant</th>
-                  <th>Type</th>
-                  <th style="width:40px">FT</th>
-                  <th style="width:40px">SDS</th>
-                  <th style="width:55px">Score</th>
-                  <th style="width:35px"></th>
-                </tr>
+                <tr><th>Produit</th><th>Fabricant</th><th>Type</th><th>Score</th></tr>
               </thead>
               <tbody>
-                <% materiaux.forEach(function(m, i) { %>
-                <tr class="mat-row" data-index="<%= i %>">
-                  <td><input type="checkbox" class="mat-check" data-index="<%= i %>" <%= m.confirmed !== false ? 'checked' : '' %>></td>
+                <% materiaux.forEach(function(m) { %>
+                <tr>
                   <td><%= m.nom || '' %></td>
                   <td><%= m.fabricant || '' %></td>
                   <td><span class="badge bg-secondary"><%= m.type_produit || '' %></span></td>
                   <td>
-                    <% if (m.lien_fiche_technique) { %>
-                      <a href="<%= m.lien_fiche_technique %>" target="_blank" title="Fiche technique"><i class="bi bi-file-earmark-check text-success"></i></a>
-                    <% } else { %>
-                      <i class="bi bi-dash text-muted"></i>
-                    <% } %>
+                    <% var sc = m.score >= 60 ? 'success' : m.score >= 30 ? 'warning' : 'danger'; %>
+                    <span class="badge bg-<%= sc %>"><%= m.score || 0 %></span>
                   </td>
-                  <td>
-                    <% if (m.lien_fiche_securite) { %>
-                      <a href="<%= m.lien_fiche_securite %>" target="_blank" title="Fiche SDS"><i class="bi bi-shield-check text-success"></i></a>
-                    <% } else { %>
-                      <i class="bi bi-dash text-muted"></i>
-                    <% } %>
-                  </td>
-                  <td>
-                    <% var scoreColor = m.score >= 60 ? 'success' : m.score >= 30 ? 'warning' : 'danger'; %>
-                    <span class="badge bg-<%= scoreColor %>"><%= m.score || 0 %></span>
-                  </td>
-                  <td><button type="button" class="btn btn-sm btn-outline-danger btn-remove" data-index="<%= i %>" title="Retirer"><i class="bi bi-x"></i></button></td>
                 </tr>
                 <% }) %>
               </tbody>
             </table>
           </div>
-          <% } else { %>
-          <div class="p-3 text-muted text-center">
-            <i class="bi bi-info-circle"></i> Aucun matériau trouvé automatiquement. Utilisez la recherche ci-dessous pour en ajouter.
-          </div>
-          <% } %>
+        </div>
+      </div>
+      <% } %>
 
-          <% if (bordereau.statut !== 'approuve') { %>
-          <div class="p-3 border-top">
-            <div class="input-group">
-              <input type="text" id="searchMat" class="form-control" placeholder="Rechercher un matériau dans la base...">
-              <button type="button" class="btn btn-outline-primary" id="btnSearch"><i class="bi bi-search"></i> Chercher</button>
-            </div>
-            <div id="searchResults" class="mt-2" style="display:none;"></div>
+      <!-- SÉLECTION DES FICHES TECHNIQUES -->
+      <div class="card mb-3">
+        <div class="card-header bg-success text-white">
+          <h5 class="mb-0"><i class="bi bi-file-earmark-pdf"></i> Sélectionner les fiches techniques à joindre</h5>
+        </div>
+        <div class="card-body">
+          <p class="text-muted mb-2">Sélectionnez les fiches techniques qui seront ajoutées à la suite du bordereau dans le PDF final.</p>
+
+          <div class="mb-3">
+            <input type="text" id="searchFT" class="form-control" placeholder="Rechercher une fiche technique...">
           </div>
-          <% } %>
+
+          <% var fichesSelect = bordereau.contenu.fiches_selectionnees || []; %>
+          <% var fichesIds = fichesSelect.map(function(f) { return f.id; }); %>
+
+          <div id="selectedFT" class="mb-3">
+            <% if (fichesSelect.length > 0) { %>
+            <h6><i class="bi bi-check-circle text-success"></i> Fiches sélectionnées (<span id="countFT"><%= fichesSelect.length %></span>)</h6>
+            <div class="list-group mb-2" id="selectedList">
+              <% fichesSelect.forEach(function(f) { %>
+              <div class="list-group-item d-flex justify-content-between align-items-center selected-ft" data-id="<%= f.id %>" data-titre="<%= f.titre %>" data-fichier="<%= f.nom_fichier %>" data-chemin="<%= f.chemin_fichier %>" data-source="<%= f.source %>">
+                <span><i class="bi bi-file-pdf text-danger"></i> <strong><%= f.titre %></strong> <small class="text-muted">(<%= f.source %>)</small></span>
+                <button type="button" class="btn btn-sm btn-outline-danger btn-remove-ft"><i class="bi bi-x"></i></button>
+              </div>
+              <% }) %>
+            </div>
+            <% } else { %>
+            <h6><i class="bi bi-info-circle"></i> Aucune fiche sélectionnée — <span id="countFT">0</span></h6>
+            <div class="list-group mb-2" id="selectedList"></div>
+            <% } %>
+          </div>
+
+          <h6>Base de connaissances — Fiches techniques disponibles</h6>
+          <div style="max-height:400px;overflow-y:auto;" id="ftList">
+            <% var currentSource = ''; %>
+            <% ftDocs.forEach(function(doc) { %>
+              <% if (doc.source !== currentSource) { currentSource = doc.source; %>
+                <div class="ft-group fw-bold text-primary mt-2 mb-1"><%= doc.source || 'Autre' %></div>
+              <% } %>
+              <div class="ft-item d-flex justify-content-between align-items-center border-bottom py-1 px-2" data-search="<%= (doc.titre + ' ' + doc.source + ' ' + doc.nom_fichier).toLowerCase() %>" data-id="<%= doc.id %>" data-titre="<%= doc.titre %>" data-fichier="<%= doc.nom_fichier %>" data-chemin="<%= doc.chemin_fichier %>" data-source="<%= doc.source %>">
+                <span class="small">
+                  <i class="bi bi-file-pdf text-danger"></i> <%= doc.titre %>
+                  <small class="text-muted">(<%= doc.nom_fichier %>)</small>
+                </span>
+                <button type="button" class="btn btn-sm btn-outline-success btn-add-ft <%= fichesIds.indexOf(doc.id) >= 0 ? 'd-none' : '' %>"><i class="bi bi-plus"></i></button>
+              </div>
+            <% }) %>
+          </div>
         </div>
       </div>
 
@@ -131,17 +135,14 @@
       <% if (bordereau.contenu.devis) { %>
       <div class="card mb-3">
         <div class="card-header" style="cursor:pointer" data-bs-toggle="collapse" data-bs-target="#collapseDevis">
-          <i class="bi bi-file-earmark-text"></i> Devis source : <strong><%= bordereau.contenu.devis.source_fichier || bordereau.devis_fichier || '' %></strong>
+          <i class="bi bi-file-earmark-text"></i> Devis : <strong><%= bordereau.contenu.devis.source_fichier || '' %></strong>
           <i class="bi bi-chevron-down float-end"></i>
         </div>
         <div class="collapse" id="collapseDevis">
           <div class="card-body">
-            <% if (bordereau.contenu.devis.erreur) { %>
-              <div class="alert alert-warning"><%= bordereau.contenu.devis.erreur %></div>
-            <% } %>
             <% if (bordereau.contenu.devis.tables && bordereau.contenu.devis.tables.length > 0) { %>
               <% bordereau.contenu.devis.tables.forEach(function(table) { %>
-                <div class="table-responsive" style="max-height:300px;overflow-y:auto;">
+                <div class="table-responsive" style="max-height:250px;overflow-y:auto;">
                   <table class="table table-sm table-bordered">
                     <thead><tr><% (table.colonnes || []).forEach(function(c) { %><th><%= c %></th><% }) %></tr></thead>
                     <tbody><% (table.donnees || []).slice(0,50).forEach(function(row) { %><tr><% (table.colonnes || []).forEach(function(c) { %><td><%= row[c] || '' %></td><% }) %></tr><% }) %></tbody>
@@ -150,7 +151,7 @@
               <% }) %>
             <% } %>
             <% if (bordereau.contenu.devis.texte_preview) { %>
-              <pre style="max-height:200px;overflow-y:auto;font-size:0.75rem;background:#f8f9fa;padding:10px;border-radius:4px;white-space:pre-wrap;"><%= bordereau.contenu.devis.texte_preview %></pre>
+              <pre style="max-height:150px;overflow-y:auto;font-size:0.75rem;background:#f8f9fa;padding:10px;border-radius:4px;white-space:pre-wrap;"><%= bordereau.contenu.devis.texte_preview %></pre>
             <% } %>
           </div>
         </div>
@@ -161,23 +162,21 @@
       <% if (bordereau.contenu.template) { %>
       <div class="card mb-3">
         <div class="card-header" style="cursor:pointer" data-bs-toggle="collapse" data-bs-target="#collapseTemplate">
-          <i class="bi bi-file-earmark-word"></i> Modèle : <strong><%= bordereau.contenu.template.source_fichier || bordereau.template_fichier || '' %></strong>
+          <i class="bi bi-file-earmark-word"></i> Modèle bordereau : <strong><%= bordereau.contenu.template.source_fichier || '' %></strong>
           <i class="bi bi-chevron-down float-end"></i>
         </div>
         <div class="collapse" id="collapseTemplate">
           <div class="card-body">
-            <% if (bordereau.contenu.template.erreur) { %>
-              <div class="alert alert-warning"><%= bordereau.contenu.template.erreur %></div>
-            <% } else if (bordereau.contenu.template.texte_preview) { %>
-              <pre style="max-height:200px;overflow-y:auto;font-size:0.75rem;background:#f8f9fa;padding:10px;border-radius:4px;white-space:pre-wrap;"><%= bordereau.contenu.template.texte_preview %></pre>
+            <% if (bordereau.contenu.template.texte_preview) { %>
+              <pre style="max-height:150px;overflow-y:auto;font-size:0.75rem;background:#f8f9fa;padding:10px;border-radius:4px;white-space:pre-wrap;"><%= bordereau.contenu.template.texte_preview %></pre>
             <% } %>
           </div>
         </div>
       </div>
       <% } %>
 
-      <!-- Hidden JSON des matériaux -->
       <input type="hidden" name="materiaux_json" id="materiauxJson" value='<%= JSON.stringify(materiaux) %>'>
+      <input type="hidden" name="fiches_json" id="fichesJson" value='<%= JSON.stringify(bordereau.contenu.fiches_selectionnees || []) %>'>
 
       <% if (bordereau.statut !== 'approuve') { %>
       <div class="d-flex gap-2 mb-3">
@@ -193,23 +192,17 @@
 
   <!-- SIDEBAR -->
   <div class="col-md-4">
-    <!-- Résumé -->
     <div class="card mb-3">
       <div class="card-header"><h6 class="mb-0"><i class="bi bi-bar-chart"></i> Résumé</h6></div>
       <div class="card-body">
-        <% var nbFt = materiaux.filter(function(m){ return m.lien_fiche_technique; }).length; %>
-        <% var nbSds = materiaux.filter(function(m){ return m.lien_fiche_securite; }).length; %>
-        <div class="d-flex justify-content-between mb-1"><span>Matériaux trouvés</span><strong id="statTotal"><%= materiaux.length %></strong></div>
-        <div class="d-flex justify-content-between mb-1"><span>Avec fiche technique</span><strong class="text-success"><%= nbFt %></strong></div>
-        <div class="d-flex justify-content-between mb-1"><span>Avec fiche SDS</span><strong class="text-success"><%= nbSds %></strong></div>
-        <% var nbMissing = materiaux.filter(function(m){ return !m.lien_fiche_technique; }).length; %>
-        <% if (nbMissing > 0) { %>
-        <div class="d-flex justify-content-between"><span>Sans fiche technique</span><strong class="text-warning"><%= nbMissing %></strong></div>
+        <div class="d-flex justify-content-between mb-1"><span>Matériaux détectés</span><strong><%= materiaux.length %></strong></div>
+        <div class="d-flex justify-content-between mb-1"><span>Fiches techniques jointes</span><strong class="text-success" id="statFT"><%= (bordereau.contenu.fiches_selectionnees || []).length %></strong></div>
+        <% if (bordereau.template_fichier) { %>
+        <div class="d-flex justify-content-between"><span>Template</span><strong class="text-primary"><%= bordereau.template_fichier %></strong></div>
         <% } %>
       </div>
     </div>
 
-    <!-- Approbation -->
     <div class="card mb-3">
       <div class="card-header"><h6 class="mb-0">Cycle d'approbation</h6></div>
       <div class="card-body">
@@ -235,17 +228,16 @@
           <button type="submit" class="btn btn-success w-100"><i class="bi bi-check-circle"></i> Approuver</button>
         </form>
         <% } else { %>
-        <div class="alert alert-success mb-0"><i class="bi bi-check-circle"></i> Ce bordereau est approuvé.</div>
+        <div class="alert alert-success mb-0"><i class="bi bi-check-circle"></i> Approuvé.</div>
         <% } %>
       </div>
     </div>
 
-    <!-- Historique -->
     <div class="card">
       <div class="card-header"><h6 class="mb-0">Historique</h6></div>
       <ul class="list-group list-group-flush">
         <% historique.forEach(function(h) { %>
-        <li class="list-group-item">
+        <li class="list-group-item py-1">
           <small class="text-muted"><%= h.date %></small><br>
           <strong><%= h.par %></strong> : <%= h.action %>
           <% if (h.nouveau) { %><span class="badge badge-<%= h.nouveau %>"><%= h.nouveau %></span><% } %>
@@ -261,79 +253,83 @@
 </div>
 
 <script>
-var materiaux = <%= JSON.stringify(materiaux) %>;
+var fichesSelectionnees = <%= JSON.stringify(bordereau.contenu.fiches_selectionnees || []) %>;
 
-function updateHidden() {
-  document.getElementById('materiauxJson').value = JSON.stringify(materiaux);
-  document.getElementById('countMat').textContent = materiaux.filter(function(m) { return m.confirmed !== false; }).length;
+function updateFichesHidden() {
+  document.getElementById('fichesJson').value = JSON.stringify(fichesSelectionnees);
+  document.getElementById('countFT').textContent = fichesSelectionnees.length;
+  document.getElementById('statFT').textContent = fichesSelectionnees.length;
 }
-updateHidden();
 
-document.getElementById('checkAll').addEventListener('change', function() {
-  var checked = this.checked;
-  materiaux.forEach(function(m) { m.confirmed = checked; });
-  document.querySelectorAll('.mat-check').forEach(function(cb) { cb.checked = checked; });
-  updateHidden();
-});
-
-document.querySelectorAll('.mat-check').forEach(function(cb) {
-  cb.addEventListener('change', function() {
-    var idx = parseInt(this.dataset.index);
-    materiaux[idx].confirmed = this.checked;
-    updateHidden();
+function renderSelected() {
+  var list = document.getElementById('selectedList');
+  list.innerHTML = '';
+  fichesSelectionnees.forEach(function(f, i) {
+    var div = document.createElement('div');
+    div.className = 'list-group-item d-flex justify-content-between align-items-center';
+    div.innerHTML = '<span><i class="bi bi-file-pdf text-danger"></i> <strong>' + f.titre + '</strong> <small class="text-muted">(' + (f.source||'') + ')</small></span>' +
+      '<button type="button" class="btn btn-sm btn-outline-danger btn-remove-ft" data-idx="' + i + '"><i class="bi bi-x"></i></button>';
+    list.appendChild(div);
   });
-});
-
-document.querySelectorAll('.btn-remove').forEach(function(btn) {
-  btn.addEventListener('click', function() {
-    var idx = parseInt(this.dataset.index);
-    materiaux.splice(idx, 1);
-    this.closest('tr').remove();
-    updateHidden();
-  });
-});
-
-document.getElementById('btnSearch').addEventListener('click', function() {
-  var q = document.getElementById('searchMat').value.trim();
-  if (!q) return;
-  fetch('/api/materiaux?q=' + encodeURIComponent(q))
-    .then(function(r) { return r.json(); })
-    .then(function(results) {
-      var div = document.getElementById('searchResults');
-      div.style.display = 'block';
-      if (results.length === 0) { div.innerHTML = '<p class="text-muted">Aucun résultat</p>'; return; }
-      var html = '<div class="list-group">';
-      results.slice(0, 10).forEach(function(m) {
-        html += '<button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center btn-add-mat" ' +
-          'data-mat=\'' + JSON.stringify(m).replace(/'/g, '&#39;') + '\'>' +
-          '<span><strong>' + (m.nom || '') + '</strong> — ' + (m.fabricant || '') + ' <span class="badge bg-secondary">' + (m.type_produit || '') + '</span></span>' +
-          '<span>' + (m.lien_ft ? '<i class="bi bi-file-earmark-check text-success me-1"></i>' : '') + (m.lien_sds ? '<i class="bi bi-shield-check text-success"></i>' : '') + '</span>' +
-          '</button>';
-      });
-      html += '</div>';
-      div.innerHTML = html;
-      div.querySelectorAll('.btn-add-mat').forEach(function(btn) {
-        btn.addEventListener('click', function() {
-          var m = JSON.parse(this.dataset.mat);
-          materiaux.push({
-            id: m.id, nom: m.nom, fabricant: m.fabricant,
-            type_produit: m.type_produit, type_systeme: m.type_systeme,
-            dimension: m.dimension, unite: m.unite,
-            lien_fiche_technique: m.lien_ft, lien_fiche_securite: m.lien_sds,
-            score: 0, confirmed: true, source: 'manuel'
-          });
-          updateHidden();
-          this.classList.add('list-group-item-success');
-          this.disabled = true;
-          this.innerHTML = '<span><i class="bi bi-check"></i> Ajouté</span>';
-        });
-      });
+  list.querySelectorAll('.btn-remove-ft').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var idx = parseInt(this.dataset.idx);
+      var removedId = fichesSelectionnees[idx].id;
+      fichesSelectionnees.splice(idx, 1);
+      renderSelected();
+      updateFichesHidden();
+      var addBtn = document.querySelector('.ft-item[data-id="' + removedId + '"] .btn-add-ft');
+      if (addBtn) addBtn.classList.remove('d-none');
     });
+  });
+  updateFichesHidden();
+}
+
+document.querySelectorAll('.btn-add-ft').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var item = this.closest('.ft-item');
+    fichesSelectionnees.push({
+      id: parseInt(item.dataset.id),
+      titre: item.dataset.titre,
+      nom_fichier: item.dataset.fichier,
+      chemin_fichier: item.dataset.chemin,
+      source: item.dataset.source
+    });
+    this.classList.add('d-none');
+    renderSelected();
+  });
 });
 
-document.getElementById('searchMat').addEventListener('keypress', function(e) {
-  if (e.key === 'Enter') { e.preventDefault(); document.getElementById('btnSearch').click(); }
+document.querySelectorAll('.btn-remove-ft').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var idx = parseInt(this.dataset.idx);
+    if (isNaN(idx)) {
+      var item = this.closest('.selected-ft');
+      if (item) {
+        var id = parseInt(item.dataset.id);
+        fichesSelectionnees = fichesSelectionnees.filter(function(f) { return f.id !== id; });
+        var addBtn = document.querySelector('.ft-item[data-id="' + id + '"] .btn-add-ft');
+        if (addBtn) addBtn.classList.remove('d-none');
+      }
+    } else {
+      var removedId = fichesSelectionnees[idx].id;
+      fichesSelectionnees.splice(idx, 1);
+      var addBtn = document.querySelector('.ft-item[data-id="' + removedId + '"] .btn-add-ft');
+      if (addBtn) addBtn.classList.remove('d-none');
+    }
+    renderSelected();
+  });
 });
+
+document.getElementById('searchFT').addEventListener('input', function() {
+  var q = this.value.toLowerCase();
+  document.querySelectorAll('.ft-item').forEach(function(item) {
+    item.style.display = item.dataset.search.includes(q) ? '' : 'none';
+  });
+  document.querySelectorAll('.ft-group').forEach(function(g) { g.style.display = q ? 'none' : ''; });
+});
+
+updateFichesHidden();
 </script>
 
 <%- include('partials/footer', { scripts: [] }) %>

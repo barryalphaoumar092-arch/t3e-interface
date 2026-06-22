@@ -23,6 +23,8 @@ async function initDb() {
     'ALTER TABLE bordereaux ADD COLUMN devis_texte TEXT',
     'ALTER TABLE bordereaux ADD COLUMN template_fichier TEXT',
     'ALTER TABLE bordereaux ADD COLUMN template_texte TEXT',
+    'ALTER TABLE bordereaux ADD COLUMN template_chemin TEXT',
+    'ALTER TABLE bordereaux ADD COLUMN fiches_selectionnees TEXT',
   ];
   for (const sql of migrations) {
     try { await db.execute(sql); } catch (e) { /* colonne deja existante */ }
