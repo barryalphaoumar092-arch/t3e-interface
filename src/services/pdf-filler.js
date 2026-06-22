@@ -38,8 +38,8 @@ async function fillTemplatePdf(templateBuffer, projet, materiaux, devisTexte, fi
   // Coordonnées Y mesurées depuis la grille de calibration (y=0 en bas)
 
   // ===== EN-TÊTE PROJET =====
-  w(projet.client || '', 165, 662);              // NOM DU PROJET
-  w(projet.numero || '', 175, 648);              // NUMÉRO DU PROJET
+  w(projet.client || '', 165, 665);              // NOM DU PROJET
+  w(projet.numero || '', 175, 651);              // NUMÉRO DU PROJET
 
   // ===== ENTREPRENEUR =====
   w('Toitures Trois Étoiles', 100, 615);         // NOM
@@ -47,7 +47,7 @@ async function fillTemplatePdf(templateBuffer, projet, materiaux, devisTexte, fi
   w(projet.adresse || '', 125, 588);             // ADRESSE
 
   // ===== IDENTIFICATION - CHECKBOXES =====
-  w('X', 258, 500, { size: 11, font: fontBold });  // Fiche technique ☑
+  w('X', 251, 500, { size: 10, font: fontBold });   // Fiche technique ☑
 
   // Ligne numéro
   w('1', 500, 537);                               // Ligne numéro (ligne Dessin d'atelier)
@@ -62,7 +62,7 @@ async function fillTemplatePdf(templateBuffer, projet, materiaux, devisTexte, fi
   w(mat.fabricant || '', 360, 438);               // Fabricant
 
   // ===== TEL QUE PLANS / EQUIVALENCE =====
-  w('X', 258, 420, { size: 11, font: fontBold });  // Tel que plans et devis ☑
+  w('X', 251, 420, { size: 10, font: fontBold });   // Tel que plans et devis ☑
   w(sectionItem || '', 395, 420, { size: 8 });    // Section (item)
   w(article || '', 355, 402, { size: 8 });        // Article
   w(delai || '', 110, 388, { size: 8 });          // Délai

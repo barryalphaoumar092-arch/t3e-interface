@@ -206,10 +206,10 @@ router.post('/sauvegarder/:id', async (req, res) => {
 
   const contenu = JSON.parse(current.rows[0].contenu || '{}');
   contenu.projet = contenu.projet || {};
-  contenu.projet.numero = numero_projet || '';
-  contenu.projet.client = client || '';
-  contenu.projet.adresse = adresse || '';
-  contenu.projet.architecte = architecte || '';
+  contenu.projet.numero = numero_projet || contenu.projet.numero || '';
+  contenu.projet.client = client || contenu.projet.client || '';
+  contenu.projet.adresse = adresse || contenu.projet.adresse || '';
+  contenu.projet.architecte = architecte || contenu.projet.architecte || '';
 
   if (materiaux_json) {
     try { contenu.materiaux_matches = JSON.parse(materiaux_json); } catch (e) {}
@@ -238,10 +238,10 @@ router.post('/generer-pdf/:id', async (req, res) => {
   const row = current.rows[0];
   const contenu = JSON.parse(row.contenu || '{}');
   contenu.projet = contenu.projet || {};
-  if (titre) contenu.projet.numero = numero_projet || '';
-  if (client) contenu.projet.client = client || '';
-  if (adresse) contenu.projet.adresse = adresse || '';
-  if (architecte) contenu.projet.architecte = architecte || '';
+  contenu.projet.numero = numero_projet || contenu.projet.numero || '';
+  contenu.projet.client = client || contenu.projet.client || '';
+  contenu.projet.adresse = adresse || contenu.projet.adresse || '';
+  contenu.projet.architecte = architecte || contenu.projet.architecte || '';
   if (materiaux_json) { try { contenu.materiaux_matches = JSON.parse(materiaux_json); } catch (e) {} }
   if (fiches_json) { try { contenu.fiches_selectionnees = JSON.parse(fiches_json); } catch (e) {} }
 
