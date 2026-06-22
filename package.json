@@ -1,12 +1,12 @@
 {
   "name": "t3e-interface",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "server.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
-    "start": "node server.js",
-    "db:init": "node src/scripts/import-documents.js",
-    "db:verify": "node src/scripts/verifier-db.js",
-    "db:search": "node src/scripts/rechercher.js"
+    "start": "node server.js"
   },
   "keywords": [
     "t3e",
@@ -21,10 +21,8 @@
     "@libsql/client": "^0.17.4",
     "ejs": "^6.0.1",
     "express": "^5.2.1",
-    "localtunnel": "^2.0.2",
     "multer": "^2.2.0",
     "pdfkit": "^0.19.1",
-    "sql.js": "^1.14.1",
     "xlsx": "^0.18.5"
   }
 }

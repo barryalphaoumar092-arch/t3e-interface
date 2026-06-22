@@ -70,17 +70,22 @@ app.use('/recherche', require('./src/routes/recherche'));
 app.use('/api', require('./src/routes/api'));
 
 async function start() {
-  await initDb();
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`\n  Interface T3E demarree:`);
-    console.log(`    Local:  http://localhost:${PORT}`);
-    if (!process.env.TURSO_DATABASE_URL) {
-      console.log(`    Mode:   Local (SQLite fichier)`);
-    } else {
-      console.log(`    Mode:   Cloud (Turso)`);
-    }
-    console.log();
-  });
+  try {
+    await initDb();
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`\n  Interface T3E demarree:`);
+      console.log(`    Local:  http://localhost:${PORT}`);
+      if (!process.env.TURSO_DATABASE_URL) {
+        console.log(`    Mode:   Local (SQLite fichier)`);
+      } else {
+        console.log(`    Mode:   Cloud (Turso)`);
+      }
+      console.log();
+    });
+  } catch (err) {
+    console.error('Erreur au demarrage:', err);
+    process.exit(1);
+  }
 }
 
 start();
