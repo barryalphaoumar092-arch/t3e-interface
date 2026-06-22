@@ -37,7 +37,7 @@ router.get('/nouveau', (req, res) => {
 
 router.post('/creer', uploadFields, async (req, res) => {
   const db = req.db;
-  const { numero_projet, titre, cree_par } = req.body;
+  const { numero_projet, titre, cree_par, client, adresse, architecte } = req.body;
   const devisFile = req.files && req.files.devis && req.files.devis[0];
   const templateFile = req.files && req.files.template && req.files.template[0];
   const supplementFiles = req.files && req.files.supplements || [];
@@ -61,9 +61,9 @@ router.post('/creer', uploadFields, async (req, res) => {
       const projectInfo = extractProjectInfo(devisTexte);
       contenu.projet = {
         numero: numero_projet || projectInfo.numero,
-        client: projectInfo.client,
-        adresse: projectInfo.adresse,
-        architecte: projectInfo.architecte,
+        client: client || projectInfo.client,
+        adresse: adresse || projectInfo.adresse,
+        architecte: architecte || projectInfo.architecte,
       };
     } catch (err) {
       contenu.devis = { erreur: err.message, source_fichier: devisFile.originalname };
@@ -102,7 +102,11 @@ router.post('/creer', uploadFields, async (req, res) => {
     } catch (err) { }
   }
 
+  contenu.projet = contenu.projet || {};
   if (!contenu.projet.numero) contenu.projet.numero = numero_projet || '';
+  if (!contenu.projet.client) contenu.projet.client = client || '';
+  if (!contenu.projet.adresse) contenu.projet.adresse = adresse || '';
+  if (!contenu.projet.architecte) contenu.projet.architecte = architecte || '';
 
   let templateData = null;
   if (templateFile && fs.existsSync(templateFile.path)) {
