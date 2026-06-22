@@ -2,9 +2,13 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 const PDFDocument = require('pdfkit');
+const { PDFDocument: PDFLib } = require('pdf-lib');
 const { parseDevis, parseTemplate, extractProjectInfo } = require('../services/document-parser');
 const { matchMaterials } = require('../services/material-matcher');
+
+const DOCS_DIR = path.join(__dirname, '..', '..', 'documents');
 
 const storage = multer.diskStorage({
   destination: path.join(__dirname, '..', '..', 'uploads'),
@@ -18,6 +22,7 @@ const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } });
 const uploadFields = upload.fields([
   { name: 'devis', maxCount: 1 },
   { name: 'template', maxCount: 1 },
+  { name: 'supplements', maxCount: 10 },
 ]);
 
 router.get('/', async (req, res) => {
@@ -35,10 +40,12 @@ router.post('/creer', uploadFields, async (req, res) => {
   const { numero_projet, titre, cree_par } = req.body;
   const devisFile = req.files && req.files.devis && req.files.devis[0];
   const templateFile = req.files && req.files.template && req.files.template[0];
+  const supplementFiles = req.files && req.files.supplements || [];
 
-  let contenu = { version: 2, devis: null, template: null, projet: {}, materiaux_matches: [] };
+  let contenu = { version: 2, devis: null, template: null, supplements: [], projet: {}, materiaux_matches: [] };
   let devisTexte = '';
   let templateTexte = '';
+  let supplementsTexte = '';
 
   if (devisFile) {
     try {
@@ -78,7 +85,17 @@ router.post('/creer', uploadFields, async (req, res) => {
     }
   }
 
-  const textePourMatching = [devisTexte, templateTexte].join('\n');
+  for (const sf of supplementFiles) {
+    try {
+      const parsed = await parseDevis(sf.path, sf.originalname);
+      supplementsTexte += '\n' + (parsed.text || '');
+      contenu.supplements.push({ source_fichier: sf.originalname, type: parsed.type });
+    } catch (err) {
+      contenu.supplements.push({ source_fichier: sf.originalname, erreur: err.message });
+    }
+  }
+
+  const textePourMatching = [devisTexte, templateTexte, supplementsTexte].join('\n');
   if (textePourMatching.trim().length > 10) {
     try {
       contenu.materiaux_matches = await matchMaterials(textePourMatching, db);
@@ -174,6 +191,131 @@ router.post('/sauvegarder/:id', async (req, res) => {
   res.redirect(`/bordereaux/editer/${id}?success=saved`);
 });
 
+function findFtFile(fabricant) {
+  if (!fabricant) return [];
+  const ftDir = path.join(DOCS_DIR, 'FT');
+  if (!fs.existsSync(ftDir)) return [];
+
+  const fabNorm = fabricant.toLowerCase().trim();
+  const dirs = fs.readdirSync(ftDir).filter(d => {
+    const stat = fs.statSync(path.join(ftDir, d));
+    return stat.isDirectory() && d.toLowerCase().includes(fabNorm.substring(0, 4));
+  });
+
+  const pdfs = [];
+  for (const dir of dirs) {
+    const dirPath = path.join(ftDir, dir);
+    for (const f of fs.readdirSync(dirPath)) {
+      if (f.toLowerCase().endsWith('.pdf')) {
+        pdfs.push(path.join(dirPath, f));
+      }
+    }
+  }
+  return pdfs;
+}
+
+function generateBordereauPage(doc, mat, projet, row, index) {
+  if (index > 0) doc.addPage();
+
+  const left = 50;
+  const right = 562;
+  let y = 50;
+
+  doc.rect(left, y, right - left, 30).fill('#003366');
+  doc.fillColor('white').fontSize(12).font('Helvetica-Bold');
+  doc.text('IDENTIFICATION DE DESSINS D\'ATELIER, ÉCHANTILLONS ET FICHES TECHNIQUES', left + 10, y + 8, { width: right - left - 20, align: 'center' });
+  y += 40;
+  doc.fillColor('black');
+
+  doc.fontSize(9).font('Helvetica-Bold');
+  doc.text('NOM DU PROJET :', left, y); doc.font('Helvetica').text(projet.client || row.titre || '', left + 120, y);
+  y += 18;
+  doc.font('Helvetica-Bold').text('NUMÉRO DU PROJET :', left, y); doc.font('Helvetica').text(projet.numero || '', left + 120, y);
+  y += 25;
+
+  doc.moveTo(left, y).lineTo(right, y).lineWidth(1.5).stroke('#003366');
+  y += 8;
+  doc.fontSize(10).font('Helvetica-Bold').fillColor('#003366').text('IDENTIFICATION DE L\'ENTREPRENEUR', left, y);
+  doc.fillColor('black');
+  y += 18;
+
+  doc.fontSize(9).font('Helvetica-Bold');
+  doc.text('NOM :', left, y); doc.font('Helvetica').text('Toitures Trois Étoiles', left + 80, y);
+  y += 16;
+  doc.font('Helvetica-Bold').text('SPÉCIALITÉ :', left, y); doc.font('Helvetica').text('Couvreur', left + 80, y);
+  y += 16;
+  doc.font('Helvetica-Bold').text('ADRESSE :', left, y); doc.font('Helvetica').text(projet.adresse || '', left + 80, y);
+  y += 25;
+
+  doc.moveTo(left, y).lineTo(right, y).lineWidth(1.5).stroke('#003366');
+  y += 8;
+  doc.fontSize(10).font('Helvetica-Bold').fillColor('#003366').text('IDENTIFICATION', left, y);
+  doc.fillColor('black');
+  y += 20;
+
+  doc.fontSize(9);
+  const checkFT = '☑'; const unchk = '☐';
+  doc.font('Helvetica').text(`${unchk} Dessin d'atelier          ${unchk} Échantillon          ${checkFT} Fiche technique`, left, y);
+  y += 16;
+  doc.text(`Ligne numéro : ${index + 1}`, left + 350, y - 16);
+
+  doc.font('Helvetica-Bold').text('Titre :', left, y);
+  doc.font('Helvetica').text(mat.nom || '', left + 80, y);
+  y += 16;
+
+  doc.font('Helvetica-Bold').text('Description :', left, y);
+  doc.font('Helvetica').text(`${mat.type_produit || ''} ${mat.type_systeme ? '- ' + mat.type_systeme : ''} ${mat.dimension ? '(' + mat.dimension + ')' : ''}`, left + 80, y);
+  y += 16;
+
+  doc.font('Helvetica-Bold').text('Fournisseur :', left, y);
+  doc.font('Helvetica').text(mat.fabricant || '', left + 80, y);
+  doc.font('Helvetica-Bold').text('Fabricant :', left + 280, y);
+  doc.font('Helvetica').text(mat.fabricant || '', left + 350, y);
+  y += 16;
+
+  doc.font('Helvetica').text(`${checkFT} Tel que plans et devis`, left, y);
+  y += 16;
+
+  if (mat.lien_fiche_technique) {
+    doc.font('Helvetica-Bold').text('Fiche technique :', left, y);
+    doc.font('Helvetica').fillColor('blue').text('Voir page suivante', left + 110, y).fillColor('black');
+    y += 16;
+  }
+  if (mat.lien_fiche_securite) {
+    doc.font('Helvetica-Bold').text('Fiche SDS :', left, y);
+    doc.font('Helvetica').text(mat.lien_fiche_securite, left + 110, y, { width: 400 });
+    y += 16;
+  }
+  y += 15;
+
+  doc.moveTo(left, y).lineTo(right, y).lineWidth(1.5).stroke('#003366');
+  y += 8;
+  doc.fontSize(10).font('Helvetica-Bold').fillColor('#003366').text('SUIVI', left, y);
+  doc.fillColor('black');
+  y += 20;
+
+  doc.fontSize(9).font('Helvetica-Bold');
+  doc.text('REÇU DE L\'ENTREPRENEUR LE :', left, y);
+  doc.font('Helvetica').text('_______________', left + 190, y);
+  y += 25;
+  doc.font('Helvetica-Bold').text('RETOUR DU PROFESSIONNEL LE :', left, y);
+  doc.font('Helvetica').text('_______________', left + 200, y);
+  y += 35;
+
+  doc.moveTo(left, y).lineTo(right, y).lineWidth(0.5).stroke();
+  y += 15;
+  doc.fontSize(9);
+  doc.text('ÉMIS PAR : ___________________________________', left, y);
+  doc.text('Date : _______________', left + 350, y);
+  y += 12;
+  doc.fontSize(7).fillColor('#666').text('Signature de l\'entrepreneur', left + 65, y).fillColor('black');
+  y += 18;
+  doc.fontSize(9).text('SOUMIS PAR : _________________________________', left, y);
+  doc.text('Date : _______________', left + 350, y);
+  y += 12;
+  doc.fontSize(7).fillColor('#666').text('Signature de Toitures Trois Étoiles', left + 75, y).fillColor('black');
+}
+
 router.get('/pdf/:id', async (req, res) => {
   const db = req.db;
   const r = await db.execute({ sql: 'SELECT * FROM bordereaux WHERE id = ?', args: [parseInt(req.params.id)] });
@@ -184,109 +326,56 @@ router.get('/pdf/:id', async (req, res) => {
   const projet = contenu.projet || {};
   const materiaux = (contenu.materiaux_matches || []).filter(m => m.confirmed !== false);
 
-  const doc = new PDFDocument({ size: 'LETTER', margin: 50 });
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="bordereau-${projet.numero || row.id}.pdf"`);
-  doc.pipe(res);
-
-  doc.fontSize(18).font('Helvetica-Bold').text('TOITURES 3 ÉTOILES', { align: 'center' });
-  doc.fontSize(11).font('Helvetica').text('Bordereau de transmission de fiches techniques', { align: 'center' });
-  doc.moveDown(1.5);
-
-  doc.fontSize(10).font('Helvetica-Bold');
-  const infoY = doc.y;
-  doc.text(`Projet: ${projet.numero || 'N/A'}`, 50, infoY);
-  doc.text(`Statut: ${(row.statut || '').toUpperCase()}`, 350, infoY);
-  doc.text(`Titre: ${row.titre || ''}`, 50);
-  if (projet.client) doc.text(`Client: ${projet.client}`);
-  if (projet.architecte) doc.text(`Architecte: ${projet.architecte}`);
-  if (projet.adresse) doc.text(`Adresse: ${projet.adresse}`);
-  doc.font('Helvetica').text(`Préparé par: ${row.cree_par || 'N/A'}    Date: ${row.created_at || ''}`);
-  doc.moveDown();
-
-  doc.moveTo(50, doc.y).lineTo(562, doc.y).stroke();
-  doc.moveDown();
-
-  if (materiaux.length > 0) {
-    doc.fontSize(12).font('Helvetica-Bold').text('MATÉRIAUX ET FICHES TECHNIQUES');
-    doc.moveDown(0.5);
-
-    const colX = [50, 65, 240, 340, 430, 500];
-    const colW = [15, 175, 100, 90, 70, 62];
-    const headerY = doc.y;
-
-    doc.fontSize(8).font('Helvetica-Bold');
-    doc.text('#', colX[0], headerY, { width: colW[0] });
-    doc.text('Produit', colX[1], headerY, { width: colW[1] });
-    doc.text('Fabricant', colX[2], headerY, { width: colW[2] });
-    doc.text('Type', colX[3], headerY, { width: colW[3] });
-    doc.text('FT', colX[4], headerY, { width: colW[4], align: 'center' });
-    doc.text('SDS', colX[5], headerY, { width: colW[5], align: 'center' });
-
-    doc.moveTo(50, doc.y + 2).lineTo(562, doc.y + 2).stroke();
-    doc.moveDown(0.3);
-
-    doc.font('Helvetica').fontSize(7);
-    materiaux.forEach((m, i) => {
-      if (doc.y > 700) { doc.addPage(); doc.y = 50; }
-      const y = doc.y;
-      doc.text(String(i + 1), colX[0], y, { width: colW[0] });
-      doc.text(m.nom || '', colX[1], y, { width: colW[1] });
-      doc.text(m.fabricant || '', colX[2], y, { width: colW[2] });
-      doc.text(m.type_produit || '', colX[3], y, { width: colW[3] });
-      if (m.lien_fiche_technique) {
-        doc.fillColor('green').text('OUI', colX[4], y, { width: colW[4], align: 'center' }).fillColor('black');
-      } else {
-        doc.fillColor('#999').text('—', colX[4], y, { width: colW[4], align: 'center' }).fillColor('black');
-      }
-      if (m.lien_fiche_securite) {
-        doc.fillColor('green').text('OUI', colX[5], y, { width: colW[5], align: 'center' }).fillColor('black');
-      } else {
-        doc.fillColor('#999').text('—', colX[5], y, { width: colW[5], align: 'center' }).fillColor('black');
-      }
-      doc.moveDown(0.3);
-    });
-
-    doc.moveDown();
-    doc.fontSize(7).fillColor('#666');
-    doc.text('FT = Fiche technique disponible  |  SDS = Fiche de données de sécurité disponible');
-    doc.fillColor('black');
-
-    doc.moveDown();
-    doc.fontSize(9).font('Helvetica-Bold').text('DÉTAILS DES FICHES TECHNIQUES');
-    doc.moveDown(0.5);
-    doc.font('Helvetica').fontSize(8);
-
-    for (const m of materiaux) {
-      if (doc.y > 680) { doc.addPage(); doc.y = 50; }
-      if (m.lien_fiche_technique || m.lien_fiche_securite) {
-        doc.font('Helvetica-Bold').text(`${m.nom} — ${m.fabricant || ''}`);
-        doc.font('Helvetica');
-        if (m.type_produit) doc.text(`  Type: ${m.type_produit}${m.type_systeme ? ' | Système: ' + m.type_systeme : ''}`);
-        if (m.dimension) doc.text(`  Dimension: ${m.dimension}${m.unite ? ' (' + m.unite + ')' : ''}`);
-        if (m.lien_fiche_technique) doc.fillColor('blue').text(`  Fiche technique: ${m.lien_fiche_technique}`, { link: m.lien_fiche_technique }).fillColor('black');
-        if (m.lien_fiche_securite) doc.fillColor('blue').text(`  Fiche SDS: ${m.lien_fiche_securite}`, { link: m.lien_fiche_securite }).fillColor('black');
-        doc.moveDown(0.5);
-      }
-    }
-  } else {
-    doc.fontSize(10).text('Aucun matériau associé à ce bordereau.');
+  if (materiaux.length === 0) {
+    const doc = new PDFDocument({ size: 'LETTER', margin: 50 });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="bordereau-${projet.numero || row.id}.pdf"`);
+    doc.pipe(res);
+    doc.fontSize(14).text('Aucun matériau confirmé dans ce bordereau.', { align: 'center' });
+    doc.end();
+    return;
   }
 
-  if (doc.y > 600) doc.addPage();
-  doc.moveDown(2);
-  doc.moveTo(50, doc.y).lineTo(562, doc.y).stroke();
-  doc.moveDown();
-  doc.fontSize(10).font('Helvetica-Bold').text('SIGNATURES');
-  doc.moveDown();
-  doc.font('Helvetica').fontSize(9);
-  doc.text('Préparé par: ___________________________    Date: _______________');
-  doc.moveDown(0.8);
-  doc.text('Révisé par:  ___________________________    Date: _______________');
-  doc.moveDown(0.8);
-  doc.text('Approuvé par: __________________________    Date: _______________');
+  const doc = new PDFDocument({ size: 'LETTER', margin: 50 });
+  const chunks = [];
+  doc.on('data', c => chunks.push(c));
 
+  const bordereauPdf = new Promise(resolve => {
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+  });
+
+  materiaux.forEach((mat, i) => generateBordereauPage(doc, mat, projet, row, i));
   doc.end();
+
+  const bordereauBuffer = await bordereauPdf;
+
+  const finalPdf = await PDFLib.create();
+
+  const bordereauDoc = await PDFLib.load(bordereauBuffer);
+  const bordereauPages = await finalPdf.copyPages(bordereauDoc, bordereauDoc.getPageIndices());
+
+  for (let i = 0; i < materiaux.length; i++) {
+    finalPdf.addPage(bordereauPages[i]);
+
+    const mat = materiaux[i];
+    const ftFiles = findFtFile(mat.fabricant);
+    for (const ftPath of ftFiles) {
+      try {
+        const ftBuffer = fs.readFileSync(ftPath);
+        const ftDoc = await PDFLib.load(ftBuffer, { ignoreEncryption: true });
+        const ftPages = await finalPdf.copyPages(ftDoc, ftDoc.getPageIndices());
+        ftPages.forEach(p => finalPdf.addPage(p));
+      } catch (err) {
+        console.error('Erreur fusion FT:', ftPath, err.message);
+      }
+    }
+  }
+
+  const finalBuffer = await finalPdf.save();
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="bordereau-${projet.numero || row.id}.pdf"`);
+  res.send(Buffer.from(finalBuffer));
 });
 
 module.exports = router;
