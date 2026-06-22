@@ -15,7 +15,6 @@ if (url && url.startsWith('libsql://')) {
 }
 
 async function initDb() {
-  console.log('Token length:', authToken.length, '| Premiers chars:', authToken.substring(0, 10));
   const r = await db.execute('SELECT COUNT(*) as c FROM categories');
   console.log(`Base de donnees connectee (${r.rows[0].c} categories)`);
 }
