@@ -8,9 +8,7 @@ async function fillTemplatePdf(templateBuffer, projet, materiaux, devisTexte, fi
 
   const pages = pdfDoc.getPages();
   if (pages.length === 0) return pdfDoc;
-
   const page = pages[0];
-  const H = page.getSize().height;
 
   let mat = {};
   if (materiaux && materiaux.length > 0) {
@@ -37,37 +35,41 @@ async function fillTemplatePdf(templateBuffer, projet, materiaux, devisTexte, fi
     });
   }
 
+  // Coordonnées Y mesurées depuis la grille de calibration (y=0 en bas)
+
   // ===== EN-TÊTE PROJET =====
-  w(projet.client || '', 150, H - 128);
-  w(projet.numero || '', 168, H - 145);
+  w(projet.client || '', 165, 662);              // NOM DU PROJET
+  w(projet.numero || '', 175, 648);              // NUMÉRO DU PROJET
 
   // ===== ENTREPRENEUR =====
-  w('Toitures Trois Étoiles', 88, H - 188);
-  w('Couvreur', 375, H - 188);
-  w(projet.adresse || '', 112, H - 213);
+  w('Toitures Trois Étoiles', 100, 615);         // NOM
+  w('Couvreur', 410, 615);                       // SPÉCIALITÉ
+  w(projet.adresse || '', 125, 588);             // ADRESSE
 
   // ===== IDENTIFICATION - CHECKBOXES =====
-  w('X', 214, H - 318, { size: 10, font: fontBold });   // Fiche technique ☑
-  w('1', 488, H - 278, { size: 9 });                     // Ligne numéro
+  w('X', 258, 500, { size: 11, font: fontBold });  // Fiche technique ☑
 
-  // ===== CHAMPS IDENTIFICATION =====
-  w(mat.nom || '', 105, H - 338, { size: 9 });           // Titre
-  w(numDessin || '', 165, H - 357, { size: 8 });         // Numéro de dessins
-  w(nbFeuilles, 360, H - 357, { size: 8 });              // Nombre feuilles
-  w(revision || '', 468, H - 357, { size: 8 });          // Révision
-  w(desc || '', 130, H - 376, { size: 8 });              // Description
-  w(mat.fabricant || '', 138, H - 395, { size: 9 });     // Fournisseur
-  w(mat.fabricant || '', 332, H - 395, { size: 9 });     // Fabricant
+  // Ligne numéro
+  w('1', 500, 537);                               // Ligne numéro (ligne Dessin d'atelier)
+
+  // ===== CHAMPS =====
+  w(mat.nom || '', 110, 488, { size: 9 });        // Titre
+  w(numDessin || '', 185, 470, { size: 8 });      // Numéro de dessins
+  w(nbFeuilles, 385, 470, { size: 8 });           // Nombre feuilles
+  w(revision || '', 510, 470, { size: 8 });       // Révision
+  w(desc || '', 145, 455, { size: 8 });           // Description
+  w(mat.fabricant || '', 150, 438);               // Fournisseur
+  w(mat.fabricant || '', 360, 438);               // Fabricant
 
   // ===== TEL QUE PLANS / EQUIVALENCE =====
-  w('X', 214, H - 414, { size: 10, font: fontBold });    // Tel que plans et devis ☑
-  w(sectionItem || '', 362, H - 414, { size: 8 });       // Section (item)
-  w(article || '', 320, H - 434, { size: 8 });           // Article
-  w(delai || '', 105, H - 453, { size: 8 });             // Délai
+  w('X', 258, 420, { size: 11, font: fontBold });  // Tel que plans et devis ☑
+  w(sectionItem || '', 395, 420, { size: 8 });    // Section (item)
+  w(article || '', 355, 402, { size: 8 });        // Article
+  w(delai || '', 110, 388, { size: 8 });          // Délai
 
   // ===== REMARQUE =====
   const remarque = buildRemarque(materiaux, fichesSelectionnees);
-  w(remarque, 132, H - 480, { size: 7 });
+  w(remarque, 145, 360, { size: 7 });
 
   return pdfDoc;
 }
