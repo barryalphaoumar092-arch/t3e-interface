@@ -72,7 +72,7 @@ async function fillTemplatePdf(templateBuffer, projet, materiaux, devisTexte, fi
   w(projet.adresse || '', 125, 588);                      // ADRESSE
 
   // ===== IDENTIFICATION - CASES =====
-  check(224, 501);                                         // Fiche technique ☑
+  check(217, 501);                                         // Fiche technique ☑
   w('1', 500, 537);                                        // Ligne numéro
 
   // ===== CHAMPS DÉTAILLÉS =====
@@ -85,7 +85,7 @@ async function fillTemplatePdf(templateBuffer, projet, materiaux, devisTexte, fi
   w(fabricant, 360, 438);                                  // Fabricant
 
   // ===== TEL QUE PLANS / EQUIVALENCE =====
-  check(224, 421);                                         // Tel que plans et devis ☑
+  check(217, 421);                                         // Tel que plans et devis ☑
   w(sectionItem || '', 395, 420, { size: 8 });             // Section (item)
   w(article || '', 355, 402, { size: 8 });                 // Article
   w(delai || '', 110, 388, { size: 8 });                   // Délai
