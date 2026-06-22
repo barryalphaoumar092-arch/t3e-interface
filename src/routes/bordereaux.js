@@ -264,7 +264,7 @@ router.post('/generer-pdf/:id', async (req, res) => {
     try {
       const templateBuffer = Buffer.from(row.template_data, 'base64');
       if (templateBuffer.length > 4 && templateBuffer.slice(0, 5).toString() === '%PDF-') {
-        const filledDoc = await fillTemplatePdf(templateBuffer, projet, materiaux, row.devis_texte || '');
+        const filledDoc = await fillTemplatePdf(templateBuffer, projet, materiaux, row.devis_texte || '', fichesSelectionnees);
         const filledBuffer = await filledDoc.save();
         const filledLoaded = await PDFLib.load(filledBuffer);
         const pages = await finalPdf.copyPages(filledLoaded, filledLoaded.getPageIndices());

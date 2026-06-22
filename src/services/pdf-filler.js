@@ -1,6 +1,6 @@
 const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 
-async function fillTemplatePdf(templateBuffer, projet, materiaux, devisTexte) {
+async function fillTemplatePdf(templateBuffer, projet, materiaux, devisTexte, fichesSelectionnees) {
   const pdfDoc = await PDFDocument.load(templateBuffer, { ignoreEncryption: true });
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -12,7 +12,18 @@ async function fillTemplatePdf(templateBuffer, projet, materiaux, devisTexte) {
   const firstPage = pages[0];
   const { width, height } = firstPage.getSize();
 
-  const mat = materiaux && materiaux.length > 0 ? materiaux[0] : {};
+  // Utiliser les matériaux matchés, sinon créer des données depuis les fiches sélectionnées
+  let mat = {};
+  if (materiaux && materiaux.length > 0) {
+    mat = materiaux[0];
+  } else if (fichesSelectionnees && fichesSelectionnees.length > 0) {
+    const f = fichesSelectionnees[0];
+    mat = {
+      nom: f.titre || '',
+      fabricant: f.source || '',
+      type_produit: 'Fiche technique',
+    };
+  }
   const description = [mat.type_produit, mat.type_systeme, mat.dimension].filter(Boolean).join(' — ');
 
   const sectionItem = extractFromDevis(devisTexte, /section\s*[:#(]?\s*([^\n\r]{1,40})/i);
@@ -67,7 +78,7 @@ async function fillTemplatePdf(templateBuffer, projet, materiaux, devisTexte) {
     { val: delai || '', x: 100, y: height - 408, size: 8 },
 
     // Remarque
-    { val: buildRemarque(materiaux), x: 120, y: height - 435, size: 7 },
+    { val: buildRemarque(materiaux, fichesSelectionnees), x: 120, y: height - 435, size: 7 },
   ];
 
   for (const f of fields) {
@@ -91,11 +102,15 @@ function extractFromDevis(text, regex) {
   return match ? match[1].trim() : '';
 }
 
-function buildRemarque(materiaux) {
-  if (!materiaux || materiaux.length <= 1) return '';
-  const noms = materiaux.slice(1, 5).map(m => m.nom).filter(Boolean);
-  if (noms.length === 0) return '';
-  return 'Autres materiaux: ' + noms.join(', ');
+function buildRemarque(materiaux, fichesSelectionnees) {
+  const parts = [];
+  if (materiaux && materiaux.length > 1) {
+    parts.push('Materiaux: ' + materiaux.slice(1, 4).map(m => m.nom).filter(Boolean).join(', '));
+  }
+  if (fichesSelectionnees && fichesSelectionnees.length > 0) {
+    parts.push('FT jointes: ' + fichesSelectionnees.map(f => f.titre).slice(0, 3).join(', '));
+  }
+  return parts.join(' | ').substring(0, 120);
 }
 
 module.exports = { fillTemplatePdf };
