@@ -106,22 +106,33 @@ router.post('/creer', uploadFields, async (req, res) => {
 
   let templateData = null;
   if (templateFile && fs.existsSync(templateFile.path)) {
-    const ext = path.extname(templateFile.originalname).toLowerCase();
-    if (ext === '.pdf') {
-      templateData = fs.readFileSync(templateFile.path).toString('base64');
-    } else if (ext === '.doc' || ext === '.docx') {
+    const rawBuffer = fs.readFileSync(templateFile.path);
+    const isPdf = rawBuffer.length > 4 && rawBuffer.slice(0, 5).toString() === '%PDF-';
+
+    if (isPdf) {
+      templateData = rawBuffer.toString('base64');
+    } else {
+      let wordText = templateTexte || '';
+      if (!wordText && rawBuffer[0] === 0xD0 && rawBuffer[1] === 0xCF) {
+        try {
+          const WordExtractor = require('word-extractor');
+          const ext = new WordExtractor();
+          const doc = await ext.extract(templateFile.path);
+          wordText = doc.getBody() || '';
+        } catch (e) { wordText = 'Bordereau'; }
+      }
+      if (!wordText) wordText = 'Bordereau';
+
       const PDFDocument = require('pdfkit');
-      const wordText = templateTexte || 'Bordereau';
       const pdfChunks = [];
       const wordPdf = new PDFDocument({ size: 'LETTER', margin: 50 });
       wordPdf.on('data', c => pdfChunks.push(c));
       const wordPdfDone = new Promise(resolve => wordPdf.on('end', () => resolve(Buffer.concat(pdfChunks))));
       wordPdf.fontSize(11).font('Helvetica');
-      const lines = wordText.split('\n');
-      for (const line of lines) {
+      for (const line of wordText.split('\n')) {
         if (wordPdf.y > 720) wordPdf.addPage();
         const trimmed = line.trim();
-        if (trimmed.length > 0 && trimmed === trimmed.toUpperCase() && trimmed.length > 3) {
+        if (trimmed.length > 3 && trimmed === trimmed.toUpperCase()) {
           wordPdf.font('Helvetica-Bold').text(trimmed);
           wordPdf.font('Helvetica');
         } else {
@@ -129,8 +140,7 @@ router.post('/creer', uploadFields, async (req, res) => {
         }
       }
       wordPdf.end();
-      const wordBuffer = await wordPdfDone;
-      templateData = wordBuffer.toString('base64');
+      templateData = (await wordPdfDone).toString('base64');
     }
   }
 
@@ -227,30 +237,32 @@ router.get('/pdf/:id', async (req, res) => {
 
   const finalPdf = await PDFLib.create();
 
-  // 1. Copier le template EXACT tel quel depuis la base de données
   let templateLoaded = false;
 
-  // D'abord essayer depuis la DB (base64)
   if (row.template_data) {
     try {
       const templateBuffer = Buffer.from(row.template_data, 'base64');
-      const templateDoc = await PDFLib.load(templateBuffer, { ignoreEncryption: true });
-      const pages = await finalPdf.copyPages(templateDoc, templateDoc.getPageIndices());
-      pages.forEach(p => finalPdf.addPage(p));
-      templateLoaded = true;
+      const isPdf = templateBuffer.length > 4 && templateBuffer.slice(0, 5).toString() === '%PDF-';
+      if (isPdf) {
+        const templateDoc = await PDFLib.load(templateBuffer, { ignoreEncryption: true });
+        const pages = await finalPdf.copyPages(templateDoc, templateDoc.getPageIndices());
+        pages.forEach(p => finalPdf.addPage(p));
+        templateLoaded = true;
+      }
     } catch (err) {
-      console.error('Erreur chargement template depuis DB:', err.message);
+      console.error('Erreur chargement template:', err.message);
     }
   }
 
-  // Sinon essayer depuis le fichier local
   if (!templateLoaded && row.template_chemin && fs.existsSync(row.template_chemin)) {
     try {
-      const templateBuffer = fs.readFileSync(row.template_chemin);
-      const templateDoc = await PDFLib.load(templateBuffer, { ignoreEncryption: true });
-      const pages = await finalPdf.copyPages(templateDoc, templateDoc.getPageIndices());
-      pages.forEach(p => finalPdf.addPage(p));
-      templateLoaded = true;
+      const buf = fs.readFileSync(row.template_chemin);
+      if (buf.length > 4 && buf.slice(0, 5).toString() === '%PDF-') {
+        const templateDoc = await PDFLib.load(buf, { ignoreEncryption: true });
+        const pages = await finalPdf.copyPages(templateDoc, templateDoc.getPageIndices());
+        pages.forEach(p => finalPdf.addPage(p));
+        templateLoaded = true;
+      }
     } catch (err) {
       console.error('Erreur chargement template fichier:', err.message);
     }
@@ -258,8 +270,10 @@ router.get('/pdf/:id', async (req, res) => {
 
   if (!templateLoaded) {
     const page = finalPdf.addPage();
-    const { rgb } = require('pdf-lib');
-    page.drawText('Aucun template PDF trouve. Veuillez soumettre votre bordereau en format PDF.', { x: 50, y: 700, size: 14 });
+    page.drawText('ERREUR: Le bordereau soumis n\'est pas un vrai PDF.', { x: 50, y: 700, size: 14 });
+    page.drawText('Pour obtenir une copie exacte, ouvrez le fichier Word dans Microsoft Word', { x: 50, y: 670, size: 11 });
+    page.drawText('puis faites: Fichier > Enregistrer sous > PDF', { x: 50, y: 650, size: 11 });
+    page.drawText('Ensuite, recréez le bordereau avec ce fichier PDF.', { x: 50, y: 630, size: 11 });
   }
 
   // 2. Ajouter les fiches techniques sélectionnées
