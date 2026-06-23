@@ -148,14 +148,15 @@ function addOverlay(key, label, val) {
   div.textContent = val;
   div.title = label + ' (glissez pour repositionner)';
 
-  // Position : CENTRE du canvas par défaut
-  var startX = canvasW * 0.4;
-  var startY = canvasH * 0.5;
+  // Position : CENTRE du conteneur par défaut
+  var rect = containerEl.getBoundingClientRect();
+  var startX = rect.width * 0.4;
+  var startY = rect.height * 0.5;
 
   // Restaurer la position sauvegardée si elle existe
   if (savedPositions[key]) {
-    startX = (savedPositions[key].x / 100) * canvasW;
-    startY = (savedPositions[key].y / 100) * canvasH;
+    startX = (savedPositions[key].x / 100) * rect.width;
+    startY = (savedPositions[key].y / 100) * rect.height;
   }
 
   div.style.left = startX + 'px';
@@ -200,11 +201,13 @@ function restoreSavedOverlays() {
 
 function savePositions() {
   var pos = {};
+  var rect = containerEl.getBoundingClientRect();
   Object.keys(overlays).forEach(function(key) {
     var el = overlays[key].el;
+    var elRect = el.getBoundingClientRect();
     pos[key] = {
-      x: (el.offsetLeft / canvasW) * 100,
-      y: (el.offsetTop / canvasH) * 100,
+      x: ((elRect.left - rect.left) / rect.width) * 100,
+      y: ((elRect.top - rect.top) / rect.height) * 100,
       val: overlays[key].val
     };
   });
