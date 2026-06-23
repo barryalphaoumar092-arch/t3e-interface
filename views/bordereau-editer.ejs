@@ -148,10 +148,31 @@ function addOverlay(key, label, val) {
   div.textContent = val;
   div.title = label + ' (glissez pour repositionner)';
 
-  // Position : CENTRE du conteneur par défaut
+  // Positions par défaut proches du bon endroit sur le bordereau T3E
+  var defaultPos = {
+    nom_du_projet:      { x: 27, y: 16 },
+    num_ro_du_projet:   { x: 29, y: 18 },
+    nom:                { x: 16, y: 22.3 },
+    sp_cialit:          { x: 67, y: 22.3 },
+    adresse:            { x: 20, y: 25.8 },
+    ligne_num_ro:       { x: 82, y: 32.2 },
+    titre:              { x: 18, y: 38.4 },
+    num_ro_de_dessins:  { x: 30, y: 40.7 },
+    nombre_feuilles:    { x: 63, y: 40.7 },
+    r_vision:           { x: 83, y: 40.7 },
+    description:        { x: 24, y: 42.6 },
+    fournisseur:        { x: 25, y: 44.7 },
+    fabricant:          { x: 59, y: 44.7 },
+    section_item:       { x: 65, y: 47 },
+    article:            { x: 58, y: 49.2 },
+    d_lai:              { x: 18, y: 51 },
+    remarque:           { x: 24, y: 54.5 },
+  };
+
   var rect = containerEl.getBoundingClientRect();
-  var startX = rect.width * 0.4;
-  var startY = rect.height * 0.5;
+  var dp = defaultPos[key] || { x: 40, y: 50 };
+  var startX = rect.width * (dp.x / 100);
+  var startY = rect.height * (dp.y / 100);
 
   // Restaurer la position sauvegardée si elle existe
   if (savedPositions[key]) {
