@@ -235,6 +235,20 @@ fetch('/bordereaux/suggestions/<%= bordereau.id %>').then(function(r) { return r
       opt.value = v; opt.textContent = v;
       sel.insertBefore(opt, autreOpt);
     });
+
+    // Restaurer la valeur sauvegardée
+    var saved = savedPositions[fieldKey];
+    if (saved && saved.val) {
+      var found = false;
+      for (var i = 0; i < sel.options.length; i++) {
+        if (sel.options[i].value === saved.val) { sel.selectedIndex = i; found = true; break; }
+      }
+      if (!found) {
+        var customOpt = document.createElement('option');
+        customOpt.value = saved.val; customOpt.textContent = saved.val; customOpt.selected = true;
+        sel.insertBefore(customOpt, autreOpt);
+      }
+    }
   });
 });
 
