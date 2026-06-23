@@ -228,28 +228,59 @@ router.get('/editer/:id', async (req, res) => {
 });
 
 router.post('/sauvegarder-ajax/:id', async (req, res) => {
-  const db = req.db;
-  const id = parseInt(req.params.id);
-  const { titre, numero_projet, client, adresse, architecte, positions_json, fiches_json } = req.body;
+  try {
+    const db = req.db;
+    const id = parseInt(req.params.id);
+    const body = req.body || {};
 
-  const current = await db.execute({ sql: 'SELECT contenu FROM bordereaux WHERE id = ?', args: [id] });
-  if (current.rows.length === 0) return res.json({ error: 'not found' });
+    console.log('SAVE AJAX id=' + id, 'keys:', Object.keys(body), 'positions:', body.positions_json ? body.positions_json.substring(0, 100) : 'VIDE', 'fiches:', body.fiches_json ? body.fiches_json.substring(0, 100) : 'VIDE');
 
-  const contenu = JSON.parse(current.rows[0].contenu || '{}');
-  contenu.projet = contenu.projet || {};
-  contenu.projet.numero = numero_projet || contenu.projet.numero || '';
-  contenu.projet.client = client || contenu.projet.client || '';
-  contenu.projet.adresse = adresse || contenu.projet.adresse || '';
-  contenu.projet.architecte = architecte || contenu.projet.architecte || '';
-  if (positions_json) { try { contenu.field_positions = JSON.parse(positions_json); } catch (e) {} }
-  if (fiches_json) { try { contenu.fiches_selectionnees = JSON.parse(fiches_json); } catch (e) {} }
+    const current = await db.execute({ sql: 'SELECT contenu FROM bordereaux WHERE id = ?', args: [id] });
+    if (current.rows.length === 0) return res.json({ error: 'not found' });
 
-  await db.execute({
-    sql: "UPDATE bordereaux SET titre = ?, numero_projet = ?, contenu = ?, updated_at = datetime('now') WHERE id = ?",
-    args: [titre || '', numero_projet || '', JSON.stringify(contenu), id]
-  });
+    const contenu = JSON.parse(current.rows[0].contenu || '{}');
+    contenu.projet = contenu.projet || {};
+    if (body.numero_projet) contenu.projet.numero = body.numero_projet;
+    if (body.client) contenu.projet.client = body.client;
+    if (body.adresse) contenu.projet.adresse = body.adresse;
+    if (body.architecte) contenu.projet.architecte = body.architecte;
 
-  res.json({ ok: true });
+    // Sauvegarder les positions — accepter string JSON ou objet direct
+    if (body.positions_json) {
+      if (typeof body.positions_json === 'string') {
+        try { contenu.field_positions = JSON.parse(body.positions_json); } catch (e) {}
+      } else {
+        contenu.field_positions = body.positions_json;
+      }
+    }
+    if (body.positions && typeof body.positions === 'object') {
+      contenu.field_positions = body.positions;
+    }
+
+    // Sauvegarder les fiches
+    if (body.fiches_json) {
+      if (typeof body.fiches_json === 'string') {
+        try { contenu.fiches_selectionnees = JSON.parse(body.fiches_json); } catch (e) {}
+      } else {
+        contenu.fiches_selectionnees = body.fiches_json;
+      }
+    }
+    if (body.fiches && Array.isArray(body.fiches)) {
+      contenu.fiches_selectionnees = body.fiches;
+    }
+
+    console.log('SAVE RESULT positions:', JSON.stringify(contenu.field_positions || {}).substring(0, 200));
+
+    await db.execute({
+      sql: "UPDATE bordereaux SET titre = ?, numero_projet = ?, contenu = ?, updated_at = datetime('now') WHERE id = ?",
+      args: [body.titre || '', body.numero_projet || '', JSON.stringify(contenu), id]
+    });
+
+    res.json({ ok: true, saved_positions: Object.keys(contenu.field_positions || {}).length, saved_fiches: (contenu.fiches_selectionnees || []).length });
+  } catch (err) {
+    console.error('SAVE ERROR:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 router.get('/generer-pdf-get/:id', async (req, res) => {

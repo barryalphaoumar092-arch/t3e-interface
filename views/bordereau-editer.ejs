@@ -387,14 +387,20 @@ document.querySelectorAll('.btn-add-ft').forEach(function(btn) {
 // Collecter toutes les données
 function collectData() {
   savePositions();
+  var posStr = document.getElementById('positionsJson').value || '{}';
+  var posObj = {};
+  try { posObj = JSON.parse(posStr); } catch(e) {}
+
   return {
     titre: '<%= bordereau.titre.replace(/'/g, "\\'") %>',
     numero_projet: '<%= (bordereau.numero_projet || '').replace(/'/g, "\\'") %>',
     client: '<%= ((bordereau.contenu.projet || {}).client || '').replace(/'/g, "\\'") %>',
     adresse: '<%= ((bordereau.contenu.projet || {}).adresse || '').replace(/'/g, "\\'") %>',
     architecte: '<%= ((bordereau.contenu.projet || {}).architecte || '').replace(/'/g, "\\'") %>',
-    positions_json: document.getElementById('positionsJson').value,
+    positions_json: posStr,
+    positions: posObj,
     fiches_json: JSON.stringify(fichesSelectionnees),
+    fiches: fichesSelectionnees,
   };
 }
 
@@ -405,18 +411,30 @@ document.getElementById('btnSave').addEventListener('click', function() {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Sauvegarde...';
 
+  var jsonBody = JSON.stringify(data);
+  console.log('Envoi sauvegarde:', jsonBody.substring(0, 300));
+
   fetch('/bordereaux/sauvegarder-ajax/<%= bordereau.id %>', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
-  }).then(function(r) { return r.json(); }).then(function(res) {
+    body: jsonBody,
+    credentials: 'same-origin'
+  }).then(function(r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }).then(function(res) {
     btn.disabled = false;
-    btn.innerHTML = '<i class="bi bi-check-circle"></i> Sauvegardé !';
-    btn.classList.replace('btn-primary', 'btn-success');
-    setTimeout(function() {
-      btn.innerHTML = '<i class="bi bi-save"></i> Sauvegarder';
-      btn.classList.replace('btn-success', 'btn-primary');
-    }, 2000);
+    if (res.error) {
+      btn.innerHTML = '<i class="bi bi-x-circle"></i> Erreur!';
+      alert('Erreur: ' + res.error);
+    } else {
+      btn.innerHTML = '<i class="bi bi-check-circle"></i> Sauvegardé (' + (res.saved_positions||0) + ' champs, ' + (res.saved_fiches||0) + ' FT)';
+      btn.classList.replace('btn-primary', 'btn-success');
+      setTimeout(function() {
+        btn.innerHTML = '<i class="bi bi-save"></i> Sauvegarder';
+        btn.classList.replace('btn-success', 'btn-primary');
+      }, 3000);
+    }
   }).catch(function(err) {
     btn.disabled = false;
     btn.innerHTML = '<i class="bi bi-save"></i> Sauvegarder';
