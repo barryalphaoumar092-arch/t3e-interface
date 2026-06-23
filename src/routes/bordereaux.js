@@ -203,7 +203,7 @@ router.get('/editer/:id', async (req, res) => {
 router.post('/sauvegarder/:id', async (req, res) => {
   const db = req.db;
   const id = parseInt(req.params.id);
-  const { titre, numero_projet, client, adresse, architecte, materiaux_json, fiches_json } = req.body;
+  const { titre, numero_projet, client, adresse, architecte, materiaux_json, fiches_json, positions_json } = req.body;
 
   const current = await db.execute({ sql: 'SELECT contenu FROM bordereaux WHERE id = ?', args: [id] });
   if (current.rows.length === 0) return res.redirect('/bordereaux');
@@ -215,12 +215,9 @@ router.post('/sauvegarder/:id', async (req, res) => {
   contenu.projet.adresse = adresse || contenu.projet.adresse || '';
   contenu.projet.architecte = architecte || contenu.projet.architecte || '';
 
-  if (materiaux_json) {
-    try { contenu.materiaux_matches = JSON.parse(materiaux_json); } catch (e) {}
-  }
-  if (fiches_json) {
-    try { contenu.fiches_selectionnees = JSON.parse(fiches_json); } catch (e) {}
-  }
+  if (materiaux_json) { try { contenu.materiaux_matches = JSON.parse(materiaux_json); } catch (e) {} }
+  if (fiches_json) { try { contenu.fiches_selectionnees = JSON.parse(fiches_json); } catch (e) {} }
+  if (positions_json) { try { contenu.field_positions = JSON.parse(positions_json); } catch (e) {} }
 
   await db.execute({
     sql: "UPDATE bordereaux SET titre = ?, numero_projet = ?, contenu = ?, updated_at = datetime('now') WHERE id = ?",
@@ -229,13 +226,76 @@ router.post('/sauvegarder/:id', async (req, res) => {
   res.redirect(`/bordereaux/editer/${id}?success=saved`);
 });
 
+router.post('/supprimer/:id', async (req, res) => {
+  const db = req.db;
+  await db.execute({ sql: 'DELETE FROM historique_bordereaux WHERE bordereau_id = ?', args: [parseInt(req.params.id)] });
+  await db.execute({ sql: 'DELETE FROM bordereaux WHERE id = ?', args: [parseInt(req.params.id)] });
+  res.redirect('/bordereaux');
+});
+
+router.get('/template-pdf/:id', async (req, res) => {
+  const db = req.db;
+  const r = await db.execute({ sql: 'SELECT template_data, template_fichier FROM bordereaux WHERE id = ?', args: [parseInt(req.params.id)] });
+  if (r.rows.length === 0 || !r.rows[0].template_data) return res.status(404).send('Template non trouvé');
+  const buf = Buffer.from(r.rows[0].template_data, 'base64');
+  res.setHeader('Content-Type', 'application/pdf');
+  res.send(buf);
+});
+
+router.get('/suggestions/:id', async (req, res) => {
+  const db = req.db;
+  const r = await db.execute({ sql: 'SELECT contenu, devis_texte FROM bordereaux WHERE id = ?', args: [parseInt(req.params.id)] });
+  if (r.rows.length === 0) return res.json({});
+  const contenu = JSON.parse(r.rows[0].contenu || '{}');
+  const devisTexte = r.rows[0].devis_texte || '';
+  const materiaux = contenu.materiaux_matches || [];
+
+  const allMats = await db.execute('SELECT DISTINCT nom, fabricant, type_produit, type_systeme, dimension FROM materiaux LIMIT 200');
+
+  const fabricants = [...new Set([
+    ...materiaux.map(m => m.fabricant).filter(Boolean),
+    ...allMats.rows.map(m => m.fabricant).filter(Boolean),
+  ])].slice(0, 30);
+
+  const produits = [...new Set([
+    ...materiaux.map(m => m.nom).filter(Boolean),
+    ...allMats.rows.map(m => m.nom).filter(Boolean),
+  ])].slice(0, 30);
+
+  const types = [...new Set([
+    ...materiaux.map(m => m.type_produit).filter(Boolean),
+    ...allMats.rows.map(m => m.type_produit).filter(Boolean),
+  ])].slice(0, 20);
+
+  const descriptions = materiaux.map(m => [m.type_produit, m.type_systeme, m.dimension].filter(Boolean).join(' — ')).filter(Boolean);
+
+  const projet = contenu.projet || {};
+
+  res.json({
+    nom_projet: [projet.client, extractFromText(devisTexte, /(?:projet|client)\s*[:#]?\s*([^\n]{3,40})/i)].filter(Boolean),
+    numero_projet: [projet.numero, extractFromText(devisTexte, /(?:no|num[ée]ro)\s*(?:projet)?\s*[:#]?\s*([A-Z0-9][\w-]{2,15})/i)].filter(Boolean),
+    adresse: [projet.adresse, extractFromText(devisTexte, /(?:adresse|lieu)\s*[:#]?\s*([^\n]{5,60})/i)].filter(Boolean),
+    architecte: [projet.architecte, extractFromText(devisTexte, /(?:architecte|arch)\s*[:#]?\s*([^\n]{3,40})/i)].filter(Boolean),
+    titre: produits,
+    description: [...new Set(descriptions)],
+    fournisseur: fabricants,
+    fabricant: fabricants,
+    types: types,
+  });
+});
+
+function extractFromText(text, regex) {
+  if (!text) return '';
+  const m = text.match(regex);
+  return m ? m[1].trim() : '';
+}
+
 // POST pour sauvegarder + générer PDF en une seule action
 router.post('/generer-pdf/:id', async (req, res) => {
   const db = req.db;
   const id = parseInt(req.params.id);
-  const { titre, numero_projet, client, adresse, architecte, materiaux_json, fiches_json } = req.body;
+  const { titre, numero_projet, client, adresse, architecte, materiaux_json, fiches_json, positions_json } = req.body;
 
-  // 1. Sauvegarder d'abord
   const current = await db.execute({ sql: 'SELECT * FROM bordereaux WHERE id = ?', args: [id] });
   if (current.rows.length === 0) return res.status(404).send('Bordereau non trouvé');
 
@@ -248,6 +308,7 @@ router.post('/generer-pdf/:id', async (req, res) => {
   contenu.projet.architecte = architecte || contenu.projet.architecte || '';
   if (materiaux_json) { try { contenu.materiaux_matches = JSON.parse(materiaux_json); } catch (e) {} }
   if (fiches_json) { try { contenu.fiches_selectionnees = JSON.parse(fiches_json); } catch (e) {} }
+  if (positions_json) { try { contenu.field_positions = JSON.parse(positions_json); } catch (e) {} }
 
   await db.execute({
     sql: "UPDATE bordereaux SET titre = ?, numero_projet = ?, contenu = ?, updated_at = datetime('now') WHERE id = ?",
@@ -268,7 +329,7 @@ router.post('/generer-pdf/:id', async (req, res) => {
     try {
       const templateBuffer = Buffer.from(row.template_data, 'base64');
       if (templateBuffer.length > 4 && templateBuffer.slice(0, 5).toString() === '%PDF-') {
-        const filledDoc = await fillTemplatePdf(templateBuffer, projet, materiaux, row.devis_texte || '', fichesSelectionnees);
+        const filledDoc = await fillTemplatePdf(templateBuffer, contenu.field_positions || {});
         const filledBuffer = await filledDoc.save();
         const filledLoaded = await PDFLib.load(filledBuffer);
         const pages = await finalPdf.copyPages(filledLoaded, filledLoaded.getPageIndices());

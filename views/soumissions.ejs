@@ -1,0 +1,124 @@
+<%- include('partials/header', { title: 'Soumissions', page: 'soumissions' }) %>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h2><i class="bi bi-file-earmark-ruled"></i> Soumissions</h2>
+  <a href="/soumissions/nouveau" class="btn btn-primary btn-lg">
+    <i class="bi bi-plus-lg"></i> Nouvelle soumission
+  </a>
+</div>
+
+<!-- Stats -->
+<div class="row g-3 mb-4">
+  <div class="col-md-2">
+    <div class="card text-center p-3 stat-card">
+      <h3><%= stats.total || 0 %></h3>
+      <small class="text-muted">Total</small>
+    </div>
+  </div>
+  <div class="col-md-2">
+    <div class="card text-center p-3 stat-card" style="border-left: 4px solid #6c757d;">
+      <h3><%= stats.brouillons || 0 %></h3>
+      <small class="text-muted">Brouillons</small>
+    </div>
+  </div>
+  <div class="col-md-2">
+    <div class="card text-center p-3 stat-card" style="border-left: 4px solid #0d6efd;">
+      <h3><%= stats.generes || 0 %></h3>
+      <small class="text-muted">Générés</small>
+    </div>
+  </div>
+  <div class="col-md-2">
+    <div class="card text-center p-3 stat-card" style="border-left: 4px solid #198754;">
+      <h3><%= stats.approuves || 0 %></h3>
+      <small class="text-muted">Approuvés</small>
+    </div>
+  </div>
+  <div class="col-md-2">
+    <div class="card text-center p-3 stat-card" style="border-left: 4px solid #0dcaf0;">
+      <h3><%= stats.envoyes || 0 %></h3>
+      <small class="text-muted">Envoyés</small>
+    </div>
+  </div>
+</div>
+
+<!-- Filtres -->
+<div class="card mb-4">
+  <div class="card-body">
+    <form method="GET" class="row g-3 align-items-end">
+      <div class="col-md-4">
+        <label class="form-label">Recherche</label>
+        <input type="text" name="q" class="form-control" placeholder="Client, projet, numéro..." value="<%= recherche %>">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Statut</label>
+        <select name="statut" class="form-select">
+          <option value="">Tous</option>
+          <option value="brouillon" <%= filtre==='brouillon'?'selected':'' %>>Brouillon</option>
+          <option value="genere" <%= filtre==='genere'?'selected':'' %>>Généré</option>
+          <option value="revise" <%= filtre==='revise'?'selected':'' %>>Révisé</option>
+          <option value="approuve" <%= filtre==='approuve'?'selected':'' %>>Approuvé</option>
+          <option value="envoye" <%= filtre==='envoye'?'selected':'' %>>Envoyé</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <button class="btn btn-outline-primary w-100" type="submit"><i class="bi bi-funnel"></i> Filtrer</button>
+      </div>
+      <% if (filtre || recherche) { %>
+      <div class="col-md-2">
+        <a href="/soumissions" class="btn btn-outline-secondary w-100"><i class="bi bi-x"></i> Réinitialiser</a>
+      </div>
+      <% } %>
+    </form>
+  </div>
+</div>
+
+<!-- Tableau -->
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead>
+        <tr>
+          <th>Numéro</th>
+          <th>Client</th>
+          <th>Projet</th>
+          <th>Système</th>
+          <th>Superficie</th>
+          <th>Prix</th>
+          <th>Statut</th>
+          <th>Date</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% if (soumissions.length === 0) { %>
+        <tr>
+          <td colspan="9" class="text-center text-muted py-4">
+            <i class="bi bi-inbox" style="font-size:2rem;"></i>
+            <p class="mt-2">Aucune soumission trouvée</p>
+          </td>
+        </tr>
+        <% } %>
+        <% soumissions.forEach(s => { %>
+        <tr style="cursor:pointer;" onclick="window.location='/soumissions/<%= s.id %>'">
+          <td><strong><%= s.numero %></strong></td>
+          <td><%= s.client_nom %></td>
+          <td><%= s.projet_nom || '-' %></td>
+          <td><span class="badge bg-dark"><%= s.systeme_toiture %></span></td>
+          <td><%= s.superficie_pc ? s.superficie_pc + ' pi²' : '-' %></td>
+          <td><%= s.prix_total ? Number(s.prix_total).toLocaleString('fr-CA') + ' $' : '-' %></td>
+          <td>
+            <% const statutColors = {brouillon:'secondary', genere:'primary', revise:'warning', approuve:'success', envoye:'info'}; %>
+            <span class="badge bg-<%= statutColors[s.statut] || 'secondary' %>"><%= s.statut %></span>
+          </td>
+          <td><%= s.updated_at ? new Date(s.updated_at).toLocaleDateString('fr-CA') : '' %></td>
+          <td>
+            <a href="/soumissions/<%= s.id %>" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i></a>
+          </td>
+        </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<%- include('partials/footer', { scripts: [] }) %>

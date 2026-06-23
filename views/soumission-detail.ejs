@@ -1,0 +1,356 @@
+<%- include('partials/header', { title: 'Soumission ' + soumission.numero, page: 'soumissions' }) %>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h2><i class="bi bi-file-earmark-ruled"></i> <%= soumission.numero %></h2>
+    <p class="text-muted mb-0"><%= soumission.projet_nom || soumission.client_nom %></p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="/soumissions" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Retour</a>
+  </div>
+</div>
+
+<% if (soumission._erreur) { %>
+<div class="alert alert-danger">
+  <i class="bi bi-exclamation-triangle"></i> <strong>Erreur de génération :</strong> <%= soumission._erreur %>
+</div>
+<% } %>
+
+<!-- Barre de statut -->
+<div class="card mb-4">
+  <div class="card-body">
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
+      <div class="status-timeline">
+        <% const statuts = ['brouillon','genere','revise','approuve','envoye']; %>
+        <% const statutLabels = {brouillon:'Brouillon', genere:'Généré', revise:'Révisé', approuve:'Approuvé', envoye:'Envoyé'}; %>
+        <% const statutColors = {brouillon:'#6c757d', genere:'#0d6efd', revise:'#fd7e14', approuve:'#198754', envoye:'#0dcaf0'}; %>
+        <% const currentIdx = statuts.indexOf(soumission.statut); %>
+        <% statuts.forEach((st, idx) => { %>
+          <span class="status-step <%= idx <= currentIdx ? 'active' : 'inactive' %>" style="<%= idx <= currentIdx ? 'background:'+statutColors[st] : '' %>">
+            <%= statutLabels[st] %>
+          </span>
+          <% if (idx < statuts.length - 1) { %>
+            <span class="status-arrow"><i class="bi bi-chevron-right"></i></span>
+          <% } %>
+        <% }) %>
+      </div>
+
+      <div class="d-flex gap-2">
+        <% if (!soumission.fichier_genere || soumission.statut === 'brouillon') { %>
+          <form method="POST" action="/soumissions/<%= soumission.id %>/generer" class="d-inline">
+            <button class="btn btn-primary"><i class="bi bi-file-earmark-word"></i> Générer le document</button>
+          </form>
+        <% } %>
+
+        <% if (soumission.fichier_genere) { %>
+          <a href="/soumissions/<%= soumission.id %>/telecharger" class="btn btn-success">
+            <i class="bi bi-download"></i> Télécharger .docx
+          </a>
+        <% } %>
+
+        <% if (soumission.statut === 'genere') { %>
+          <form method="POST" action="/soumissions/<%= soumission.id %>/statut" class="d-inline">
+            <input type="hidden" name="statut" value="revise">
+            <button class="btn btn-warning"><i class="bi bi-pencil-square"></i> Marquer révisé</button>
+          </form>
+        <% } %>
+
+        <% if (soumission.statut === 'revise') { %>
+          <form method="POST" action="/soumissions/<%= soumission.id %>/statut" class="d-inline">
+            <input type="hidden" name="statut" value="approuve">
+            <input type="hidden" name="approuve_par" value="Superviseur">
+            <button class="btn btn-success"><i class="bi bi-check-circle"></i> Approuver</button>
+          </form>
+        <% } %>
+
+        <% if (soumission.statut === 'approuve') { %>
+          <form method="POST" action="/soumissions/<%= soumission.id %>/statut" class="d-inline">
+            <input type="hidden" name="statut" value="envoye">
+            <button class="btn btn-info"><i class="bi bi-send"></i> Marquer envoyé</button>
+          </form>
+        <% } %>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4">
+  <!-- Colonne info -->
+  <div class="col-lg-8">
+    <form method="POST" action="/soumissions/<%= soumission.id %>/modifier">
+
+      <!-- Système -->
+      <div class="card mb-4">
+        <div class="card-header"><h6 class="mb-0"><i class="bi bi-gear"></i> Système de toiture</h6></div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label fw-bold">Système *</label>
+              <select name="systeme_toiture" class="form-select" required>
+                <% systemes.forEach(s => { %>
+                <option value="<%= s.value %>" <%= soumission.systeme_toiture===s.value?'selected':'' %>><%= s.label %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-bold">Type de travaux *</label>
+              <select name="type_travaux" class="form-select" required>
+                <% types_travaux.forEach(t => { %>
+                <option value="<%= t.value %>" <%= soumission.type_travaux===t.value?'selected':'' %>><%= t.label %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label fw-bold">Langue</label>
+              <select name="langue" class="form-select">
+                <option value="FR" <%= soumission.langue==='FR'?'selected':'' %>>FR</option>
+                <option value="EN" <%= soumission.langue==='EN'?'selected':'' %>>EN</option>
+              </select>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label fw-bold">Type</label>
+              <select name="type_soumission" class="form-select">
+                <% types_soumission.forEach(t => { %>
+                <option value="<%= t.value %>" <%= soumission.type_soumission===t.value?'selected':'' %>><%= t.label %></option>
+                <% }) %>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Client -->
+      <div class="card mb-4">
+        <div class="card-header"><h6 class="mb-0"><i class="bi bi-person"></i> Client</h6></div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">Nom du client *</label>
+              <input type="text" name="client_nom" class="form-control" value="<%= soumission.client_nom %>" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Contact</label>
+              <input type="text" name="client_contact" class="form-control" value="<%= soumission.client_contact || '' %>">
+            </div>
+            <div class="col-md-5">
+              <label class="form-label">Adresse</label>
+              <input type="text" name="client_adresse" class="form-control" value="<%= soumission.client_adresse || '' %>">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Ville</label>
+              <input type="text" name="client_ville" class="form-control" value="<%= soumission.client_ville || '' %>">
+            </div>
+            <div class="col-md-1">
+              <label class="form-label">Prov.</label>
+              <input type="text" name="client_province" class="form-control" value="<%= soumission.client_province || 'QC' %>">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Code postal</label>
+              <input type="text" name="client_code_postal" class="form-control" value="<%= soumission.client_code_postal || '' %>">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Téléphone</label>
+              <input type="tel" name="client_telephone" class="form-control" value="<%= soumission.client_telephone || '' %>">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Courriel</label>
+              <input type="email" name="client_courriel" class="form-control" value="<%= soumission.client_courriel || '' %>">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Projet -->
+      <div class="card mb-4">
+        <div class="card-header"><h6 class="mb-0"><i class="bi bi-building"></i> Projet</h6></div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">Nom du projet</label>
+              <input type="text" name="projet_nom" class="form-control" value="<%= soumission.projet_nom || '' %>">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Adresse du projet</label>
+              <input type="text" name="projet_adresse" class="form-control" value="<%= soumission.projet_adresse || '' %>">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Superficie (pi²)</label>
+              <input type="number" name="superficie_pc" class="form-control" value="<%= soumission.superficie_pc || '' %>">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Pontage</label>
+              <select name="pontage" class="form-select">
+                <option value="">--</option>
+                <% pontages.forEach(p => { %>
+                <option value="<%= p.value %>" <%= soumission.pontage===p.value?'selected':'' %>><%= p.label %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Épaisseur isolant</label>
+              <input type="text" name="epaisseur_isolant" class="form-control" value="<%= soumission.epaisseur_isolant || '' %>">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Pente isolant</label>
+              <select name="pente_isolant" class="form-select">
+                <option value="">--</option>
+                <option value="1%" <%= soumission.pente_isolant==='1%'?'selected':'' %>>1%</option>
+                <option value="2%" <%= soumission.pente_isolant==='2%'?'selected':'' %>>2%</option>
+                <option value="1/8 po/pi" <%= soumission.pente_isolant==='1/8 po/pi'?'selected':'' %>>1/8 po/pi</option>
+                <option value="1/4 po/pi" <%= soumission.pente_isolant==='1/4 po/pi'?'selected':'' %>>1/4 po/pi</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quantités -->
+      <div class="card mb-4">
+        <div class="card-header"><h6 class="mb-0"><i class="bi bi-hash"></i> Quantités</h6></div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-3">
+              <label class="form-label">Drains</label>
+              <input type="number" name="nb_drains" class="form-control" value="<%= soumission.nb_drains || '' %>" min="0">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Manchons évents</label>
+              <input type="number" name="nb_manchons_events" class="form-control" value="<%= soumission.nb_manchons_events || '' %>" min="0">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Manchons étanchéité</label>
+              <input type="number" name="nb_manchons_etancheite" class="form-control" value="<%= soumission.nb_manchons_etancheite || '' %>" min="0">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Cols de cygne</label>
+              <input type="number" name="nb_cols_cygne" class="form-control" value="<%= soumission.nb_cols_cygne || '' %>" min="0">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Ventilateur Maximum #</label>
+              <input type="text" name="ventilateur_max" class="form-control" value="<%= soumission.ventilateur_max || '' %>">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Coût remp. CP ($/pi²)</label>
+              <input type="text" name="cout_remplacement_cp" class="form-control" value="<%= soumission.cout_remplacement_cp || '' %>">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Coût remp. isolant ($/pi²)</label>
+              <input type="text" name="cout_remplacement_isolant" class="form-control" value="<%= soumission.cout_remplacement_isolant || '' %>">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Prix et garantie -->
+      <div class="card mb-4">
+        <div class="card-header"><h6 class="mb-0"><i class="bi bi-currency-dollar"></i> Prix et garantie</h6></div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label">Prix total ($)</label>
+              <input type="number" name="prix_total" class="form-control" step="0.01" value="<%= soumission.prix_total || '' %>">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Garantie T3E</label>
+              <select name="garantie_t3e" class="form-select">
+                <% garanties_t3e.forEach(g => { %>
+                <option value="<%= g.value %>" <%= soumission.garantie_t3e===g.value?'selected':'' %>><%= g.label %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Garantie manufacturier</label>
+              <select name="garantie_manufacturier" class="form-select">
+                <% garanties_manuf.forEach(g => { %>
+                <option value="<%= g.value %>" <%= soumission.garantie_manufacturier===g.value?'selected':'' %>><%= g.label %></option>
+                <% }) %>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Documents et notes -->
+      <div class="card mb-4">
+        <div class="card-header"><h6 class="mb-0"><i class="bi bi-journal-text"></i> Documents et notes</h6></div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">Documents reçus</label>
+              <textarea name="documents_recus" class="form-control" rows="3"><%= soumission.documents_recus || '' %></textarea>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Exclusions spécifiques</label>
+              <textarea name="exclusions_specifiques" class="form-control" rows="3"><%= soumission.exclusions_specifiques || '' %></textarea>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Notes internes</label>
+              <textarea name="notes" class="form-control" rows="2"><%= soumission.notes || '' %></textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex gap-3 mb-4">
+        <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Enregistrer les modifications</button>
+
+        <form method="POST" action="/soumissions/<%= soumission.id %>/generer" class="d-inline">
+          <button type="submit" class="btn btn-success"><i class="bi bi-file-earmark-word"></i> Enregistrer et générer le document</button>
+        </form>
+      </div>
+    </form>
+  </div>
+
+  <!-- Colonne latérale -->
+  <div class="col-lg-4">
+    <!-- Résumé -->
+    <div class="card mb-4">
+      <div class="card-header"><h6 class="mb-0"><i class="bi bi-info-circle"></i> Résumé</h6></div>
+      <div class="card-body">
+        <table class="table table-sm mb-0">
+          <tr><td class="text-muted">Numéro</td><td><strong><%= soumission.numero %></strong></td></tr>
+          <tr><td class="text-muted">Statut</td><td>
+            <% const sc = {brouillon:'secondary', genere:'primary', revise:'warning', approuve:'success', envoye:'info'}; %>
+            <span class="badge bg-<%= sc[soumission.statut] || 'secondary' %>"><%= soumission.statut %></span>
+          </td></tr>
+          <tr><td class="text-muted">Template</td><td><%= soumission.template_utilise || 'Non sélectionné' %></td></tr>
+          <tr><td class="text-muted">Créé par</td><td><%= soumission.cree_par || '-' %></td></tr>
+          <tr><td class="text-muted">Créé le</td><td><%= soumission.created_at ? new Date(soumission.created_at).toLocaleDateString('fr-CA') : '-' %></td></tr>
+          <tr><td class="text-muted">Modifié le</td><td><%= soumission.updated_at ? new Date(soumission.updated_at).toLocaleDateString('fr-CA') : '-' %></td></tr>
+          <% if (soumission.approuve_par) { %>
+          <tr><td class="text-muted">Approuvé par</td><td><%= soumission.approuve_par %></td></tr>
+          <% } %>
+        </table>
+      </div>
+    </div>
+
+    <!-- Fichier généré -->
+    <% if (soumission.fichier_genere) { %>
+    <div class="card mb-4 border-success">
+      <div class="card-header bg-success text-white"><h6 class="mb-0"><i class="bi bi-file-earmark-word"></i> Document généré</h6></div>
+      <div class="card-body text-center">
+        <i class="bi bi-file-earmark-word" style="font-size:3rem; color:#2B579A;"></i>
+        <p class="mt-2 mb-2"><small><%= soumission.fichier_genere %></small></p>
+        <a href="/soumissions/<%= soumission.id %>/telecharger" class="btn btn-success w-100">
+          <i class="bi bi-download"></i> Télécharger
+        </a>
+        <form method="POST" action="/soumissions/<%= soumission.id %>/generer" class="mt-2">
+          <button class="btn btn-outline-primary btn-sm w-100"><i class="bi bi-arrow-clockwise"></i> Regénérer</button>
+        </form>
+      </div>
+    </div>
+    <% } %>
+
+    <!-- Actions dangereuses -->
+    <div class="card border-danger">
+      <div class="card-header bg-danger text-white"><h6 class="mb-0"><i class="bi bi-exclamation-triangle"></i> Zone dangereuse</h6></div>
+      <div class="card-body">
+        <form method="POST" action="/soumissions/<%= soumission.id %>/supprimer" onsubmit="return confirm('Supprimer cette soumission définitivement ?')">
+          <button class="btn btn-outline-danger w-100"><i class="bi bi-trash"></i> Supprimer la soumission</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%- include('partials/footer', { scripts: [] }) %>

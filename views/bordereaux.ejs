@@ -28,7 +28,9 @@
         <td><%= b.created_at || '-' %></td>
         <td>
           <a href="/bordereaux/editer/<%= b.id %>" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i></a>
-          <a href="/bordereaux/pdf/<%= b.id %>" class="btn btn-sm btn-outline-success"><i class="bi bi-file-pdf"></i> PDF</a>
+          <form method="POST" action="/bordereaux/supprimer/<%= b.id %>" style="display:inline" onsubmit="return confirm('Supprimer ce bordereau ?')">
+            <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+          </form>
         </td>
       </tr>
       <% }) %>

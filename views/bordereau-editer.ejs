@@ -8,328 +8,380 @@
 </nav>
 
 <div class="row">
-  <!-- COLONNE PRINCIPALE -->
-  <div class="col-md-8">
+  <!-- GAUCHE: Formulaire avec menus déroulants -->
+  <div class="col-md-5" style="max-height:90vh;overflow-y:auto;">
     <form method="POST" action="/bordereaux/sauvegarder/<%= bordereau.id %>" id="formEdit">
-
-      <!-- Infos projet -->
-      <div class="card mb-3">
-        <div class="card-header d-flex justify-content-between align-items-center">
-          <h5 class="mb-0"><i class="bi bi-building"></i> Informations du projet</h5>
-          <span class="badge badge-<%= bordereau.statut %>" style="font-size: 1rem;"><%= bordereau.statut.charAt(0).toUpperCase() + bordereau.statut.slice(1) %></span>
+      <div class="card mb-2">
+        <div class="card-header bg-primary text-white py-2">
+          <strong>Champs du bordereau</strong>
+          <span class="badge bg-light text-dark float-end"><%= bordereau.statut %></span>
         </div>
-        <div class="card-body">
-          <% var readonly = bordereau.statut === 'approuve' ? 'readonly' : ''; %>
+        <div class="card-body py-2">
           <% var projet = bordereau.contenu.projet || {}; %>
-          <div class="row mb-2">
-            <div class="col-md-4">
-              <label class="form-label">Numéro de projet</label>
-              <input type="text" name="numero_projet" class="form-control" value="<%= projet.numero || bordereau.numero_projet || '' %>" <%= readonly %>>
-            </div>
-            <div class="col-md-8">
-              <label class="form-label">Titre</label>
-              <input type="text" name="titre" class="form-control" value="<%= bordereau.titre %>" <%= readonly %>>
-            </div>
+          <% var mat = (bordereau.contenu.materiaux_matches || [])[0] || {}; %>
+
+          <div class="mb-2">
+            <label class="form-label fw-bold mb-0" style="font-size:0.8rem">NOM DU PROJET</label>
+            <select class="form-select form-select-sm field-select" data-field="nom_projet" data-target="nom_projet_val">
+              <option value="">— Choisir —</option>
+            </select>
+            <input type="text" class="form-control form-control-sm mt-1 field-custom d-none" data-field="nom_projet" placeholder="Saisir manuellement...">
+            <input type="hidden" name="client" id="nom_projet_val" value="<%= projet.client || '' %>">
           </div>
-          <div class="row mb-2">
-            <div class="col-md-4">
-              <label class="form-label">Client</label>
-              <input type="text" name="client" class="form-control" value="<%= projet.client || '' %>" <%= readonly %>>
-            </div>
-            <div class="col-md-4">
-              <label class="form-label">Architecte</label>
-              <input type="text" name="architecte" class="form-control" value="<%= projet.architecte || '' %>" <%= readonly %>>
-            </div>
-            <div class="col-md-4">
-              <label class="form-label">Adresse</label>
-              <input type="text" name="adresse" class="form-control" value="<%= projet.adresse || '' %>" <%= readonly %>>
-            </div>
+
+          <div class="mb-2">
+            <label class="form-label fw-bold mb-0" style="font-size:0.8rem">NUMÉRO DU PROJET</label>
+            <select class="form-select form-select-sm field-select" data-field="numero_projet" data-target="numero_projet_val">
+              <option value="">— Choisir —</option>
+            </select>
+            <input type="text" class="form-control form-control-sm mt-1 field-custom d-none" data-field="numero_projet" placeholder="Saisir manuellement...">
+            <input type="hidden" name="numero_projet" id="numero_projet_val" value="<%= projet.numero || bordereau.numero_projet || '' %>">
           </div>
+
+          <div class="mb-2">
+            <label class="form-label fw-bold mb-0" style="font-size:0.8rem">ADRESSE</label>
+            <select class="form-select form-select-sm field-select" data-field="adresse" data-target="adresse_val">
+              <option value="">— Choisir —</option>
+            </select>
+            <input type="text" class="form-control form-control-sm mt-1 field-custom d-none" data-field="adresse" placeholder="Saisir manuellement...">
+            <input type="hidden" name="adresse" id="adresse_val" value="<%= projet.adresse || '' %>">
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label fw-bold mb-0" style="font-size:0.8rem">ARCHITECTE</label>
+            <select class="form-select form-select-sm field-select" data-field="architecte" data-target="architecte_val">
+              <option value="">— Choisir —</option>
+            </select>
+            <input type="text" class="form-control form-control-sm mt-1 field-custom d-none" data-field="architecte" placeholder="Saisir manuellement...">
+            <input type="hidden" name="architecte" id="architecte_val" value="<%= projet.architecte || '' %>">
+          </div>
+
+          <hr class="my-2">
+
+          <div class="mb-2">
+            <label class="form-label fw-bold mb-0" style="font-size:0.8rem">TITRE (Produit)</label>
+            <select class="form-select form-select-sm field-select" data-field="titre_produit" data-target="titre_produit_val">
+              <option value="">— Choisir —</option>
+            </select>
+            <input type="text" class="form-control form-control-sm mt-1 field-custom d-none" data-field="titre_produit" placeholder="Saisir manuellement...">
+            <input type="hidden" id="titre_produit_val" value="<%= mat.nom || '' %>">
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label fw-bold mb-0" style="font-size:0.8rem">DESCRIPTION</label>
+            <select class="form-select form-select-sm field-select" data-field="description" data-target="description_val">
+              <option value="">— Choisir —</option>
+            </select>
+            <input type="text" class="form-control form-control-sm mt-1 field-custom d-none" data-field="description" placeholder="Saisir manuellement...">
+            <input type="hidden" id="description_val" value="">
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label fw-bold mb-0" style="font-size:0.8rem">FOURNISSEUR</label>
+            <select class="form-select form-select-sm field-select" data-field="fournisseur" data-target="fournisseur_val">
+              <option value="">— Choisir —</option>
+            </select>
+            <input type="text" class="form-control form-control-sm mt-1 field-custom d-none" data-field="fournisseur" placeholder="Saisir manuellement...">
+            <input type="hidden" id="fournisseur_val" value="<%= mat.fabricant || '' %>">
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label fw-bold mb-0" style="font-size:0.8rem">FABRICANT</label>
+            <select class="form-select form-select-sm field-select" data-field="fabricant" data-target="fabricant_val">
+              <option value="">— Choisir —</option>
+            </select>
+            <input type="text" class="form-control form-control-sm mt-1 field-custom d-none" data-field="fabricant" placeholder="Saisir manuellement...">
+            <input type="hidden" id="fabricant_val" value="<%= mat.fabricant || '' %>">
+          </div>
+
+          <input type="hidden" name="titre" value="<%= bordereau.titre %>">
+          <input type="hidden" name="materiaux_json" id="materiauxJson" value='<%= JSON.stringify(bordereau.contenu.materiaux_matches || []) %>'>
+          <input type="hidden" name="fiches_json" id="fichesJson" value='<%= JSON.stringify(bordereau.contenu.fiches_selectionnees || []) %>'>
+          <input type="hidden" name="positions_json" id="positionsJson" value='<%= JSON.stringify(bordereau.contenu.field_positions || {}) %>'>
         </div>
       </div>
 
-      <!-- Matériaux trouvés automatiquement -->
-      <% var materiaux = bordereau.contenu.materiaux_matches || []; %>
-      <% if (materiaux.length > 0) { %>
-      <div class="card mb-3">
-        <div class="card-header bg-info text-white">
-          <h5 class="mb-0"><i class="bi bi-box-seam"></i> Matériaux détectés dans le devis</h5>
+      <!-- Fiches techniques -->
+      <div class="card mb-2">
+        <div class="card-header bg-success text-white py-2">
+          <strong>Fiches techniques à joindre</strong>
+          <span class="badge bg-light text-dark float-end" id="countFT"><%= (bordereau.contenu.fiches_selectionnees || []).length %></span>
         </div>
-        <div class="card-body p-0">
-          <div class="table-responsive">
-            <table class="table table-sm table-hover mb-0">
-              <thead class="table-light">
-                <tr><th>Produit</th><th>Fabricant</th><th>Type</th><th>Score</th></tr>
-              </thead>
-              <tbody>
-                <% materiaux.forEach(function(m) { %>
-                <tr>
-                  <td><%= m.nom || '' %></td>
-                  <td><%= m.fabricant || '' %></td>
-                  <td><span class="badge bg-secondary"><%= m.type_produit || '' %></span></td>
-                  <td>
-                    <% var sc = m.score >= 60 ? 'success' : m.score >= 30 ? 'warning' : 'danger'; %>
-                    <span class="badge bg-<%= sc %>"><%= m.score || 0 %></span>
-                  </td>
-                </tr>
-                <% }) %>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-      <% } %>
-
-      <!-- SÉLECTION DES FICHES TECHNIQUES -->
-      <div class="card mb-3">
-        <div class="card-header bg-success text-white">
-          <h5 class="mb-0"><i class="bi bi-file-earmark-pdf"></i> Sélectionner les fiches techniques à joindre</h5>
-        </div>
-        <div class="card-body">
-          <p class="text-muted mb-2">Sélectionnez les fiches techniques qui seront ajoutées à la suite du bordereau dans le PDF final.</p>
-
-          <div class="mb-3">
-            <input type="text" id="searchFT" class="form-control" placeholder="Rechercher une fiche technique...">
-          </div>
-
-          <% var fichesSelect = bordereau.contenu.fiches_selectionnees || []; %>
-          <% var fichesIds = fichesSelect.map(function(f) { return f.id; }); %>
-
-          <div id="selectedFT" class="mb-3">
-            <% if (fichesSelect.length > 0) { %>
-            <h6><i class="bi bi-check-circle text-success"></i> Fiches sélectionnées (<span id="countFT"><%= fichesSelect.length %></span>)</h6>
-            <div class="list-group mb-2" id="selectedList">
-              <% fichesSelect.forEach(function(f) { %>
-              <div class="list-group-item d-flex justify-content-between align-items-center selected-ft" data-id="<%= f.id %>" data-titre="<%= f.titre %>" data-fichier="<%= f.nom_fichier %>" data-chemin="<%= f.chemin_fichier %>" data-source="<%= f.source %>">
-                <span><i class="bi bi-file-pdf text-danger"></i> <strong><%= f.titre %></strong> <small class="text-muted">(<%= f.source %>)</small></span>
-                <button type="button" class="btn btn-sm btn-outline-danger btn-remove-ft"><i class="bi bi-x"></i></button>
-              </div>
-              <% }) %>
-            </div>
-            <% } else { %>
-            <h6><i class="bi bi-info-circle"></i> Aucune fiche sélectionnée — <span id="countFT">0</span></h6>
-            <div class="list-group mb-2" id="selectedList"></div>
-            <% } %>
-          </div>
-
-          <h6>Base de connaissances — Fiches techniques disponibles</h6>
-          <div style="max-height:400px;overflow-y:auto;" id="ftList">
+        <div class="card-body py-2">
+          <input type="text" id="searchFT" class="form-control form-control-sm mb-2" placeholder="Rechercher une fiche...">
+          <div id="selectedList" class="mb-2"></div>
+          <div style="max-height:200px;overflow-y:auto;" id="ftList">
             <% var currentSource = ''; %>
             <% ftDocs.forEach(function(doc) { %>
               <% if (doc.source !== currentSource) { currentSource = doc.source; %>
-                <div class="ft-group fw-bold text-primary mt-2 mb-1"><%= doc.source || 'Autre' %></div>
+                <div class="ft-group fw-bold text-primary mt-1" style="font-size:0.75rem"><%= doc.source || 'Autre' %></div>
               <% } %>
-              <div class="ft-item d-flex justify-content-between align-items-center border-bottom py-1 px-2" data-search="<%= (doc.titre + ' ' + doc.source + ' ' + doc.nom_fichier).toLowerCase() %>" data-id="<%= doc.id %>" data-titre="<%= doc.titre %>" data-fichier="<%= doc.nom_fichier %>" data-chemin="<%= doc.chemin_fichier %>" data-source="<%= doc.source %>">
-                <span class="small">
-                  <i class="bi bi-file-pdf text-danger"></i> <%= doc.titre %>
-                  <small class="text-muted">(<%= doc.nom_fichier %>)</small>
-                </span>
-                <button type="button" class="btn btn-sm btn-outline-success btn-add-ft <%= fichesIds.indexOf(doc.id) >= 0 ? 'd-none' : '' %>"><i class="bi bi-plus"></i></button>
+              <div class="ft-item d-flex justify-content-between align-items-center py-1 px-1" style="font-size:0.75rem" data-search="<%= (doc.titre + ' ' + doc.source + ' ' + doc.nom_fichier).toLowerCase() %>" data-id="<%= doc.id %>" data-titre="<%= doc.titre %>" data-fichier="<%= doc.nom_fichier %>" data-chemin="<%= doc.chemin_fichier %>" data-source="<%= doc.source %>">
+                <span><i class="bi bi-file-pdf text-danger"></i> <%= doc.titre %></span>
+                <button type="button" class="btn btn-sm btn-outline-success btn-add-ft py-0 px-1"><i class="bi bi-plus"></i></button>
               </div>
             <% }) %>
           </div>
         </div>
       </div>
 
-      <!-- Devis (pliable) -->
-      <% if (bordereau.contenu.devis) { %>
-      <div class="card mb-3">
-        <div class="card-header" style="cursor:pointer" data-bs-toggle="collapse" data-bs-target="#collapseDevis">
-          <i class="bi bi-file-earmark-text"></i> Devis : <strong><%= bordereau.contenu.devis.source_fichier || '' %></strong>
-          <i class="bi bi-chevron-down float-end"></i>
-        </div>
-        <div class="collapse" id="collapseDevis">
-          <div class="card-body">
-            <% if (bordereau.contenu.devis.tables && bordereau.contenu.devis.tables.length > 0) { %>
-              <% bordereau.contenu.devis.tables.forEach(function(table) { %>
-                <div class="table-responsive" style="max-height:250px;overflow-y:auto;">
-                  <table class="table table-sm table-bordered">
-                    <thead><tr><% (table.colonnes || []).forEach(function(c) { %><th><%= c %></th><% }) %></tr></thead>
-                    <tbody><% (table.donnees || []).slice(0,50).forEach(function(row) { %><tr><% (table.colonnes || []).forEach(function(c) { %><td><%= row[c] || '' %></td><% }) %></tr><% }) %></tbody>
-                  </table>
-                </div>
-              <% }) %>
-            <% } %>
-            <% if (bordereau.contenu.devis.texte_preview) { %>
-              <pre style="max-height:150px;overflow-y:auto;font-size:0.75rem;background:#f8f9fa;padding:10px;border-radius:4px;white-space:pre-wrap;"><%= bordereau.contenu.devis.texte_preview %></pre>
-            <% } %>
-          </div>
-        </div>
-      </div>
-      <% } %>
-
-      <!-- Template (pliable) -->
-      <% if (bordereau.contenu.template) { %>
-      <div class="card mb-3">
-        <div class="card-header" style="cursor:pointer" data-bs-toggle="collapse" data-bs-target="#collapseTemplate">
-          <i class="bi bi-file-earmark-word"></i> Modèle bordereau : <strong><%= bordereau.contenu.template.source_fichier || '' %></strong>
-          <i class="bi bi-chevron-down float-end"></i>
-        </div>
-        <div class="collapse" id="collapseTemplate">
-          <div class="card-body">
-            <% if (bordereau.contenu.template.texte_preview) { %>
-              <pre style="max-height:150px;overflow-y:auto;font-size:0.75rem;background:#f8f9fa;padding:10px;border-radius:4px;white-space:pre-wrap;"><%= bordereau.contenu.template.texte_preview %></pre>
-            <% } %>
-          </div>
-        </div>
-      </div>
-      <% } %>
-
-      <input type="hidden" name="materiaux_json" id="materiauxJson" value='<%= JSON.stringify(materiaux) %>'>
-      <input type="hidden" name="fiches_json" id="fichesJson" value='<%= JSON.stringify(bordereau.contenu.fiches_selectionnees || []) %>'>
-
-      <% if (bordereau.statut !== 'approuve') { %>
+      <!-- Boutons -->
       <div class="d-flex gap-2 mb-3">
-        <button type="submit" class="btn btn-primary btn-lg"><i class="bi bi-save"></i> Sauvegarder</button>
-        <button type="submit" formaction="/bordereaux/generer-pdf/<%= bordereau.id %>" class="btn btn-success btn-lg"><i class="bi bi-file-pdf"></i> Télécharger PDF</button>
+        <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Sauvegarder</button>
+        <button type="submit" formaction="/bordereaux/generer-pdf/<%= bordereau.id %>" class="btn btn-success"><i class="bi bi-file-pdf"></i> Générer PDF</button>
       </div>
-      <% } else { %>
-      <button type="submit" formaction="/bordereaux/generer-pdf/<%= bordereau.id %>" class="btn btn-success btn-lg mb-3"><i class="bi bi-file-pdf"></i> Télécharger PDF</button>
-      <% } %>
-
     </form>
   </div>
 
-  <!-- SIDEBAR -->
-  <div class="col-md-4">
-    <div class="card mb-3">
-      <div class="card-header"><h6 class="mb-0"><i class="bi bi-bar-chart"></i> Résumé</h6></div>
-      <div class="card-body">
-        <div class="d-flex justify-content-between mb-1"><span>Matériaux détectés</span><strong><%= materiaux.length %></strong></div>
-        <div class="d-flex justify-content-between mb-1"><span>Fiches techniques jointes</span><strong class="text-success" id="statFT"><%= (bordereau.contenu.fiches_selectionnees || []).length %></strong></div>
-        <% if (bordereau.template_fichier) { %>
-        <div class="d-flex justify-content-between"><span>Template</span><strong class="text-primary"><%= bordereau.template_fichier %></strong></div>
-        <% } %>
-      </div>
-    </div>
-
-    <div class="card mb-3">
-      <div class="card-header"><h6 class="mb-0">Cycle d'approbation</h6></div>
-      <div class="card-body">
-        <div class="status-timeline mb-3">
-          <span class="status-step <%= bordereau.statut === 'brouillon' ? 'active bg-secondary' : 'inactive' %>">Brouillon</span>
-          <span class="status-arrow"><i class="bi bi-arrow-right"></i></span>
-          <span class="status-step <%= bordereau.statut === 'revise' ? 'active bg-warning' : 'inactive' %>">Révisé</span>
-          <span class="status-arrow"><i class="bi bi-arrow-right"></i></span>
-          <span class="status-step <%= bordereau.statut === 'approuve' ? 'active bg-success' : 'inactive' %>">Approuvé</span>
-        </div>
-        <% if (bordereau.statut === 'brouillon') { %>
-        <form method="POST" action="/approbation/changer-statut/<%= bordereau.id %>">
-          <input type="hidden" name="nouveau_statut" value="revise">
-          <input type="text" name="effectue_par" class="form-control mb-2" placeholder="Révisé par...">
-          <input type="text" name="commentaire" class="form-control mb-2" placeholder="Commentaire">
-          <button type="submit" class="btn btn-warning w-100"><i class="bi bi-eye"></i> Marquer comme Révisé</button>
-        </form>
-        <% } else if (bordereau.statut === 'revise') { %>
-        <form method="POST" action="/approbation/changer-statut/<%= bordereau.id %>">
-          <input type="hidden" name="nouveau_statut" value="approuve">
-          <input type="text" name="effectue_par" class="form-control mb-2" placeholder="Approuvé par...">
-          <input type="text" name="commentaire" class="form-control mb-2" placeholder="Commentaire">
-          <button type="submit" class="btn btn-success w-100"><i class="bi bi-check-circle"></i> Approuver</button>
-        </form>
-        <% } else { %>
-        <div class="alert alert-success mb-0"><i class="bi bi-check-circle"></i> Approuvé.</div>
-        <% } %>
-      </div>
-    </div>
-
+  <!-- DROITE: Aperçu du bordereau avec texte déplaçable -->
+  <div class="col-md-7">
     <div class="card">
-      <div class="card-header"><h6 class="mb-0">Historique</h6></div>
-      <ul class="list-group list-group-flush">
-        <% historique.forEach(function(h) { %>
-        <li class="list-group-item py-1">
-          <small class="text-muted"><%= h.date %></small><br>
-          <strong><%= h.par %></strong> : <%= h.action %>
-          <% if (h.nouveau) { %><span class="badge badge-<%= h.nouveau %>"><%= h.nouveau %></span><% } %>
-          <% if (h.commentaire) { %><br><small><%= h.commentaire %></small><% } %>
-        </li>
-        <% }) %>
-        <% if (historique.length === 0) { %>
-        <li class="list-group-item text-muted">Aucun historique</li>
-        <% } %>
-      </ul>
+      <div class="card-header py-2">
+        <strong>Aperçu du bordereau</strong>
+        <small class="text-muted">(glissez le texte pour le repositionner)</small>
+      </div>
+      <div class="card-body p-1">
+        <div id="pdfContainer" style="position:relative;border:1px solid #ccc;background:#f5f5f5;min-height:500px;">
+          <canvas id="pdfCanvas" style="width:100%;display:block;"></canvas>
+          <!-- Les textes déplaçables seront ajoutés ici par JS -->
+        </div>
+      </div>
     </div>
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
-var fichesSelectionnees = <%= JSON.stringify(bordereau.contenu.fiches_selectionnees || []) %>;
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-function updateFichesHidden() {
-  document.getElementById('fichesJson').value = JSON.stringify(fichesSelectionnees);
-  document.getElementById('countFT').textContent = fichesSelectionnees.length;
-  document.getElementById('statFT').textContent = fichesSelectionnees.length;
+var fichesSelectionnees = <%= JSON.stringify(bordereau.contenu.fiches_selectionnees || []) %>;
+var savedPositions = <%= JSON.stringify(bordereau.contenu.field_positions || {}) %>;
+var pdfScale = 1;
+var canvasRect = null;
+
+// Champs du bordereau avec positions par défaut (en % du canvas)
+var fields = {
+  nom_projet:     { label: 'NOM DU PROJET',  x: 27, y: 16.5, val: '<%= (projet.client || '').replace(/'/g,"\\'") %>' },
+  numero_projet:  { label: 'NUMÉRO',         x: 29, y: 18.3, val: '<%= (projet.numero || bordereau.numero_projet || '').replace(/'/g,"\\'") %>' },
+  adresse:        { label: 'ADRESSE',         x: 20, y: 27,   val: '<%= (projet.adresse || '').replace(/'/g,"\\'") %>' },
+  architecte:     { label: 'ARCHITECTE',      x: 60, y: 23.5, val: '<%= (projet.architecte || '').replace(/'/g,"\\'") %>' },
+  nom_entreprise: { label: 'NOM',             x: 16, y: 23.5, val: 'Toitures Trois Étoiles Inc.' },
+  specialite:     { label: 'SPÉCIALITÉ',      x: 60, y: 23.5, val: 'Couvreur' },
+  titre_produit:  { label: 'TITRE',           x: 18, y: 43.5, val: '<%= (mat.nom || '').replace(/'/g,"\\'") %>' },
+  description:    { label: 'DESCRIPTION',     x: 24, y: 47.5, val: '' },
+  fournisseur:    { label: 'FOURNISSEUR',     x: 25, y: 49.5, val: '<%= (mat.fabricant || '').replace(/'/g,"\\'") %>' },
+  fabricant:      { label: 'FABRICANT',        x: 58, y: 49.5, val: '<%= (mat.fabricant || '').replace(/'/g,"\\'") %>' },
+};
+
+// Restaurer les positions sauvegardées
+Object.keys(savedPositions).forEach(function(k) {
+  if (fields[k]) {
+    fields[k].x = savedPositions[k].x;
+    fields[k].y = savedPositions[k].y;
+    if (savedPositions[k].val) fields[k].val = savedPositions[k].val;
+  }
+});
+
+// Charger le PDF template
+var pdfUrl = '/bordereaux/template-pdf/<%= bordereau.id %>';
+pdfjsLib.getDocument(pdfUrl).promise.then(function(pdf) {
+  pdf.getPage(1).then(function(page) {
+    var canvas = document.getElementById('pdfCanvas');
+    var container = document.getElementById('pdfContainer');
+    var containerWidth = container.clientWidth - 2;
+    var viewport = page.getViewport({ scale: 1 });
+    pdfScale = containerWidth / viewport.width;
+    var scaledViewport = page.getViewport({ scale: pdfScale });
+    canvas.width = scaledViewport.width;
+    canvas.height = scaledViewport.height;
+    container.style.height = scaledViewport.height + 'px';
+    page.render({ canvasContext: canvas.getContext('2d'), viewport: scaledViewport }).promise.then(function() {
+      canvasRect = { w: canvas.width, h: canvas.height };
+      createOverlays();
+    });
+  });
+}).catch(function(err) {
+  document.getElementById('pdfContainer').innerHTML = '<p class="text-center text-muted p-5">Aucun template PDF disponible.<br>Veuillez soumettre un bordereau en format PDF.</p>';
+});
+
+function createOverlays() {
+  var container = document.getElementById('pdfContainer');
+  Object.keys(fields).forEach(function(key) {
+    var f = fields[key];
+    if (!f.val) return;
+    var div = document.createElement('div');
+    div.className = 'field-overlay';
+    div.id = 'overlay_' + key;
+    div.dataset.field = key;
+    div.textContent = f.val;
+    div.style.cssText = 'position:absolute;cursor:move;font-size:10px;color:#0000aa;font-weight:bold;padding:1px 3px;border:1px dashed transparent;white-space:nowrap;';
+    div.style.left = (f.x / 100 * canvasRect.w) + 'px';
+    div.style.top = (f.y / 100 * canvasRect.h) + 'px';
+    div.addEventListener('mouseenter', function() { this.style.borderColor = '#ff0000'; this.style.background = 'rgba(255,255,0,0.3)'; });
+    div.addEventListener('mouseleave', function() { this.style.borderColor = 'transparent'; this.style.background = 'none'; });
+    makeDraggable(div);
+    container.appendChild(div);
+  });
 }
 
-function renderSelected() {
+function makeDraggable(el) {
+  var startX, startY, origLeft, origTop;
+  el.addEventListener('mousedown', function(e) {
+    e.preventDefault();
+    startX = e.clientX; startY = e.clientY;
+    origLeft = el.offsetLeft; origTop = el.offsetTop;
+    function onMove(e2) {
+      el.style.left = (origLeft + e2.clientX - startX) + 'px';
+      el.style.top = (origTop + e2.clientY - startY) + 'px';
+      updatePositions();
+    }
+    function onUp() {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      updatePositions();
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
+function updatePositions() {
+  if (!canvasRect) return;
+  var positions = {};
+  document.querySelectorAll('.field-overlay').forEach(function(el) {
+    var key = el.dataset.field;
+    positions[key] = {
+      x: (el.offsetLeft / canvasRect.w * 100),
+      y: (el.offsetTop / canvasRect.h * 100),
+      val: el.textContent
+    };
+  });
+  document.getElementById('positionsJson').value = JSON.stringify(positions);
+}
+
+function updateOverlay(key, val) {
+  fields[key].val = val;
+  var el = document.getElementById('overlay_' + key);
+  if (el) {
+    el.textContent = val;
+    if (!val) el.style.display = 'none';
+    else el.style.display = '';
+  } else if (val && canvasRect) {
+    var container = document.getElementById('pdfContainer');
+    var div = document.createElement('div');
+    div.className = 'field-overlay';
+    div.id = 'overlay_' + key;
+    div.dataset.field = key;
+    div.textContent = val;
+    div.style.cssText = 'position:absolute;cursor:move;font-size:10px;color:#0000aa;font-weight:bold;padding:1px 3px;border:1px dashed transparent;white-space:nowrap;';
+    div.style.left = (fields[key].x / 100 * canvasRect.w) + 'px';
+    div.style.top = (fields[key].y / 100 * canvasRect.h) + 'px';
+    div.addEventListener('mouseenter', function() { this.style.borderColor = '#ff0000'; this.style.background = 'rgba(255,255,0,0.3)'; });
+    div.addEventListener('mouseleave', function() { this.style.borderColor = 'transparent'; this.style.background = 'none'; });
+    makeDraggable(div);
+    container.appendChild(div);
+  }
+  updatePositions();
+}
+
+// Charger les suggestions depuis l'API
+fetch('/bordereaux/suggestions/<%= bordereau.id %>').then(function(r) { return r.json(); }).then(function(sugg) {
+  var mapping = {
+    nom_projet: sugg.nom_projet || [],
+    numero_projet: sugg.numero_projet || [],
+    adresse: sugg.adresse || [],
+    architecte: sugg.architecte || [],
+    titre_produit: sugg.titre || [],
+    description: sugg.description || [],
+    fournisseur: sugg.fournisseur || [],
+    fabricant: sugg.fabricant || [],
+  };
+  document.querySelectorAll('.field-select').forEach(function(sel) {
+    var key = sel.dataset.field;
+    var opts = mapping[key] || [];
+    var target = sel.dataset.target;
+    var currentVal = document.getElementById(target) ? document.getElementById(target).value : '';
+    sel.innerHTML = '<option value="">— Choisir —</option>';
+    var seen = new Set();
+    opts.forEach(function(o) {
+      if (!o || seen.has(o)) return;
+      seen.add(o);
+      var opt = document.createElement('option');
+      opt.value = o; opt.textContent = o;
+      if (o === currentVal) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    if (currentVal && !seen.has(currentVal)) {
+      var opt = document.createElement('option');
+      opt.value = currentVal; opt.textContent = currentVal; opt.selected = true;
+      sel.appendChild(opt);
+    }
+    var autreOpt = document.createElement('option');
+    autreOpt.value = '__autre__'; autreOpt.textContent = '✏️ Autre (saisie libre)';
+    sel.appendChild(autreOpt);
+  });
+});
+
+// Événements des dropdowns
+document.querySelectorAll('.field-select').forEach(function(sel) {
+  sel.addEventListener('change', function() {
+    var key = this.dataset.field;
+    var target = this.dataset.target;
+    var customInput = this.parentElement.querySelector('.field-custom');
+    if (this.value === '__autre__') {
+      customInput.classList.remove('d-none');
+      customInput.focus();
+      return;
+    }
+    customInput.classList.add('d-none');
+    if (document.getElementById(target)) document.getElementById(target).value = this.value;
+    updateOverlay(key, this.value);
+  });
+});
+
+document.querySelectorAll('.field-custom').forEach(function(inp) {
+  inp.addEventListener('input', function() {
+    var key = this.dataset.field;
+    var sel = this.parentElement.querySelector('.field-select');
+    var target = sel.dataset.target;
+    if (document.getElementById(target)) document.getElementById(target).value = this.value;
+    updateOverlay(key, this.value);
+  });
+});
+
+// Fiches techniques
+function updateFT() {
+  document.getElementById('fichesJson').value = JSON.stringify(fichesSelectionnees);
+  document.getElementById('countFT').textContent = fichesSelectionnees.length;
   var list = document.getElementById('selectedList');
   list.innerHTML = '';
   fichesSelectionnees.forEach(function(f, i) {
     var div = document.createElement('div');
-    div.className = 'list-group-item d-flex justify-content-between align-items-center';
-    div.innerHTML = '<span><i class="bi bi-file-pdf text-danger"></i> <strong>' + f.titre + '</strong> <small class="text-muted">(' + (f.source||'') + ')</small></span>' +
-      '<button type="button" class="btn btn-sm btn-outline-danger btn-remove-ft" data-idx="' + i + '"><i class="bi bi-x"></i></button>';
+    div.className = 'd-flex justify-content-between align-items-center py-1';
+    div.style.fontSize = '0.75rem';
+    div.innerHTML = '<span><i class="bi bi-check-circle text-success"></i> ' + f.titre + '</span><button type="button" class="btn btn-sm btn-outline-danger py-0 px-1" data-idx="' + i + '"><i class="bi bi-x"></i></button>';
+    div.querySelector('button').addEventListener('click', function() {
+      fichesSelectionnees.splice(i, 1);
+      updateFT();
+    });
     list.appendChild(div);
   });
-  list.querySelectorAll('.btn-remove-ft').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      var idx = parseInt(this.dataset.idx);
-      var removedId = fichesSelectionnees[idx].id;
-      fichesSelectionnees.splice(idx, 1);
-      renderSelected();
-      updateFichesHidden();
-      var addBtn = document.querySelector('.ft-item[data-id="' + removedId + '"] .btn-add-ft');
-      if (addBtn) addBtn.classList.remove('d-none');
-    });
-  });
-  updateFichesHidden();
 }
+updateFT();
 
 document.querySelectorAll('.btn-add-ft').forEach(function(btn) {
   btn.addEventListener('click', function() {
     var item = this.closest('.ft-item');
-    fichesSelectionnees.push({
-      id: parseInt(item.dataset.id),
-      titre: item.dataset.titre,
-      nom_fichier: item.dataset.fichier,
-      chemin_fichier: item.dataset.chemin,
-      source: item.dataset.source
-    });
-    this.classList.add('d-none');
-    renderSelected();
-  });
-});
-
-document.querySelectorAll('.btn-remove-ft').forEach(function(btn) {
-  btn.addEventListener('click', function() {
-    var idx = parseInt(this.dataset.idx);
-    if (isNaN(idx)) {
-      var item = this.closest('.selected-ft');
-      if (item) {
-        var id = parseInt(item.dataset.id);
-        fichesSelectionnees = fichesSelectionnees.filter(function(f) { return f.id !== id; });
-        var addBtn = document.querySelector('.ft-item[data-id="' + id + '"] .btn-add-ft');
-        if (addBtn) addBtn.classList.remove('d-none');
-      }
-    } else {
-      var removedId = fichesSelectionnees[idx].id;
-      fichesSelectionnees.splice(idx, 1);
-      var addBtn = document.querySelector('.ft-item[data-id="' + removedId + '"] .btn-add-ft');
-      if (addBtn) addBtn.classList.remove('d-none');
-    }
-    renderSelected();
+    fichesSelectionnees.push({ id: parseInt(item.dataset.id), titre: item.dataset.titre, nom_fichier: item.dataset.fichier, chemin_fichier: item.dataset.chemin, source: item.dataset.source });
+    updateFT();
   });
 });
 
 document.getElementById('searchFT').addEventListener('input', function() {
   var q = this.value.toLowerCase();
-  document.querySelectorAll('.ft-item').forEach(function(item) {
-    item.style.display = item.dataset.search.includes(q) ? '' : 'none';
-  });
+  document.querySelectorAll('.ft-item').forEach(function(item) { item.style.display = item.dataset.search.includes(q) ? '' : 'none'; });
   document.querySelectorAll('.ft-group').forEach(function(g) { g.style.display = q ? 'none' : ''; });
 });
-
-updateFichesHidden();
 </script>
 
 <%- include('partials/footer', { scripts: [] }) %>

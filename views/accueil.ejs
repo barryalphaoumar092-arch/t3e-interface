@@ -26,11 +26,11 @@
     </a>
   </div>
   <div class="col-md-3">
-    <a href="/bordereaux" class="text-decoration-none">
+    <a href="/soumissions" class="text-decoration-none">
       <div class="card stat-card text-center p-4">
-        <div class="stat-icon text-warning"><i class="bi bi-file-earmark-text"></i></div>
-        <h3 class="mt-2"><%= stats.bordereaux %></h3>
-        <p class="text-muted mb-0">Bordereaux</p>
+        <div class="stat-icon text-danger"><i class="bi bi-file-earmark-ruled"></i></div>
+        <h3 class="mt-2"><%= stats.soumissions || 0 %></h3>
+        <p class="text-muted mb-0">Soumissions</p>
       </div>
     </a>
   </div>
@@ -58,9 +58,9 @@
   <div class="col-md-4">
     <div class="card h-100">
       <div class="card-body">
-        <h5 class="card-title"><i class="bi bi-file-earmark-text text-warning"></i> Bordereaux techniques</h5>
-        <p class="card-text">Importez un devis ou une fiche technique et générez automatiquement un bordereau technique en format PDF.</p>
-        <a href="/bordereaux" class="btn btn-warning">Créer un bordereau</a>
+        <h5 class="card-title"><i class="bi bi-file-earmark-ruled text-danger"></i> Soumissions</h5>
+        <p class="card-text">Créez une soumission en sélectionnant le système de toiture. Le bon template est automatiquement rempli avec vos données.</p>
+        <a href="/soumissions/nouveau" class="btn btn-danger">Nouvelle soumission</a>
       </div>
     </div>
   </div>
