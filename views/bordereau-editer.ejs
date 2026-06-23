@@ -376,13 +376,77 @@ document.querySelectorAll('.btn-add-ft').forEach(function(btn) {
     var item = this.closest('.ft-item');
     var already = fichesSelectionnees.some(function(f) { return f.id === parseInt(item.dataset.id); });
     if (already) return;
-    fichesSelectionnees.push({
+    var ft = {
       id: parseInt(item.dataset.id), titre: item.dataset.titre,
       nom_fichier: item.dataset.fichier, chemin_fichier: item.dataset.chemin, source: item.dataset.source
-    });
+    };
+    fichesSelectionnees.push(ft);
     updateFT();
+
+    // Auto-remplir les champs à partir de la FT sélectionnée
+    autoFillFromFT(ft);
   });
 });
+
+function autoFillFromFT(ft) {
+  var titre = ft.titre || '';
+  var source = ft.source || '';
+
+  // Remplir Titre si vide
+  var titreField = document.querySelector('.field-select[data-field="titre"]');
+  if (titreField && !titreField.value) {
+    setFieldValue('titre', 'Titre', titre);
+  }
+
+  // Remplir Fournisseur si vide
+  var fournField = document.querySelector('.field-select[data-field="fournisseur"]');
+  if (fournField && !fournField.value) {
+    setFieldValue('fournisseur', 'Fournisseur', source);
+  }
+
+  // Remplir Fabricant si vide
+  var fabField = document.querySelector('.field-select[data-field="fabricant"]');
+  if (fabField && !fabField.value) {
+    setFieldValue('fabricant', 'Fabricant', source);
+  }
+
+  // Remplir Description si vide
+  var descField = document.querySelector('.field-select[data-field="description"]');
+  if (descField && !descField.value) {
+    var desc = 'Fiche technique — ' + titre + ' (' + source + ')';
+    setFieldValue('description', 'Description', desc);
+  }
+
+  // Remplir NOM entrepreneur si vide
+  var nomField = document.querySelector('.field-select[data-field="nom"]');
+  if (nomField && !nomField.value) {
+    setFieldValue('nom', 'NOM', 'Toitures Trois Étoiles Inc.');
+  }
+
+  // Remplir Spécialité si vide
+  var specField = document.querySelector('.field-select[data-field="sp_cialit"]');
+  if (specField && !specField.value) {
+    setFieldValue('sp_cialit', 'SPÉCIALITÉ', 'Couvreur');
+  }
+}
+
+function setFieldValue(key, label, val) {
+  var sel = document.querySelector('.field-select[data-field="' + key + '"]');
+  if (!sel) return;
+  // Ajouter l'option si elle n'existe pas
+  var found = false;
+  for (var i = 0; i < sel.options.length; i++) {
+    if (sel.options[i].value === val) { sel.selectedIndex = i; found = true; break; }
+  }
+  if (!found) {
+    var autreOpt = sel.querySelector('option[value="__autre__"]');
+    var opt = document.createElement('option');
+    opt.value = val; opt.textContent = val; opt.selected = true;
+    if (autreOpt) sel.insertBefore(opt, autreOpt);
+    else sel.appendChild(opt);
+  }
+  addOverlay(key, label, val);
+}
 
 // Collecter toutes les données
 function collectData() {

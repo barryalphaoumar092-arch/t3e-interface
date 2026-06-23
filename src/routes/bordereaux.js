@@ -402,16 +402,38 @@ router.get('/suggestions/:id', async (req, res) => {
 
   const projet = contenu.projet || {};
 
+  // Infos des fiches sélectionnées
+  const fichesSelect = contenu.fiches_selectionnees || [];
+  const ftTitres = fichesSelect.map(f => f.titre).filter(Boolean);
+  const ftSources = [...new Set(fichesSelect.map(f => f.source).filter(Boolean))];
+
+  // Descriptions enrichies
+  const allDescriptions = [
+    ...descriptions,
+    ...ftTitres.map(t => 'Fiche technique — ' + t),
+    ...materiaux.map(m => [m.nom, m.fabricant, m.type_produit].filter(Boolean).join(' — ')),
+  ].filter(Boolean);
+
+  // Valeurs courantes du projet
+  const projValues = [projet.client, projet.numero, projet.adresse, projet.architecte].filter(Boolean);
+
   res.json({
     nom_projet: [projet.client, extractFromText(devisTexte, /(?:projet|client)\s*[:#]?\s*([^\n]{3,40})/i)].filter(Boolean),
     numero_projet: [projet.numero, extractFromText(devisTexte, /(?:no|num[ée]ro)\s*(?:projet)?\s*[:#]?\s*([A-Z0-9][\w-]{2,15})/i)].filter(Boolean),
     adresse: [projet.adresse, extractFromText(devisTexte, /(?:adresse|lieu)\s*[:#]?\s*([^\n]{5,60})/i)].filter(Boolean),
     architecte: [projet.architecte, extractFromText(devisTexte, /(?:architecte|arch)\s*[:#]?\s*([^\n]{3,40})/i)].filter(Boolean),
-    titre: produits,
-    description: [...new Set(descriptions)],
-    fournisseur: fabricants,
-    fabricant: fabricants,
+    titre: [...new Set([...ftTitres, ...produits])],
+    description: [...new Set(allDescriptions)].slice(0, 30),
+    fournisseur: [...new Set([...ftSources, ...fabricants])],
+    fabricant: [...new Set([...ftSources, ...fabricants])],
     types: types,
+    ligne_num_ro: ['1', '2', '3', '4', '5'],
+    nombre_feuilles: ['1', '2', '3', '4', '5', '10'],
+    r_vision: ['0', '1', '2', 'A', 'B'],
+    nom: ['Toitures Trois Étoiles Inc.'],
+    sp_cialit: ['Couvreur', 'Couvreur — Toitures et étanchéité', 'Entrepreneur spécialisé en couverture'],
+    d_lai: ['Selon échéancier', 'À confirmer', '2 semaines', '3 semaines', '1 mois'],
+    remarque: fichesSelect.length > 0 ? ['Voir fiches techniques ci-jointes'] : [],
   });
 });
 
