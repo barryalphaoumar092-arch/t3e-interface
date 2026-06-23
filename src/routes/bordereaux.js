@@ -227,6 +227,79 @@ router.get('/editer/:id', async (req, res) => {
   res.render('bordereau-editer', { bordereau, historique, ftDocs: ftDocs.rows, templateFields });
 });
 
+router.post('/sauvegarder-ajax/:id', async (req, res) => {
+  const db = req.db;
+  const id = parseInt(req.params.id);
+  const { titre, numero_projet, client, adresse, architecte, positions_json, fiches_json } = req.body;
+
+  const current = await db.execute({ sql: 'SELECT contenu FROM bordereaux WHERE id = ?', args: [id] });
+  if (current.rows.length === 0) return res.json({ error: 'not found' });
+
+  const contenu = JSON.parse(current.rows[0].contenu || '{}');
+  contenu.projet = contenu.projet || {};
+  contenu.projet.numero = numero_projet || contenu.projet.numero || '';
+  contenu.projet.client = client || contenu.projet.client || '';
+  contenu.projet.adresse = adresse || contenu.projet.adresse || '';
+  contenu.projet.architecte = architecte || contenu.projet.architecte || '';
+  if (positions_json) { try { contenu.field_positions = JSON.parse(positions_json); } catch (e) {} }
+  if (fiches_json) { try { contenu.fiches_selectionnees = JSON.parse(fiches_json); } catch (e) {} }
+
+  await db.execute({
+    sql: "UPDATE bordereaux SET titre = ?, numero_projet = ?, contenu = ?, updated_at = datetime('now') WHERE id = ?",
+    args: [titre || '', numero_projet || '', JSON.stringify(contenu), id]
+  });
+
+  res.json({ ok: true });
+});
+
+router.get('/generer-pdf-get/:id', async (req, res) => {
+  const db = req.db;
+  const id = parseInt(req.params.id);
+  const r = await db.execute({ sql: 'SELECT * FROM bordereaux WHERE id = ?', args: [id] });
+  if (r.rows.length === 0) return res.status(404).send('Non trouvé');
+
+  const row = r.rows[0];
+  const contenu = JSON.parse(row.contenu || '{}');
+  const projet = contenu.projet || {};
+  const fichesSelectionnees = contenu.fiches_selectionnees || [];
+
+  const { fillTemplatePdf } = require('../services/pdf-filler');
+  const finalPdf = await PDFLib.create();
+
+  if (row.template_data) {
+    try {
+      const templateBuffer = Buffer.from(row.template_data, 'base64');
+      if (templateBuffer.length > 4 && templateBuffer.slice(0, 5).toString() === '%PDF-') {
+        const filledDoc = await fillTemplatePdf(templateBuffer, contenu.field_positions || {});
+        const filledBuffer = await filledDoc.save();
+        const filledLoaded = await PDFLib.load(filledBuffer);
+        const pages = await finalPdf.copyPages(filledLoaded, filledLoaded.getPageIndices());
+        pages.forEach(p => finalPdf.addPage(p));
+      }
+    } catch (err) {
+      console.error('Erreur template:', err.message);
+    }
+  }
+
+  for (const fiche of fichesSelectionnees) {
+    const ftPath = fiche.chemin_fichier ? path.join(__dirname, '..', '..', fiche.chemin_fichier) : null;
+    if (ftPath && fs.existsSync(ftPath) && ftPath.toLowerCase().endsWith('.pdf')) {
+      try {
+        const ftBuffer = fs.readFileSync(ftPath);
+        const ftDoc = await PDFLib.load(ftBuffer, { ignoreEncryption: true });
+        const ftPages = await finalPdf.copyPages(ftDoc, ftDoc.getPageIndices());
+        ftPages.forEach(p => finalPdf.addPage(p));
+      } catch (err) {}
+    }
+  }
+
+  if (finalPdf.getPageCount() === 0) finalPdf.addPage();
+  const finalBuffer = await finalPdf.save();
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="bordereau-${projet.numero || id}.pdf"`);
+  res.send(Buffer.from(finalBuffer));
+});
+
 router.post('/sauvegarder/:id', async (req, res) => {
   const db = req.db;
   const id = parseInt(req.params.id);

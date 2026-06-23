@@ -83,8 +83,8 @@
 
       <!-- Boutons -->
       <div class="d-grid gap-1 mb-3">
-        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-save"></i> Sauvegarder</button>
-        <button type="submit" formaction="/bordereaux/generer-pdf/<%= bordereau.id %>" class="btn btn-success"><i class="bi bi-file-pdf"></i> Télécharger PDF</button>
+        <button type="button" class="btn btn-primary btn-sm" id="btnSave"><i class="bi bi-save"></i> Sauvegarder</button>
+        <button type="button" class="btn btn-success" id="btnPdf"><i class="bi bi-file-pdf"></i> Télécharger PDF</button>
       </div>
     </form>
   </div>
@@ -337,10 +337,66 @@ document.querySelectorAll('.btn-add-ft').forEach(function(btn) {
   });
 });
 
-// Sauvegarder tout avant soumission du formulaire
-document.getElementById('formEdit').addEventListener('submit', function() {
+// Collecter toutes les données
+function collectData() {
   savePositions();
-  document.getElementById('fichesJson').value = JSON.stringify(fichesSelectionnees);
+  return {
+    titre: '<%= bordereau.titre.replace(/'/g, "\\'") %>',
+    numero_projet: '<%= (bordereau.numero_projet || '').replace(/'/g, "\\'") %>',
+    client: '<%= ((bordereau.contenu.projet || {}).client || '').replace(/'/g, "\\'") %>',
+    adresse: '<%= ((bordereau.contenu.projet || {}).adresse || '').replace(/'/g, "\\'") %>',
+    architecte: '<%= ((bordereau.contenu.projet || {}).architecte || '').replace(/'/g, "\\'") %>',
+    positions_json: document.getElementById('positionsJson').value,
+    fiches_json: JSON.stringify(fichesSelectionnees),
+  };
+}
+
+// Sauvegarder via AJAX
+document.getElementById('btnSave').addEventListener('click', function() {
+  var data = collectData();
+  var btn = this;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Sauvegarde...';
+
+  fetch('/bordereaux/sauvegarder-ajax/<%= bordereau.id %>', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  }).then(function(r) { return r.json(); }).then(function(res) {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-check-circle"></i> Sauvegardé !';
+    btn.classList.replace('btn-primary', 'btn-success');
+    setTimeout(function() {
+      btn.innerHTML = '<i class="bi bi-save"></i> Sauvegarder';
+      btn.classList.replace('btn-success', 'btn-primary');
+    }, 2000);
+  }).catch(function(err) {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-save"></i> Sauvegarder';
+    alert('Erreur de sauvegarde: ' + err.message);
+  });
+});
+
+// Télécharger PDF (sauvegarde d'abord puis télécharge)
+document.getElementById('btnPdf').addEventListener('click', function() {
+  var data = collectData();
+  var btn = this;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Génération...';
+
+  fetch('/bordereaux/sauvegarder-ajax/<%= bordereau.id %>', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  }).then(function() {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-file-pdf"></i> Télécharger PDF';
+    window.location.href = '/bordereaux/generer-pdf-get/<%= bordereau.id %>';
+  }).catch(function(err) {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-file-pdf"></i> Télécharger PDF';
+    alert('Erreur: ' + err.message);
+  });
 });
 
 document.getElementById('searchFT').addEventListener('input', function() {
