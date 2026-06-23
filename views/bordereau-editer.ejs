@@ -286,21 +286,22 @@ function updateFT() {
     list.appendChild(div);
   });
 
-  // Preview sous le bordereau à droite
+  // Preview des FT sous le bordereau à droite — afficher les PDF
   var preview = document.getElementById('ftPreview');
   preview.innerHTML = '';
-  if (fichesSelectionnees.length > 0) {
-    var title = document.createElement('p');
-    title.className = 'fw-bold small mb-1';
-    title.textContent = 'Fiches techniques jointes (' + fichesSelectionnees.length + ') :';
-    preview.appendChild(title);
-    fichesSelectionnees.forEach(function(f) {
-      var p = document.createElement('p');
-      p.className = 'small mb-0 text-muted';
-      p.innerHTML = '<i class="bi bi-file-pdf text-danger"></i> ' + f.titre + ' <small>(' + (f.source || '') + ')</small>';
-      preview.appendChild(p);
-    });
-  }
+  fichesSelectionnees.forEach(function(f) {
+    if (!f.chemin_fichier || !f.chemin_fichier.toLowerCase().endsWith('.pdf')) return;
+    var pdfUrl = '/' + f.chemin_fichier;
+    var section = document.createElement('div');
+    section.className = 'mt-2';
+    section.innerHTML = '<div class="d-flex justify-content-between align-items-center bg-light p-1 border"><small class="fw-bold"><i class="bi bi-file-pdf text-danger"></i> ' + f.titre + ' (' + (f.source||'') + ')</small></div>';
+    var embed = document.createElement('embed');
+    embed.src = pdfUrl + '#toolbar=0&navpanes=0';
+    embed.type = 'application/pdf';
+    embed.style.cssText = 'width:100%;height:600px;border:1px solid #ccc;';
+    section.appendChild(embed);
+    preview.appendChild(section);
+  });
 }
 updateFT();
 
