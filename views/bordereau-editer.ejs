@@ -97,8 +97,8 @@
         <span class="badge bg-secondary"><%= bordereau.statut %></span>
       </div>
       <div class="card-body p-1">
-        <div id="pdfContainer" style="position:relative;background:#fff;min-height:700px;height:85vh;">
-          <embed id="pdfEmbed" src="/bordereaux/template-pdf/<%= bordereau.id %>#toolbar=0&navpanes=0" type="application/pdf" style="width:100%;height:100%;pointer-events:none;">
+        <div id="pdfContainer" style="position:relative;background:#fff;">
+          <canvas id="pdfCanvas" style="width:100%;display:block;"></canvas>
           <div id="overlay" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:10;"></div>
         </div>
         <!-- FT sélectionnées affichées en dessous -->
@@ -108,25 +108,44 @@
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
 var fichesSelectionnees = <%= JSON.stringify(bordereau.contenu.fiches_selectionnees || []) %>;
 var savedPositions = <%= JSON.stringify(bordereau.contenu.field_positions || {}) %>;
 var overlays = {};
 var containerEl = document.getElementById('pdfContainer');
 var overlayEl = document.getElementById('overlay');
-// Forcer le conteneur au ratio LETTER (612x792) pour que positions = PDF
-var cWidth = containerEl.clientWidth;
-var pdfRatio = 792 / 612;
-var cHeight = Math.round(cWidth * pdfRatio);
-containerEl.style.height = cHeight + 'px';
-var canvasW = cWidth;
-var canvasH = cHeight;
+var canvasW = 0, canvasH = 0;
 
-setTimeout(function() {
-  canvasW = containerEl.clientWidth;
-  canvasH = containerEl.clientHeight;
-  restoreSavedOverlays();
-}, 500);
+pdfjsLib.getDocument({
+  url: '/bordereaux/template-pdf/<%= bordereau.id %>',
+  cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
+  cMapPacked: true,
+}).promise.then(function(pdf) {
+  pdf.getPage(1).then(function(page) {
+    var canvas = document.getElementById('pdfCanvas');
+    var ctx = canvas.getContext('2d');
+    var cw = containerEl.clientWidth;
+    var vp = page.getViewport({ scale: 1 });
+    var renderScale = (cw * 2) / vp.width;
+    var svp = page.getViewport({ scale: renderScale });
+    canvas.width = svp.width;
+    canvas.height = svp.height;
+    var displayH = Math.round(cw * vp.height / vp.width);
+    canvas.style.width = cw + 'px';
+    canvas.style.height = displayH + 'px';
+    canvasW = cw;
+    canvasH = displayH;
+    containerEl.style.height = displayH + 'px';
+    page.render({ canvasContext: ctx, viewport: svp }).promise.then(function() {
+      restoreSavedOverlays();
+    });
+  });
+}).catch(function() {
+  containerEl.innerHTML = '<p class="text-center text-muted p-5">Template PDF non disponible.</p>';
+});
 
 // ============ Créer un overlay draggable ============
 function addOverlay(key, label, val) {
