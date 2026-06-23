@@ -114,10 +114,14 @@ var savedPositions = <%= JSON.stringify(bordereau.contenu.field_positions || {})
 var overlays = {};
 var containerEl = document.getElementById('pdfContainer');
 var overlayEl = document.getElementById('overlay');
-var canvasW = containerEl.clientWidth;
-var canvasH = containerEl.clientHeight;
+// Forcer le conteneur au ratio LETTER (612x792) pour que positions = PDF
+var cWidth = containerEl.clientWidth;
+var pdfRatio = 792 / 612;
+var cHeight = Math.round(cWidth * pdfRatio);
+containerEl.style.height = cHeight + 'px';
+var canvasW = cWidth;
+var canvasH = cHeight;
 
-// Initialiser les overlays sauvegardés après un court délai (attendre que l'embed charge)
 setTimeout(function() {
   canvasW = containerEl.clientWidth;
   canvasH = containerEl.clientHeight;
