@@ -199,7 +199,30 @@ router.get('/editer/:id', async (req, res) => {
 
   // Extraire les champs du template
   const templateTexte = bordereau.template_texte || '';
-  const templateFields = extractTemplateFields(templateTexte);
+  let templateFields = extractTemplateFields(templateTexte);
+
+  // Fallback: champs standard du bordereau T3E si aucun champ détecté
+  if (templateFields.length === 0) {
+    templateFields = [
+      { key: 'nom_du_projet', label: 'NOM DU PROJET' },
+      { key: 'num_ro_du_projet', label: 'NUMÉRO DU PROJET' },
+      { key: 'nom', label: 'NOM (entrepreneur)' },
+      { key: 'sp_cialit', label: 'SPÉCIALITÉ' },
+      { key: 'adresse', label: 'ADRESSE' },
+      { key: 'ligne_num_ro', label: 'Ligne numéro' },
+      { key: 'titre', label: 'Titre' },
+      { key: 'num_ro_de_dessins', label: 'Numéro de dessins' },
+      { key: 'nombre_feuilles', label: 'Nombre feuilles' },
+      { key: 'r_vision', label: 'Révision' },
+      { key: 'description', label: 'Description' },
+      { key: 'fournisseur', label: 'Fournisseur' },
+      { key: 'fabricant', label: 'Fabricant' },
+      { key: 'section_item', label: 'Section (item)' },
+      { key: 'article', label: 'Article' },
+      { key: 'd_lai', label: 'Délai' },
+      { key: 'remarque', label: 'Remarque' },
+    ];
+  }
 
   res.render('bordereau-editer', { bordereau, historique, ftDocs: ftDocs.rows, templateFields });
 });
