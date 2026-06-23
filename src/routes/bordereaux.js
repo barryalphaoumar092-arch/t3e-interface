@@ -197,7 +197,11 @@ router.get('/editer/:id', async (req, res) => {
 
   const ftDocs = await db.execute("SELECT id, titre, nom_fichier, chemin_fichier, source FROM documents WHERE categorie_id = (SELECT id FROM categories WHERE nom = 'Fiches techniques') AND statut = 'actif' ORDER BY source, titre");
 
-  res.render('bordereau-editer', { bordereau, historique, ftDocs: ftDocs.rows });
+  // Extraire les champs du template
+  const templateTexte = bordereau.template_texte || '';
+  const templateFields = extractTemplateFields(templateTexte);
+
+  res.render('bordereau-editer', { bordereau, historique, ftDocs: ftDocs.rows, templateFields });
 });
 
 router.post('/sauvegarder/:id', async (req, res) => {
@@ -283,6 +287,29 @@ router.get('/suggestions/:id', async (req, res) => {
     types: types,
   });
 });
+
+function extractTemplateFields(text) {
+  if (!text) return [];
+  const fields = [];
+  const seen = new Set();
+  const lines = text.split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    // Chercher les lignes qui finissent par ":" ou contiennent "____"
+    const match = trimmed.match(/^([A-ZÀ-Ü\s']{3,})\s*:/i) || trimmed.match(/^(.+?)\s*:\s*[_\s]*$/);
+    if (match) {
+      const label = match[1].trim();
+      if (label.length > 2 && label.length < 50 && !seen.has(label.toUpperCase())) {
+        // Ignorer les headers/sections
+        if (/^(IDENTIFICATION|SUIVI|COMMENTAIRES|REÇU|RETOUR|ÉMIS|SOUMIS|SIGNATURE)/.test(label.toUpperCase())) continue;
+        seen.add(label.toUpperCase());
+        const key = label.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_');
+        fields.push({ key, label });
+      }
+    }
+  }
+  return fields;
+}
 
 function extractFromText(text, regex) {
   if (!text) return '';
