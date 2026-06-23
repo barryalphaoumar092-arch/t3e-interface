@@ -97,8 +97,9 @@
         <span class="badge bg-secondary"><%= bordereau.statut %></span>
       </div>
       <div class="card-body p-1">
-        <div id="pdfContainer" style="position:relative;background:#888;min-height:400px;">
-          <canvas id="pdfCanvas" style="width:100%;display:block;"></canvas>
+        <div id="pdfContainer" style="position:relative;background:#fff;min-height:700px;height:85vh;">
+          <embed id="pdfEmbed" src="/bordereaux/template-pdf/<%= bordereau.id %>#toolbar=0&navpanes=0" type="application/pdf" style="width:100%;height:100%;pointer-events:none;">
+          <div id="overlay" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:10;"></div>
         </div>
         <!-- FT sélectionnées affichées en dessous -->
         <div id="ftPreview" class="mt-2"></div>
@@ -107,43 +108,25 @@
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-
 var fichesSelectionnees = <%= JSON.stringify(bordereau.contenu.fiches_selectionnees || []) %>;
 var savedPositions = <%= JSON.stringify(bordereau.contenu.field_positions || {}) %>;
-var canvasW = 0, canvasH = 0;
 var overlays = {};
+var containerEl = document.getElementById('pdfContainer');
+var overlayEl = document.getElementById('overlay');
+var canvasW = containerEl.clientWidth;
+var canvasH = containerEl.clientHeight;
 
-// ============ PDF.js : Rendre le bordereau EXACT ============
-var pdfUrl = '/bordereaux/template-pdf/<%= bordereau.id %>';
-pdfjsLib.getDocument(pdfUrl).promise.then(function(pdf) {
-  pdf.getPage(1).then(function(page) {
-    var canvas = document.getElementById('pdfCanvas');
-    var container = document.getElementById('pdfContainer');
-    var cw = container.clientWidth;
-    var vp = page.getViewport({ scale: 1 });
-    var scale = cw / vp.width;
-    var svp = page.getViewport({ scale: scale });
-    canvas.width = svp.width;
-    canvas.height = svp.height;
-    container.style.height = svp.height + 'px';
-    canvasW = svp.width;
-    canvasH = svp.height;
-    page.render({ canvasContext: canvas.getContext('2d'), viewport: svp }).promise.then(function() {
-      restoreSavedOverlays();
-    });
-  });
-}).catch(function() {
-  document.getElementById('pdfContainer').innerHTML = '<p class="text-center text-muted p-5">Aucun template PDF. Soumettez un bordereau en format PDF.</p>';
-});
+// Initialiser les overlays sauvegardés après un court délai (attendre que l'embed charge)
+setTimeout(function() {
+  canvasW = containerEl.clientWidth;
+  canvasH = containerEl.clientHeight;
+  restoreSavedOverlays();
+}, 500);
 
 // ============ Créer un overlay draggable ============
 function addOverlay(key, label, val) {
   if (!val || !canvasW) return;
-  var container = document.getElementById('pdfContainer');
-
   if (overlays[key]) {
     overlays[key].el.textContent = val;
     overlays[key].val = val;
@@ -186,7 +169,7 @@ function addOverlay(key, label, val) {
     if (dragging) { dragging = false; savePositions(); }
   });
 
-  container.appendChild(div);
+  overlayEl.appendChild(div);
   overlays[key] = { el: div, val: val };
   savePositions();
 }
