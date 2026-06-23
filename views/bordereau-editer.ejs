@@ -8,7 +8,22 @@
 </nav>
 
 <div class="row">
-  <!-- GAUCHE: Formulaire avec menus déroulants -->
+  <!-- GAUCHE: Aperçu du bordereau -->
+  <div class="col-md-7">
+    <div class="card">
+      <div class="card-header py-2">
+        <strong>Aperçu du bordereau</strong>
+        <small class="text-muted">(glissez le texte pour le repositionner)</small>
+      </div>
+      <div class="card-body p-1">
+        <div id="pdfContainer" style="position:relative;border:1px solid #ccc;background:#f5f5f5;min-height:500px;">
+          <canvas id="pdfCanvas" style="width:100%;display:block;"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DROITE: Formulaire avec menus déroulants -->
   <div class="col-md-5" style="max-height:90vh;overflow-y:auto;">
     <form method="POST" action="/bordereaux/sauvegarder/<%= bordereau.id %>" id="formEdit">
       <div class="card mb-2">
@@ -133,20 +148,6 @@
     </form>
   </div>
 
-  <!-- DROITE: Aperçu du bordereau avec texte déplaçable -->
-  <div class="col-md-7">
-    <div class="card">
-      <div class="card-header py-2">
-        <strong>Aperçu du bordereau</strong>
-        <small class="text-muted">(glissez le texte pour le repositionner)</small>
-      </div>
-      <div class="card-body p-1">
-        <div id="pdfContainer" style="position:relative;border:1px solid #ccc;background:#f5f5f5;min-height:500px;">
-          <canvas id="pdfCanvas" style="width:100%;display:block;"></canvas>
-          <!-- Les textes déplaçables seront ajoutés ici par JS -->
-        </div>
-      </div>
-    </div>
   </div>
 </div>
 
