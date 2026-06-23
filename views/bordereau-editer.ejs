@@ -126,7 +126,12 @@ setTimeout(function() {
 
 // ============ Créer un overlay draggable ============
 function addOverlay(key, label, val) {
-  if (!val || !canvasW) return;
+  // Recalculer les dimensions si nécessaire
+  if (!canvasW || canvasW < 100) {
+    canvasW = containerEl.clientWidth || 600;
+    canvasH = containerEl.clientHeight || 800;
+  }
+  if (!val) return;
   if (overlays[key]) {
     overlays[key].el.textContent = val;
     overlays[key].val = val;
@@ -330,6 +335,12 @@ document.querySelectorAll('.btn-add-ft').forEach(function(btn) {
     });
     updateFT();
   });
+});
+
+// Sauvegarder tout avant soumission du formulaire
+document.getElementById('formEdit').addEventListener('submit', function() {
+  savePositions();
+  document.getElementById('fichesJson').value = JSON.stringify(fichesSelectionnees);
 });
 
 document.getElementById('searchFT').addEventListener('input', function() {
