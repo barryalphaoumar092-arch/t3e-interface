@@ -36,10 +36,13 @@ function createTursoClient(url, authToken) {
     };
   }
 
-  async function execute(query) {
+  async function execute(query, paramsArray) {
     let sql, args = [];
     if (typeof query === 'string') {
       sql = query;
+      if (Array.isArray(paramsArray)) {
+        args = paramsArray.map(serializeArg);
+      }
     } else {
       sql = query.sql;
       args = (query.args || []).map(serializeArg);
