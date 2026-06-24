@@ -1,7 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const path = require('path');
+const multer = require('multer');
 const { generateSoumission, listTemplates, selectTemplate } = require('../services/soumission-generator');
+const { parseDevis, extractProjectInfo } = require('../services/document-parser');
+
+const uploadDevis = multer({ dest: path.join(__dirname, '../../uploads'), limits: { fileSize: 20 * 1024 * 1024 } });
 
 const SYSTEMES = [
   { value: 'BUR', label: 'BUR - Asphalte et Gravier (2-4-5 plis)' },
@@ -128,9 +132,46 @@ router.get('/nouveau', async (req, res) => {
 });
 
 // Créer la soumission
-router.post('/nouveau', async (req, res) => {
+router.post('/nouveau', uploadDevis.single('devis'), async (req, res) => {
   const db = req.db;
   const d = req.body;
+
+  // Si un devis a été uploadé, extraire les infos
+  if (req.file) {
+    try {
+      const parsed = await parseDevis(req.file.path, req.file.originalname);
+      const devisTexte = parsed.text || '';
+      const info = extractProjectInfo(devisTexte);
+
+      if (!d.client_nom && info.client) d.client_nom = info.client;
+      if (!d.projet_nom && info.client) d.projet_nom = info.client;
+      if (!d.client_adresse && info.adresse) d.client_adresse = info.adresse;
+      if (!d.projet_adresse && info.adresse) d.projet_adresse = info.adresse;
+
+      // Extraire plus d'infos du devis
+      const supMatch = devisTexte.match(/(\d[\d\s,.]*)\s*(?:pi(?:eds)?[\s²2]|sq\.?\s*f|square\s*f)/i);
+      if (supMatch && !d.superficie_pc) d.superficie_pc = supMatch[1].replace(/\s/g, '').replace(',', '');
+
+      const drainMatch = devisTexte.match(/(\d+)\s*(?:drain|drains)/i);
+      if (drainMatch && !d.nb_drains) d.nb_drains = drainMatch[1];
+
+      const villeMatch = devisTexte.match(/(?:ville|city)\s*[:#]?\s*([^\n]{3,30})/i);
+      if (villeMatch && !d.client_ville) d.client_ville = villeMatch[1].trim();
+
+      const telMatch = devisTexte.match(/(\d{3}[-.\s]\d{3}[-.\s]\d{4})/);
+      if (telMatch && !d.client_telephone) d.client_telephone = telMatch[1];
+
+      const emailMatch = devisTexte.match(/[\w.-]+@[\w.-]+\.\w+/);
+      if (emailMatch && !d.client_courriel) d.client_courriel = emailMatch[0];
+
+      d._documents_recus = req.file.originalname;
+    } catch (err) {
+      console.error('Erreur parsing devis soumission:', err.message);
+    }
+  }
+
+  // Auto-sélectionner le type de soumission (défaut: privé)
+  if (!d.type_soumission) d.type_soumission = 'prive';
 
   const numero = d.numero || await genererNumero(db);
   const templateKey = selectTemplate(d.systeme_toiture || '', d.type_travaux || '');
@@ -154,7 +195,7 @@ router.post('/nouveau', async (req, res) => {
     v(d.nb_drains), v(d.nb_manchons_events), v(d.nb_manchons_etancheite), v(d.nb_cols_cygne),
     v(d.ventilateur_max), v(d.cout_remplacement_cp), v(d.cout_remplacement_isolant),
     v(d.prix_total), v(d.garantie_t3e) || '5 ans', v(d.garantie_manufacturier) || '10 ans',
-    v(d.exclusions_specifiques), v(d.documents_recus), v(d.notes), v(templateKey), v(d.cree_par) || 'Estimateur'
+    v(d.exclusions_specifiques), v(d.documents_recus || d._documents_recus), v(d.notes), v(templateKey), v(d.cree_par) || 'Estimateur'
   ]);
 
   const created = await db.execute('SELECT id FROM soumissions WHERE numero = ?', [numero]);

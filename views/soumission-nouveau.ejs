@@ -5,266 +5,103 @@
   <a href="/soumissions" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Retour</a>
 </div>
 
-<form method="POST" action="/soumissions/nouveau" id="formSoumission">
-  <!-- Template auto-détecté -->
-  <div class="alert alert-info d-none" id="templatePreview">
-    <i class="bi bi-file-earmark-word"></i>
-    <strong>Template détecté :</strong> <span id="templateName"></span>
-  </div>
+<div class="row justify-content-center">
+  <div class="col-md-8">
+    <form method="POST" action="/soumissions/nouveau" enctype="multipart/form-data" id="formSoumission">
+      <input type="hidden" name="numero" value="<%= numero %>">
 
-  <!-- ÉTAPE 1: Système de toiture -->
-  <div class="card mb-4">
-    <div class="card-header bg-dark text-white">
-      <h5 class="mb-0"><i class="bi bi-1-circle"></i> Système de toiture et type de travaux</h5>
-    </div>
-    <div class="card-body">
-      <div class="row g-3">
-        <div class="col-md-3">
-          <label class="form-label fw-bold">Numéro de soumission</label>
-          <input type="text" name="numero" class="form-control" value="<%= numero %>" readonly>
+      <!-- Upload devis -->
+      <div class="card mb-3">
+        <div class="card-header bg-primary text-white">
+          <h5 class="mb-0"><i class="bi bi-upload"></i> Importer le devis (optionnel)</h5>
         </div>
-        <div class="col-md-3">
-          <label class="form-label fw-bold">Système de toiture *</label>
-          <select name="systeme_toiture" class="form-select" required id="selSysteme">
-            <option value="">-- Sélectionner --</option>
-            <% systemes.forEach(s => { %>
-            <option value="<%= s.value %>"><%= s.label %></option>
-            <% }) %>
-          </select>
-        </div>
-        <div class="col-md-3">
-          <label class="form-label fw-bold">Type de travaux *</label>
-          <select name="type_travaux" class="form-select" required id="selTravaux">
-            <option value="">-- Sélectionner --</option>
-            <% types_travaux.forEach(t => { %>
-            <option value="<%= t.value %>"><%= t.label %></option>
-            <% }) %>
-          </select>
-        </div>
-        <div class="col-md-3">
-          <label class="form-label fw-bold">Langue</label>
-          <select name="langue" class="form-select">
-            <option value="FR">Français</option>
-            <option value="EN">Anglais</option>
-          </select>
+        <div class="card-body">
+          <input type="file" name="devis" class="form-control" accept=".pdf,.xlsx,.xls">
+          <div class="form-text">Si vous importez le devis, toutes les informations seront extraites automatiquement (client, projet, quantités, etc.)</div>
         </div>
       </div>
-    </div>
-  </div>
 
-  <!-- ÉTAPE 2: Client -->
-  <div class="card mb-4">
-    <div class="card-header bg-dark text-white">
-      <h5 class="mb-0"><i class="bi bi-2-circle"></i> Informations du client</h5>
-    </div>
-    <div class="card-body">
-      <div class="row g-3">
-        <div class="col-md-6">
-          <label class="form-label fw-bold">Nom du client *</label>
-          <input type="text" name="client_nom" class="form-control" required placeholder="Ex: Syndicat de copropriété ABC">
+      <!-- Essentiel uniquement -->
+      <div class="card mb-3">
+        <div class="card-header bg-dark text-white">
+          <h5 class="mb-0"><i class="bi bi-gear"></i> Informations essentielles</h5>
         </div>
-        <div class="col-md-6">
-          <label class="form-label fw-bold">Personne contact</label>
-          <input type="text" name="client_contact" class="form-control" placeholder="Nom du représentant">
-        </div>
-        <div class="col-md-6">
-          <label class="form-label fw-bold">Adresse</label>
-          <input type="text" name="client_adresse" class="form-control" placeholder="123 rue Exemple">
-        </div>
-        <div class="col-md-3">
-          <label class="form-label fw-bold">Ville</label>
-          <input type="text" name="client_ville" class="form-control" placeholder="Montréal">
-        </div>
-        <div class="col-md-1">
-          <label class="form-label fw-bold">Province</label>
-          <input type="text" name="client_province" class="form-control" value="QC">
-        </div>
-        <div class="col-md-2">
-          <label class="form-label fw-bold">Code postal</label>
-          <input type="text" name="client_code_postal" class="form-control" placeholder="H1A 1A1">
-        </div>
-        <div class="col-md-4">
-          <label class="form-label fw-bold">Téléphone</label>
-          <input type="tel" name="client_telephone" class="form-control" placeholder="514-000-0000">
-        </div>
-        <div class="col-md-4">
-          <label class="form-label fw-bold">Courriel</label>
-          <input type="email" name="client_courriel" class="form-control" placeholder="client@exemple.ca">
-        </div>
-        <div class="col-md-4">
-          <label class="form-label fw-bold">Type de soumission</label>
-          <select name="type_soumission" class="form-select">
-            <% types_soumission.forEach(t => { %>
-            <option value="<%= t.value %>"><%= t.label %></option>
-            <% }) %>
-          </select>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label fw-bold">Système de toiture *</label>
+              <select name="systeme_toiture" class="form-select" required id="selSysteme">
+                <option value="">-- Sélectionner --</option>
+                <% systemes.forEach(s => { %>
+                <option value="<%= s.value %>"><%= s.label %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-bold">Type de travaux *</label>
+              <select name="type_travaux" class="form-select" required id="selTravaux">
+                <option value="">-- Sélectionner --</option>
+                <% types_travaux.forEach(t => { %>
+                <option value="<%= t.value %>"><%= t.label %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-bold">Prix total ($) *</label>
+              <input type="number" name="prix_total" class="form-control" step="0.01" required placeholder="150000">
+            </div>
+          </div>
+          <div class="row g-3 mt-1">
+            <div class="col-md-6">
+              <label class="form-label fw-bold">Nom du client *</label>
+              <input type="text" name="client_nom" class="form-control" required placeholder="Ex: Syndicat de copropriété ABC">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-bold">Langue</label>
+              <select name="langue" class="form-select">
+                <option value="FR">Français</option>
+                <option value="EN">Anglais</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-bold">Numéro</label>
+              <input type="text" class="form-control" value="<%= numero %>" readonly>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
-  </div>
 
-  <!-- ÉTAPE 3: Projet -->
-  <div class="card mb-4">
-    <div class="card-header bg-dark text-white">
-      <h5 class="mb-0"><i class="bi bi-3-circle"></i> Détails du projet</h5>
-    </div>
-    <div class="card-body">
-      <div class="row g-3">
-        <div class="col-md-6">
-          <label class="form-label fw-bold">Nom du projet</label>
-          <input type="text" name="projet_nom" class="form-control" placeholder="Réfection toiture - 450 Boul. René-Lévesque">
-        </div>
-        <div class="col-md-6">
-          <label class="form-label fw-bold">Adresse du projet</label>
-          <input type="text" name="projet_adresse" class="form-control" placeholder="Si différente de l'adresse du client">
-        </div>
-        <div class="col-md-3">
-          <label class="form-label fw-bold">Superficie (pi²)</label>
-          <input type="number" name="superficie_pc" class="form-control" placeholder="15000">
-        </div>
-        <div class="col-md-3">
-          <label class="form-label fw-bold">Pontage</label>
-          <select name="pontage" class="form-select">
-            <option value="">-- Sélectionner --</option>
-            <% pontages.forEach(p => { %>
-            <option value="<%= p.value %>"><%= p.label %></option>
-            <% }) %>
-          </select>
-        </div>
-        <div class="col-md-3">
-          <label class="form-label fw-bold">Épaisseur isolant</label>
-          <input type="text" name="epaisseur_isolant" class="form-control" placeholder='Ex: 3"'>
-        </div>
-        <div class="col-md-3">
-          <label class="form-label fw-bold">Pente isolant</label>
-          <select name="pente_isolant" class="form-select">
-            <option value="">-- Sélectionner --</option>
-            <option value="1%">1%</option>
-            <option value="2%">2%</option>
-            <option value="1/8 po/pi">1/8 po/pi</option>
-            <option value="1/4 po/pi">1/4 po/pi</option>
-          </select>
-        </div>
+      <!-- Template détecté -->
+      <div class="alert alert-info d-none" id="templatePreview">
+        <i class="bi bi-file-earmark-word"></i>
+        <strong>Template :</strong> <span id="templateName"></span>
       </div>
-    </div>
-  </div>
 
-  <!-- ÉTAPE 4: Quantités -->
-  <div class="card mb-4">
-    <div class="card-header bg-dark text-white">
-      <h5 class="mb-0"><i class="bi bi-4-circle"></i> Quantités et équipements</h5>
-    </div>
-    <div class="card-body">
-      <div class="row g-3">
-        <div class="col-md-3">
-          <label class="form-label fw-bold">Nombre de drains</label>
-          <input type="number" name="nb_drains" class="form-control" min="0">
-        </div>
-        <div class="col-md-3">
-          <label class="form-label fw-bold">Manchons d'évents</label>
-          <input type="number" name="nb_manchons_events" class="form-control" min="0">
-        </div>
-        <div class="col-md-3">
-          <label class="form-label fw-bold">Manchons d'étanchéité</label>
-          <input type="number" name="nb_manchons_etancheite" class="form-control" min="0">
-        </div>
-        <div class="col-md-3">
-          <label class="form-label fw-bold">Cols de cygne</label>
-          <input type="number" name="nb_cols_cygne" class="form-control" min="0">
-        </div>
-        <div class="col-md-3">
-          <label class="form-label fw-bold">Ventilateur Maximum #</label>
-          <input type="text" name="ventilateur_max" class="form-control" placeholder="Ex: 301">
-        </div>
-        <div class="col-md-3">
-          <label class="form-label fw-bold">Coût remp. contreplaqué ($/pi²)</label>
-          <input type="text" name="cout_remplacement_cp" class="form-control" placeholder="Ex: 12.50">
-        </div>
-        <div class="col-md-3">
-          <label class="form-label fw-bold">Coût remp. isolant ($/pi²)</label>
-          <input type="text" name="cout_remplacement_isolant" class="form-control" placeholder="Ex: 8.00">
-        </div>
+      <div class="d-flex gap-3 mb-4">
+        <button type="submit" class="btn btn-primary btn-lg" id="btnCreer">
+          <i class="bi bi-magic"></i> Créer la soumission
+        </button>
+        <a href="/soumissions" class="btn btn-outline-secondary btn-lg">Annuler</a>
       </div>
-    </div>
+    </form>
   </div>
-
-  <!-- ÉTAPE 5: Prix et garantie -->
-  <div class="card mb-4">
-    <div class="card-header bg-dark text-white">
-      <h5 class="mb-0"><i class="bi bi-5-circle"></i> Prix et garantie</h5>
-    </div>
-    <div class="card-body">
-      <div class="row g-3">
-        <div class="col-md-4">
-          <label class="form-label fw-bold">Prix total ($)</label>
-          <input type="number" name="prix_total" class="form-control" step="0.01" placeholder="150000">
-        </div>
-        <div class="col-md-4">
-          <label class="form-label fw-bold">Garantie T3E</label>
-          <select name="garantie_t3e" class="form-select">
-            <% garanties_t3e.forEach(g => { %>
-            <option value="<%= g.value %>" <%= g.value==='5 ans'?'selected':'' %>><%= g.label %></option>
-            <% }) %>
-          </select>
-        </div>
-        <div class="col-md-4">
-          <label class="form-label fw-bold">Garantie manufacturier</label>
-          <select name="garantie_manufacturier" class="form-select">
-            <% garanties_manuf.forEach(g => { %>
-            <option value="<%= g.value %>" <%= g.value==='10 ans'?'selected':'' %>><%= g.label %></option>
-            <% }) %>
-          </select>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ÉTAPE 6: Documents et notes -->
-  <div class="card mb-4">
-    <div class="card-header bg-dark text-white">
-      <h5 class="mb-0"><i class="bi bi-6-circle"></i> Documents reçus et notes</h5>
-    </div>
-    <div class="card-body">
-      <div class="row g-3">
-        <div class="col-md-6">
-          <label class="form-label fw-bold">Documents reçus pour soumission</label>
-          <textarea name="documents_recus" class="form-control" rows="4" placeholder="Plans architectures, émis pour soumission 2026-01-10 (120 pages)&#10;Sections 07 52 00, émis pour soumission 2026-01-10&#10;Addendas 01, émis 2026-01-15"></textarea>
-        </div>
-        <div class="col-md-6">
-          <label class="form-label fw-bold">Exclusions spécifiques au projet</label>
-          <textarea name="exclusions_specifiques" class="form-control" rows="4" placeholder="Exclusions qui s'ajoutent à la liste standard..."></textarea>
-        </div>
-        <div class="col-12">
-          <label class="form-label fw-bold">Notes internes</label>
-          <textarea name="notes" class="form-control" rows="2" placeholder="Notes pour l'équipe..."></textarea>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="d-flex gap-3 mb-4">
-    <button type="submit" class="btn btn-primary btn-lg">
-      <i class="bi bi-save"></i> Créer la soumission
-    </button>
-    <a href="/soumissions" class="btn btn-outline-secondary btn-lg">Annuler</a>
-  </div>
-</form>
+</div>
 
 <script>
-  const selSysteme = document.getElementById('selSysteme');
-  const selTravaux = document.getElementById('selTravaux');
-  const preview = document.getElementById('templatePreview');
-  const templateName = document.getElementById('templateName');
+  var selSysteme = document.getElementById('selSysteme');
+  var selTravaux = document.getElementById('selTravaux');
+  var preview = document.getElementById('templatePreview');
+  var templateName = document.getElementById('templateName');
 
   function updateTemplatePreview() {
-    const s = selSysteme.value;
-    const t = selTravaux.value;
+    var s = selSysteme.value;
+    var t = selTravaux.value;
     if (!s || !t) { preview.classList.add('d-none'); return; }
     fetch('/soumissions/api/template-preview?systeme=' + encodeURIComponent(s) + '&type_travaux=' + encodeURIComponent(t))
-      .then(r => r.json())
-      .then(data => {
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
         if (data.found) {
-          templateName.textContent = data.label + ' (' + (data.existsFr ? 'FR ✓' : 'FR ✗') + ' / ' + (data.existsEn ? 'EN ✓' : 'EN ✗') + ')';
+          templateName.textContent = data.label;
           preview.classList.remove('d-none');
         } else {
           preview.classList.add('d-none');
@@ -274,6 +111,12 @@
 
   selSysteme.addEventListener('change', updateTemplatePreview);
   selTravaux.addEventListener('change', updateTemplatePreview);
+
+  document.getElementById('formSoumission').addEventListener('submit', function() {
+    var btn = document.getElementById('btnCreer');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Création en cours...';
+  });
 </script>
 
 <%- include('partials/footer', { scripts: [] }) %>
