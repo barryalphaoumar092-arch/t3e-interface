@@ -135,6 +135,7 @@ router.get('/nouveau', async (req, res) => {
 router.post('/nouveau', uploadDevis.single('devis'), async (req, res) => {
   const db = req.db;
   const d = req.body;
+  console.log('POST /nouveau body:', JSON.stringify({client_nom: d.client_nom, systeme: d.systeme_toiture, type: d.type_travaux, prix: d.prix_total}));
 
   // Si un devis a été uploadé, extraire les infos
   if (req.file) {
@@ -244,9 +245,9 @@ router.post('/:id/modifier', async (req, res) => {
       updated_at=datetime('now')
     WHERE id=?
   `, [
-    v(d.client_nom), v(d.client_adresse), v(d.client_ville), v(d.client_province) || 'QC', v(d.client_code_postal),
+    v(d.client_nom) || 'Client sans nom', v(d.client_adresse), v(d.client_ville), v(d.client_province) || 'QC', v(d.client_code_postal),
     v(d.client_contact), v(d.client_telephone), v(d.client_courriel),
-    v(d.projet_nom), v(d.projet_adresse), v(d.systeme_toiture), v(d.type_travaux), v(d.langue) || 'FR', v(d.type_soumission) || 'prive',
+    v(d.projet_nom), v(d.projet_adresse), v(d.systeme_toiture) || 'BUR', v(d.type_travaux) || 'REFECTION', v(d.langue) || 'FR', v(d.type_soumission) || 'prive',
     v(d.superficie_pc), v(d.pontage), v(d.epaisseur_isolant), v(d.pente_isolant),
     v(d.nb_drains), v(d.nb_manchons_events), v(d.nb_manchons_etancheite), v(d.nb_cols_cygne),
     v(d.ventilateur_max), v(d.cout_remplacement_cp), v(d.cout_remplacement_isolant),
