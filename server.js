@@ -70,8 +70,20 @@ app.use('/approbation', require('./src/routes/approbation'));
 app.use('/recherche', require('./src/routes/recherche'));
 app.use('/api', require('./src/routes/api'));
 
+app.use((err, req, res, next) => {
+  console.error('ERREUR SERVEUR:', err.stack || err.message || err);
+  res.status(500).send(`<h2>Erreur serveur</h2><pre>${err.message || err}</pre><a href="/">Retour</a>`);
+});
+
 async function start() {
   try {
+    const fs = require('fs');
+    const dirs = ['uploads', 'uploads/soumissions', 'data'];
+    for (const d of dirs) {
+      const p = path.join(__dirname, d);
+      if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
+    }
+
     await initDb();
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`\n  Interface T3E demarree:`);
