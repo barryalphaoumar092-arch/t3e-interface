@@ -134,8 +134,8 @@ router.get('/nouveau', async (req, res) => {
 // Créer la soumission
 router.post('/nouveau', uploadDevis.single('devis'), async (req, res) => {
   const db = req.db;
-  const d = req.body;
-  console.log('POST /nouveau body:', JSON.stringify({client_nom: d.client_nom, systeme: d.systeme_toiture, type: d.type_travaux, prix: d.prix_total}));
+  const d = req.body || {};
+  console.log('POST /nouveau v4 body keys:', Object.keys(d), 'client_nom:', d.client_nom);
 
   // Si un devis a été uploadé, extraire les infos
   if (req.file) {
@@ -149,15 +149,11 @@ router.post('/nouveau', uploadDevis.single('devis'), async (req, res) => {
       if (!d.client_adresse && info.adresse) d.client_adresse = info.adresse;
       if (!d.projet_adresse && info.adresse) d.projet_adresse = info.adresse;
 
-      // Extraire plus d'infos du devis
       const supMatch = devisTexte.match(/(\d[\d\s,.]*)\s*(?:pi(?:eds)?[\s²2]|sq\.?\s*f|square\s*f)/i);
       if (supMatch && !d.superficie_pc) d.superficie_pc = supMatch[1].replace(/\s/g, '').replace(',', '');
 
       const drainMatch = devisTexte.match(/(\d+)\s*(?:drain|drains)/i);
       if (drainMatch && !d.nb_drains) d.nb_drains = drainMatch[1];
-
-      const villeMatch = devisTexte.match(/(?:ville|city)\s*[:#]?\s*([^\n]{3,30})/i);
-      if (villeMatch && !d.client_ville) d.client_ville = villeMatch[1].trim();
 
       const telMatch = devisTexte.match(/(\d{3}[-.\s]\d{3}[-.\s]\d{4})/);
       if (telMatch && !d.client_telephone) d.client_telephone = telMatch[1];
@@ -171,15 +167,13 @@ router.post('/nouveau', uploadDevis.single('devis'), async (req, res) => {
     }
   }
 
-  // Auto-sélectionner le type de soumission (défaut: privé)
-  if (!d.type_soumission) d.type_soumission = 'prive';
-
-  if (!d.client_nom || !d.client_nom.trim()) d.client_nom = d.projet_nom || 'Client sans nom';
-  if (!d.systeme_toiture) d.systeme_toiture = 'BUR';
-  if (!d.type_travaux) d.type_travaux = 'REFECTION';
+  // Forcer des valeurs pour tous les champs NOT NULL — aucun ne peut être vide
+  const clientNom = (d.client_nom && d.client_nom.trim()) || d.projet_nom || 'Client sans nom';
+  const systeme = d.systeme_toiture || 'BUR';
+  const typeTravaux = d.type_travaux || 'REFECTION';
 
   const numero = d.numero || await genererNumero(db);
-  const templateKey = selectTemplate(d.systeme_toiture || '', d.type_travaux || '');
+  const templateKey = selectTemplate(systeme, typeTravaux);
 
   await db.execute(`
     INSERT INTO soumissions (
@@ -193,9 +187,9 @@ router.post('/nouveau', uploadDevis.single('devis'), async (req, res) => {
       exclusions_specifiques, documents_recus, notes, template_utilise, cree_par
     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `, [
-    numero, v(d.client_nom) || 'Client sans nom', v(d.client_adresse), v(d.client_ville), v(d.client_province) || 'QC', v(d.client_code_postal),
+    numero, clientNom, v(d.client_adresse), v(d.client_ville), v(d.client_province) || 'QC', v(d.client_code_postal),
     v(d.client_contact), v(d.client_telephone), v(d.client_courriel),
-    v(d.projet_nom), v(d.projet_adresse), v(d.systeme_toiture) || 'BUR', v(d.type_travaux) || 'REFECTION', v(d.langue) || 'FR', v(d.type_soumission) || 'prive',
+    v(d.projet_nom), v(d.projet_adresse), systeme, typeTravaux, v(d.langue) || 'FR', v(d.type_soumission) || 'prive',
     v(d.superficie_pc), v(d.pontage), v(d.epaisseur_isolant), v(d.pente_isolant),
     v(d.nb_drains), v(d.nb_manchons_events), v(d.nb_manchons_etancheite), v(d.nb_cols_cygne),
     v(d.ventilateur_max), v(d.cout_remplacement_cp), v(d.cout_remplacement_isolant),
