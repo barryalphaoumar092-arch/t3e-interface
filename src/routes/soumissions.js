@@ -173,6 +173,10 @@ router.post('/nouveau', uploadDevis.single('devis'), async (req, res) => {
   // Auto-sélectionner le type de soumission (défaut: privé)
   if (!d.type_soumission) d.type_soumission = 'prive';
 
+  if (!d.client_nom || !d.client_nom.trim()) d.client_nom = d.projet_nom || 'Client sans nom';
+  if (!d.systeme_toiture) d.systeme_toiture = 'BUR';
+  if (!d.type_travaux) d.type_travaux = 'REFECTION';
+
   const numero = d.numero || await genererNumero(db);
   const templateKey = selectTemplate(d.systeme_toiture || '', d.type_travaux || '');
 
