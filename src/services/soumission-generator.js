@@ -110,8 +110,8 @@ function buildReplacements(soumission) {
     { pattern: 'City, Province, Postal Code', value: [s.client_ville, s.client_province, s.client_code_postal].filter(Boolean).join(', ') || '______' },
 
     // Contact
-    { pattern: ‘Nom représentant du client’, value: s.client_contact || ‘______’ },
-    { pattern: "Client’s representative name", value: s.client_contact || ‘______’ },
+    { pattern: 'Nom représentant du client', value: s.client_contact || '______' },
+    { pattern: "Client's representative name", value: s.client_contact || '______' },
 
     // Téléphone / courriel
     { pattern: '000-000-0000', value: s.client_telephone || '______' },
@@ -150,10 +150,10 @@ function replaceInXml(xml, pattern, value) {
     return xml.split(escaped).join(safeValue);
   }
 
-  const chars = escaped.split(‘’);
-  let regex = chars.map(c => c.replace(/[.*+?^${}()|[\]\\]/g, ‘\\$&’)).join(‘(?:<[^>]*>)*’);
+  const chars = escaped.split('');
+  let regex = chars.map(c => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('(?:<[^>]*>)*');
   try {
-    const re = new RegExp(regex, ‘g’);
+    const re = new RegExp(regex, 'g');
     if (re.test(xml)) {
       xml = xml.replace(re, (match) => {
         const firstRunMatch = match.match(/<w:rPr>[\s\S]*?<\/w:rPr>/);
@@ -178,6 +178,8 @@ function replaceFirstInXml(xml, pattern, value) {
   return xml;
 }
 
+const CURLY_APOS = String.fromCharCode(0x2019);
+
 function replaceBlankFields(xml, soumission) {
   const s = soumission;
 
@@ -191,14 +193,13 @@ function replaceBlankFields(xml, soumission) {
     xml = xml.replace(/_+(?=\s*Polyisocyanurate)/gi, sup);
   }
 
-  // Épaisseur isolant: "_________'' d'isolant" (curly apostrophe U+2019)
+  // Épaisseur isolant: “_________'' d'isolant” (curly apostrophe U+2019)
   if (s.epaisseur_isolant) {
     const ep = escapeXml(s.epaisseur_isolant);
-    const regex1 = new RegExp(`_+(?=['’'"”]+\\s*d['’]isolant)`, 'g');
+    const regex1 = new RegExp(`_+(?=[${CURLY_APOS}'''””]+\\s*d[${CURLY_APOS}']isolant)`, 'g');
     xml = xml.replace(regex1, ep);
-    const regex2 = new RegExp(`_+(?=['’'"”]+\\s*of\\s)`, 'g');
+    const regex2 = new RegExp(`_+(?=[${CURLY_APOS}'''””]+\\s*of\\s)`, 'g');
     xml = xml.replace(regex2, ep);
-    // EN: "_______ Polyisocyanurate insulation"
     xml = xml.replace(/_+(?=\s*Polyiso)/gi, ep);
   }
 
@@ -219,14 +220,14 @@ function replaceBlankFields(xml, soumission) {
 
   // Manchons évents (curly apostrophe: d'évents U+2019)
   if (s.nb_manchons_events) {
-    const regex = new RegExp(`_+(?=\\s*nouveaux manchons d['’]évents)`, 'g');
+    const regex = new RegExp(`_+(?=\\s*nouveaux manchons d[${CURLY_APOS}']évents)`, 'g');
     xml = xml.replace(regex, s.nb_manchons_events);
     xml = xml.replace(/_+(?=\s*new aluminum plumbing)/g, s.nb_manchons_events);
   }
 
   // Manchons étanchéité (curly apostrophe: d'étanchéité U+2019) — DISTINCT from évents
   if (s.nb_manchons_etancheite) {
-    const regex = new RegExp(`_+(?=\\s*nouveaux manchons d['’]étanch)`, 'g');
+    const regex = new RegExp(`_+(?=\\s*nouveaux manchons d[${CURLY_APOS}']étanch)`, 'g');
     xml = xml.replace(regex, s.nb_manchons_etancheite);
     xml = xml.replace(/_+(?=\s*new Chem-Curbs)/g, s.nb_manchons_etancheite);
   }
