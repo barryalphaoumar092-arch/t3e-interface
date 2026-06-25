@@ -110,9 +110,8 @@ function buildReplacements(soumission) {
     { pattern: 'City, Province, Postal Code', value: [s.client_ville, s.client_province, s.client_code_postal].filter(Boolean).join(', ') || '______' },
 
     // Contact
-    { pattern: 'Nom représentant du client', value: s.client_contact || '______' },
-    { pattern: "Client’s representative name", value: s.client_contact || '______' },
-    { pattern: "Client's representative name", value: s.client_contact || '______' },
+    { pattern: ‘Nom représentant du client’, value: s.client_contact || ‘______’ },
+    { pattern: "Client’s representative name", value: s.client_contact || ‘______’ },
 
     // Téléphone / courriel
     { pattern: '000-000-0000', value: s.client_telephone || '______' },
@@ -151,10 +150,10 @@ function replaceInXml(xml, pattern, value) {
     return xml.split(escaped).join(safeValue);
   }
 
-  const chars = escaped.split('');
-  let regex = chars.map(c => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('(?:<[^>]*>)*');
+  const chars = escaped.split(‘’);
+  let regex = chars.map(c => c.replace(/[.*+?^${}()|[\]\\]/g, ‘\\$&’)).join(‘(?:<[^>]*>)*’);
   try {
-    const re = new RegExp(regex, 'g');
+    const re = new RegExp(regex, ‘g’);
     if (re.test(xml)) {
       xml = xml.replace(re, (match) => {
         const firstRunMatch = match.match(/<w:rPr>[\s\S]*?<\/w:rPr>/);
@@ -169,8 +168,15 @@ function replaceInXml(xml, pattern, value) {
   return xml;
 }
 
-// U+2019 = curly apostrophe (used by Word), U+0027 = straight apostrophe
-const APOS = "[’']";
+function replaceFirstInXml(xml, pattern, value) {
+  const escaped = escapeXml(pattern);
+  const safeValue = escapeXml(value);
+  const idx = xml.indexOf(escaped);
+  if (idx !== -1) {
+    return xml.substring(0, idx) + safeValue + xml.substring(idx + escaped.length);
+  }
+  return xml;
+}
 
 function replaceBlankFields(xml, soumission) {
   const s = soumission;
@@ -306,14 +312,14 @@ async function generateSoumission(soumission) {
   }
 
   if (soumission.client_adresse) {
-    modifiedXml = replaceInXml(modifiedXml, 'Adresse', soumission.client_adresse);
-    modifiedXml = replaceInXml(modifiedXml, 'Address', soumission.client_adresse);
+    modifiedXml = replaceFirstInXml(modifiedXml, 'Adresse', soumission.client_adresse);
+    modifiedXml = replaceFirstInXml(modifiedXml, 'Address', soumission.client_adresse);
   }
 
   modifiedXml = replaceBlankFields(modifiedXml, soumission);
 
   if (soumission.superficie_pc) {
-    modifiedXml = replaceInXml(modifiedXml, 'superficie', `${soumission.superficie_pc} pi²`);
+    modifiedXml = replaceFirstInXml(modifiedXml, 'superficie', `${soumission.superficie_pc} pi²`);
   }
 
   zip.file('word/document.xml', modifiedXml);

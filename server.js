@@ -72,7 +72,8 @@ app.use('/api', require('./src/routes/api'));
 
 app.use((err, req, res, next) => {
   console.error('ERREUR SERVEUR:', err.stack || err.message || err);
-  res.status(500).send(`<h2>Erreur serveur</h2><pre>${err.message || err}</pre><a href="/">Retour</a>`);
+  const msg = String(err.message || err).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+  res.status(500).send(`<h2>Erreur serveur</h2><pre>${msg}</pre><a href="/">Retour</a>`);
 });
 
 async function start() {
