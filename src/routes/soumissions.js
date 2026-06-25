@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const path = require('path');
+const fs = require('fs');
 const multer = require('multer');
 const { generateSoumission, listTemplates, selectTemplate } = require('../services/soumission-generator');
 const { parseDevis, extractProjectInfo } = require('../services/document-parser');
@@ -112,6 +113,16 @@ router.get('/', async (req, res) => {
     filtre,
     recherche,
   });
+});
+
+// API: template preview (DOIT être avant /:id pour ne pas être intercepté)
+router.get('/api/template-preview', (req, res) => {
+  const { systeme, type_travaux } = req.query;
+  const key = selectTemplate(systeme || '', type_travaux || '');
+  if (!key) return res.json({ found: false });
+  const templates = listTemplates();
+  const tpl = templates.find(t => t.key === key);
+  res.json({ found: true, ...tpl });
 });
 
 // Formulaire nouvelle soumission
@@ -288,6 +299,9 @@ router.get('/:id/telecharger', async (req, res) => {
   }
 
   const filePath = path.join(__dirname, '../../uploads/soumissions', result.rows[0].fichier_genere);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).send('Le fichier a été supprimé. Regénérez le document.');
+  }
   const downloadName = `Soumission_${result.rows[0].numero}.docx`;
   res.download(filePath, downloadName);
 });
@@ -318,16 +332,6 @@ router.post('/:id/supprimer', async (req, res) => {
   const db = req.db;
   await db.execute('DELETE FROM soumissions WHERE id = ?', [req.params.id]);
   res.redirect('/soumissions');
-});
-
-// API: template preview
-router.get('/api/template-preview', (req, res) => {
-  const { systeme, type_travaux } = req.query;
-  const key = selectTemplate(systeme || '', type_travaux || '');
-  if (!key) return res.json({ found: false });
-  const templates = listTemplates();
-  const tpl = templates.find(t => t.key === key);
-  res.json({ found: true, ...tpl });
 });
 
 module.exports = router;

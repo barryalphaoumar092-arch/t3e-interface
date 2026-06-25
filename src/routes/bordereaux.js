@@ -165,13 +165,15 @@ router.post('/creer', uploadFields, async (req, res) => {
     ]
   });
 
-  const newId = Number(result.lastInsertRowid);
-  await db.execute({
-    sql: `INSERT INTO historique_bordereaux (bordereau_id, action, nouveau_statut, effectue_par) VALUES (?, 'creation', 'brouillon', ?)`,
-    args: [newId, cree_par || 'Utilisateur']
-  });
+  const newId = Number(result.lastInsertRowid) || 0;
+  if (newId) {
+    await db.execute({
+      sql: `INSERT INTO historique_bordereaux (bordereau_id, action, nouveau_statut, effectue_par) VALUES (?, 'creation', 'brouillon', ?)`,
+      args: [newId, cree_par || 'Utilisateur']
+    });
+  }
 
-  res.redirect(`/bordereaux/editer/${newId}`);
+  res.redirect(`/bordereaux/editer/${newId || 1}`);
 });
 
 router.get('/editer/:id', async (req, res) => {

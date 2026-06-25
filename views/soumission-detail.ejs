@@ -293,11 +293,10 @@
 
       <div class="d-flex gap-3 mb-4">
         <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Enregistrer les modifications</button>
-
-        <form method="POST" action="/soumissions/<%= soumission.id %>/generer" class="d-inline">
-          <button type="submit" class="btn btn-success"><i class="bi bi-file-earmark-word"></i> Enregistrer et générer le document</button>
-        </form>
       </div>
+    </form>
+    <form method="POST" action="/soumissions/<%= soumission.id %>/generer" class="d-inline mb-4">
+      <button type="submit" class="btn btn-success"><i class="bi bi-file-earmark-word"></i> Générer le document</button>
     </form>
   </div>
 

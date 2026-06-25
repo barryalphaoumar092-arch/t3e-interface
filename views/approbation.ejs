@@ -71,7 +71,7 @@
             <button class="btn btn-sm btn-outline-success" title="Approuver"><i class="bi bi-check"></i> Approuver</button>
           </form>
           <% } else { %>
-          <a href="/bordereaux/pdf/<%= b.id %>" class="btn btn-sm btn-success"><i class="bi bi-file-pdf"></i> PDF</a>
+          <a href="/bordereaux/generer-pdf-get/<%= b.id %>" class="btn btn-sm btn-success"><i class="bi bi-file-pdf"></i> PDF</a>
           <% } %>
         </td>
       </tr>

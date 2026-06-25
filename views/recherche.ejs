@@ -22,6 +22,11 @@ input.addEventListener('keyup', function(e) {
   timer = setTimeout(lancer, 400);
 });
 
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 async function lancer() {
   const q = input.value.trim();
   if (!q) { document.getElementById('resultats-recherche').innerHTML = ''; return; }
@@ -38,11 +43,11 @@ async function lancer() {
     html += '<div class="row g-3 mb-4">';
     data.documents.forEach(function(d) {
       html += '<div class="col-md-6"><div class="card doc-card p-3">';
-      html += '<h6>' + d.titre + '</h6>';
-      html += '<span class="badge bg-secondary mb-1">' + d.categorie + '</span>';
-      if (d.annee) html += ' <span class="badge bg-info">' + d.annee + '</span>';
-      html += '<p class="text-muted small mb-1">' + (d.description || '') + '</p>';
-      html += '<small>Source: ' + (d.source || '-') + '</small>';
+      html += '<h6>' + esc(d.titre) + '</h6>';
+      html += '<span class="badge bg-secondary mb-1">' + esc(d.categorie) + '</span>';
+      if (d.annee) html += ' <span class="badge bg-info">' + esc(d.annee) + '</span>';
+      html += '<p class="text-muted small mb-1">' + esc(d.description) + '</p>';
+      html += '<small>Source: ' + esc(d.source || '-') + '</small>';
       html += '<div class="mt-2"><a href="/documents/' + encodeURIComponent(d.fichier) + '" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i> Ouvrir</a></div>';
       html += '</div></div>';
     });
@@ -55,14 +60,14 @@ async function lancer() {
     html += '<th>Produit</th><th>Fabricant</th><th>Type</th><th>Système</th><th>Dimension</th><th>Fiches</th></tr></thead><tbody>';
     data.materiaux.forEach(function(m) {
       html += '<tr>';
-      html += '<td><strong>' + m.nom + '</strong></td>';
-      html += '<td>' + m.fabricant + '</td>';
-      html += '<td><span class="badge bg-secondary">' + m.type_produit + '</span></td>';
-      html += '<td>' + m.type_systeme + '</td>';
-      html += '<td>' + (m.dimension || '-') + '</td>';
+      html += '<td><strong>' + esc(m.nom) + '</strong></td>';
+      html += '<td>' + esc(m.fabricant) + '</td>';
+      html += '<td><span class="badge bg-secondary">' + esc(m.type_produit) + '</span></td>';
+      html += '<td>' + esc(m.type_systeme) + '</td>';
+      html += '<td>' + esc(m.dimension || '-') + '</td>';
       html += '<td>';
-      if (m.lien_ft && m.lien_ft.startsWith('http')) html += '<a href="' + m.lien_ft + '" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-file-earmark-text"></i> FT</a> ';
-      if (m.lien_sds && m.lien_sds.startsWith('http')) html += '<a href="' + m.lien_sds + '" target="_blank" class="btn btn-sm btn-outline-danger"><i class="bi bi-shield-exclamation"></i> SDS</a>';
+      if (m.lien_ft && m.lien_ft.startsWith('http')) html += '<a href="' + encodeURI(m.lien_ft) + '" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-file-earmark-text"></i> FT</a> ';
+      if (m.lien_sds && m.lien_sds.startsWith('http')) html += '<a href="' + encodeURI(m.lien_sds) + '" target="_blank" class="btn btn-sm btn-outline-danger"><i class="bi bi-shield-exclamation"></i> SDS</a>';
       html += '</td></tr>';
     });
     html += '</tbody></table></div>';
@@ -73,19 +78,19 @@ async function lancer() {
     html += '<div class="row g-3 mb-4">';
     data.architectes.forEach(function(a) {
       html += '<div class="col-md-4"><div class="card doc-card p-3">';
-      html += '<h6>' + a.firme + '</h6>';
-      if (a.contact) html += '<p class="mb-1"><i class="bi bi-person"></i> ' + a.contact + '</p>';
-      if (a.telephone) html += '<p class="mb-1"><i class="bi bi-telephone"></i> ' + a.telephone + '</p>';
-      if (a.email) html += '<p class="mb-1"><i class="bi bi-envelope"></i> <a href="mailto:' + a.email + '">' + a.email + '</a></p>';
-      if (a.ville) html += '<p class="mb-1"><i class="bi bi-geo-alt"></i> ' + a.ville + '</p>';
-      if (a.site_web) html += '<p class="mb-0"><a href="' + (a.site_web.startsWith('http') ? a.site_web : 'https://' + a.site_web) + '" target="_blank"><i class="bi bi-globe"></i> Site web</a></p>';
+      html += '<h6>' + esc(a.firme) + '</h6>';
+      if (a.contact) html += '<p class="mb-1"><i class="bi bi-person"></i> ' + esc(a.contact) + '</p>';
+      if (a.telephone) html += '<p class="mb-1"><i class="bi bi-telephone"></i> ' + esc(a.telephone) + '</p>';
+      if (a.email) html += '<p class="mb-1"><i class="bi bi-envelope"></i> <a href="mailto:' + encodeURI(a.email) + '">' + esc(a.email) + '</a></p>';
+      if (a.ville) html += '<p class="mb-1"><i class="bi bi-geo-alt"></i> ' + esc(a.ville) + '</p>';
+      if (a.site_web) html += '<p class="mb-0"><a href="' + encodeURI(a.site_web.startsWith('http') ? a.site_web : 'https://' + a.site_web) + '" target="_blank"><i class="bi bi-globe"></i> Site web</a></p>';
       html += '</div></div>';
     });
     html += '</div>';
   }
 
   if (total === 0) {
-    html = '<div class="text-center py-5"><i class="bi bi-search" style="font-size:3rem;color:#ccc;"></i><p class="text-muted mt-2">Aucun résultat pour "' + q + '"</p></div>';
+    html = '<div class="text-center py-5"><i class="bi bi-search" style="font-size:3rem;color:#ccc;"></i><p class="text-muted mt-2">Aucun résultat pour "' + esc(q) + '"</p></div>';
   }
 
   document.getElementById('resultats-recherche').innerHTML = html;
