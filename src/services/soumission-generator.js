@@ -118,7 +118,8 @@ function buildReplacements(soumission) {
     { pattern: 'courriel@courriel.ca', value: s.client_courriel || '______' },
     { pattern: 'email@email.ca', value: s.client_courriel || '______' },
 
-    // Prix
+    // Prix (U+00A0 = espace insécable utilisé par Word entre 100 et 000)
+    { pattern: '100 000$', value: s.prix_total ? `${Number(s.prix_total).toLocaleString('fr-CA')}$` : '______$' },
     { pattern: '100 000$', value: s.prix_total ? `${Number(s.prix_total).toLocaleString('fr-CA')}$` : '______$' },
     { pattern: '$100,000', value: s.prix_total ? `$${Number(s.prix_total).toLocaleString('en-CA')}` : '$______' },
 
@@ -289,22 +290,39 @@ async function generateSoumission(soumission) {
   const zipData = fs.readFileSync(templatePath);
   const zip = await JSZip.loadAsync(zipData);
 
-  const docXml = await zip.file('word/document.xml').async('string');
-  let modifiedXml = docXml;
+  // Appliquer les remplacements à TOUS les fichiers XML (document + headers + footers)
+  const xmlFiles = Object.keys(zip.files).filter(f =>
+    f.startsWith('word/') && f.endsWith('.xml') &&
+    !f.includes('/_rels/') && !f.includes('/theme/') &&
+    !f.includes('settings') && !f.includes('styles') &&
+    !f.includes('fontTable') && !f.includes('numbering') &&
+    !f.includes('webSettings') && !f.includes('glossary/')
+  );
 
   const replacements = buildReplacements(soumission);
-  for (const { pattern, value } of replacements) {
-    modifiedXml = replaceInXml(modifiedXml, pattern, value);
+
+  for (const xmlFile of xmlFiles) {
+    const entry = zip.file(xmlFile);
+    if (!entry) continue;
+    let xml = await entry.async('string');
+    let changed = false;
+
+    for (const { pattern, value } of replacements) {
+      const before = xml;
+      xml = replaceInXml(xml, pattern, value);
+      if (xml !== before) changed = true;
+    }
+
+    if (xmlFile === 'word/document.xml') {
+      xml = replaceFirstInXml(xml, 'Adresse', soumission.client_adresse || '______');
+      xml = replaceFirstInXml(xml, 'Address', soumission.client_adresse || '______');
+      xml = replaceBlankFields(xml, soumission);
+      xml = replaceFirstInXml(xml, 'superficie', soumission.superficie_pc ? `${soumission.superficie_pc} pi²` : '______ pi²');
+      changed = true;
+    }
+
+    if (changed) zip.file(xmlFile, xml);
   }
-
-  modifiedXml = replaceFirstInXml(modifiedXml, 'Adresse', soumission.client_adresse || '______');
-  modifiedXml = replaceFirstInXml(modifiedXml, 'Address', soumission.client_adresse || '______');
-
-  modifiedXml = replaceBlankFields(modifiedXml, soumission);
-
-  modifiedXml = replaceFirstInXml(modifiedXml, 'superficie', soumission.superficie_pc ? `${soumission.superficie_pc} pi²` : '______ pi²');
-
-  zip.file('word/document.xml', modifiedXml);
 
   const outputDir = path.join(__dirname, '../../uploads/soumissions');
   if (!fs.existsSync(outputDir)) {
