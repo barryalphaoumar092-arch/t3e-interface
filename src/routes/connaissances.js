@@ -78,10 +78,11 @@ router.post('/ajouter', upload.single('fichier'), async (req, res) => {
   if (!file) return res.redirect('/connaissances?error=no_file');
 
   const ext = path.extname(file.originalname).toLowerCase().replace('.', '');
+  const relativePath = 'documents/' + file.originalname;
   await db.execute({
     sql: `INSERT INTO documents (titre, nom_fichier, chemin_fichier, categorie_id, type_fichier, taille_octets, description, source, annee, mots_cles)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    args: [titre, file.originalname, file.path, parseInt(categorie_id), ext, file.size, description || null, source || null, annee || null, mots_cles || null]
+    args: [titre, file.originalname, relativePath, parseInt(categorie_id), ext, file.size, description || null, source || null, annee || null, mots_cles || null]
   });
   res.redirect('/connaissances?success=added');
 });

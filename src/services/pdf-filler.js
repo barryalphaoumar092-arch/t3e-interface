@@ -25,13 +25,13 @@ async function fillTemplatePdf(templateBuffer, positions) {
 
     if (val.includes('\n')) {
       val.split('\n').forEach(function(line, i) {
-        page.drawText(line.substring(0, 80), {
+        page.drawText(line.substring(0, 200), {
           x, y: y - (i * (fontSize + 2)),
           size: fontSize, font, color: bleu,
         });
       });
     } else {
-      page.drawText(val.substring(0, 80), {
+      page.drawText(val.substring(0, 200), {
         x, y, size: fontSize, font, color: bleu,
       });
     }

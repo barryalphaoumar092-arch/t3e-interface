@@ -395,7 +395,7 @@ router.get('/suggestions/:id', async (req, res) => {
   const devisTexte = r.rows[0].devis_texte || '';
   const materiaux = contenu.materiaux_matches || [];
 
-  const allMats = await db.execute('SELECT DISTINCT nom, fabricant, type_produit, type_systeme, dimension FROM materiaux LIMIT 200');
+  const allMats = await db.execute('SELECT DISTINCT nom, fabricant, type_produit, type_systeme, dimension FROM materiaux ORDER BY fabricant, nom LIMIT 500');
 
   const fabricants = [...new Set([
     ...materiaux.map(m => m.fabricant).filter(Boolean),
