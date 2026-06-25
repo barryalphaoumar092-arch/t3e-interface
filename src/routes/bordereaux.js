@@ -312,16 +312,28 @@ router.get('/generer-pdf-get/:id', async (req, res) => {
     }
   }
 
+  const ftSkipped = [];
   for (const fiche of fichesSelectionnees) {
     const ftPath = fiche.chemin_fichier ? path.join(__dirname, '..', '..', fiche.chemin_fichier) : null;
-    if (ftPath && fs.existsSync(ftPath) && ftPath.toLowerCase().endsWith('.pdf')) {
-      try {
-        const ftBuffer = fs.readFileSync(ftPath);
-        const ftDoc = await PDFLib.load(ftBuffer, { ignoreEncryption: true });
-        const ftPages = await finalPdf.copyPages(ftDoc, ftDoc.getPageIndices());
-        ftPages.forEach(p => finalPdf.addPage(p));
-      } catch (err) {}
+    if (!ftPath || !fs.existsSync(ftPath)) {
+      ftSkipped.push(fiche.titre || fiche.nom_fichier || 'inconnu');
+      continue;
     }
+    if (!ftPath.toLowerCase().endsWith('.pdf')) {
+      ftSkipped.push(`${fiche.titre || fiche.nom_fichier} (format non-PDF)`);
+      continue;
+    }
+    try {
+      const ftBuffer = fs.readFileSync(ftPath);
+      const ftDoc = await PDFLib.load(ftBuffer, { ignoreEncryption: true });
+      const ftPages = await finalPdf.copyPages(ftDoc, ftDoc.getPageIndices());
+      ftPages.forEach(p => finalPdf.addPage(p));
+    } catch (err) {
+      ftSkipped.push(`${fiche.titre || fiche.nom_fichier} (erreur: ${err.message})`);
+    }
+  }
+  if (ftSkipped.length > 0) {
+    console.log('FT non incluses dans le PDF:', ftSkipped.join(', '));
   }
 
   if (finalPdf.getPageCount() === 0) finalPdf.addPage();
@@ -444,15 +456,21 @@ function extractTemplateFields(text) {
   const lines = text.split('\n');
   for (const line of lines) {
     const trimmed = line.trim();
-    // Chercher les lignes qui finissent par ":" ou contiennent "____"
-    const match = trimmed.match(/^([A-ZÀ-Ü\s']{3,})\s*:/i) || trimmed.match(/^(.+?)\s*:\s*[_\s]*$/);
+    if (!trimmed || trimmed.length < 3) continue;
+    // Pattern 1: "LABEL :" or "Label:"
+    // Pattern 2: "Label : ____" or "Label:  "
+    // Pattern 3: "Label :" at end of line
+    const match = trimmed.match(/^([A-Za-zÀ-ÿ\s''°#()\-]{3,})\s*:/i) || trimmed.match(/^(.+?)\s*:\s*[_\s]*$/);
     if (match) {
       const label = match[1].trim();
-      if (label.length > 2 && label.length < 50 && !seen.has(label.toUpperCase())) {
-        // Ignorer les headers/sections
-        if (/^(IDENTIFICATION|SUIVI|COMMENTAIRES|REÇU|RETOUR|ÉMIS|SOUMIS|SIGNATURE)/.test(label.toUpperCase())) continue;
-        seen.add(label.toUpperCase());
-        const key = label.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_');
+      if (label.length > 2 && label.length < 50) {
+        const upper = label.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+        if (seen.has(upper)) continue;
+        if (/^(IDENTIFICATION|SUIVI|COMMENTAIRES|RECU|RETOUR|EMIS|SOUMIS|SIGNATURE|DATE|PAGE|OBJET|RE |NOTE)/.test(upper)) continue;
+        seen.add(upper);
+        const key = label.toLowerCase()
+          .normalize('NFD').replace(/[̀-ͯ]/g, '')
+          .replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
         fields.push({ key, label });
       }
     }
@@ -525,15 +543,18 @@ router.post('/generer-pdf/:id', async (req, res) => {
   // 3. Ajouter les fiches techniques PDF sélectionnées
   for (const fiche of fichesSelectionnees) {
     const ftPath = fiche.chemin_fichier ? path.join(__dirname, '..', '..', fiche.chemin_fichier) : null;
-    if (ftPath && fs.existsSync(ftPath) && ftPath.toLowerCase().endsWith('.pdf')) {
-      try {
-        const ftBuffer = fs.readFileSync(ftPath);
-        const ftDoc = await PDFLib.load(ftBuffer, { ignoreEncryption: true });
-        const ftPages = await finalPdf.copyPages(ftDoc, ftDoc.getPageIndices());
-        ftPages.forEach(p => finalPdf.addPage(p));
-      } catch (err) {
-        console.error('Erreur fusion FT:', ftPath, err.message);
-      }
+    if (!ftPath || !fs.existsSync(ftPath)) continue;
+    if (!ftPath.toLowerCase().endsWith('.pdf')) {
+      console.log('FT ignorée (non-PDF):', fiche.titre || fiche.nom_fichier);
+      continue;
+    }
+    try {
+      const ftBuffer = fs.readFileSync(ftPath);
+      const ftDoc = await PDFLib.load(ftBuffer, { ignoreEncryption: true });
+      const ftPages = await finalPdf.copyPages(ftDoc, ftDoc.getPageIndices());
+      ftPages.forEach(p => finalPdf.addPage(p));
+    } catch (err) {
+      console.error('Erreur fusion FT:', ftPath, err.message);
     }
   }
 

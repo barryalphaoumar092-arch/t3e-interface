@@ -9,6 +9,10 @@ async function parseDevis(filePath, originalName) {
     return await parsePdf(filePath);
   } else if (ext === '.xlsx' || ext === '.xls') {
     return parseExcel(filePath);
+  } else if (ext === '.docx') {
+    return await parseDocx(filePath);
+  } else if (ext === '.doc') {
+    return await parseDoc(filePath);
   }
 
   return { text: '', tables: [], type: ext };
@@ -88,17 +92,20 @@ async function parseDoc(filePath) {
 function extractProjectInfo(text) {
   const info = { numero: '', client: '', adresse: '', architecte: '', date: '' };
 
-  const numMatch = text.match(/(?:projet|project|no\.?|num[ée]ro)\s*[:#]?\s*([A-Z0-9]{2,5}[-\s]?\d{2,6})/i);
+  const numMatch = text.match(/(?:projet|project|no\.?|num[ée]ro|dossier)\s*[:#]?\s*([A-Z0-9][\w.-]{1,20})/i);
   if (numMatch) info.numero = numMatch[1].trim();
 
-  const archMatch = text.match(/(?:architecte|arch\.?)\s*[:#]?\s*([^\n\r]{3,60})/i);
+  const archMatch = text.match(/(?:architecte|arch\.?|professionnel)\s*[:#]?\s*([^\n\r]{3,60})/i);
   if (archMatch) info.architecte = archMatch[1].trim();
 
-  const clientMatch = text.match(/(?:client|propri[ée]taire|donneur)\s*[:#]?\s*([^\n\r]{3,60})/i);
+  const clientMatch = text.match(/(?:client|propri[ée]taire|donneur|destinataire|attention)\s*[:#]?\s*([^\n\r]{3,60})/i);
   if (clientMatch) info.client = clientMatch[1].trim();
 
-  const adresseMatch = text.match(/(?:adresse|lieu|site|emplacement)\s*[:#]?\s*([^\n\r]{5,80})/i);
+  const adresseMatch = text.match(/(?:adresse|lieu|site|emplacement|address|location)\s*[:#]?\s*([^\n\r]{5,80})/i);
   if (adresseMatch) info.adresse = adresseMatch[1].trim();
+
+  const dateMatch = text.match(/(?:date|émis|issued)\s*[:#]?\s*(\d{4}[-/]\d{2}[-/]\d{2}|\d{1,2}\s+\w+\s+\d{4})/i);
+  if (dateMatch) info.date = dateMatch[1].trim();
 
   return info;
 }

@@ -71,8 +71,8 @@ app.use('/recherche', require('./src/routes/recherche'));
 app.use('/api', require('./src/routes/api'));
 
 app.use((err, req, res, next) => {
-  console.error('ERREUR SERVEUR v4:', err.stack || err.message || err);
-  res.status(500).send(`<h2>Erreur serveur (v4)</h2><pre>${err.message || err}</pre><p>Body: ${JSON.stringify(req.body || {}).substring(0,300)}</p><a href="/">Retour</a>`);
+  console.error('ERREUR SERVEUR:', err.stack || err.message || err);
+  res.status(500).send(`<h2>Erreur serveur</h2><pre>${err.message || err}</pre><a href="/">Retour</a>`);
 });
 
 async function start() {
