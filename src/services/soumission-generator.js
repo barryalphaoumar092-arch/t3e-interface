@@ -181,9 +181,29 @@ function replaceFirstInXml(xml, pattern, value) {
 
 const CURLY_APOS = String.fromCharCode(0x2019);
 
+function normalizeXmlText(xml) {
+  // Fusionne les <w:t> adjacents dans le même run ou entre runs consécutifs
+  // avant les remplacements regex pour que les patterns fragmentés soient trouvés
+  // Pattern: </w:t></w:r><w:r><w:t> ou </w:t></w:r><w:r [attrs]><w:t [attrs]>
+  // On garde le formatage du premier run
+  let result = xml;
+  let changed = true;
+  let passes = 0;
+  while (changed && passes < 5) {
+    passes++;
+    const before = result;
+    result = result.replace(/<\/w:t>(<\/w:r><w:r(?:\s[^>]*)?>(?:<w:rPr>(?:[^<]|<(?!\/w:rPr>))*<\/w:rPr>)?<w:t(?:\s[^>]*)?>)/g, '');
+    changed = result !== before;
+  }
+  return result;
+}
+
 function replaceBlankFields(xml, soumission) {
   const s = soumission;
   const BLANK = '______';
+
+  // Normaliser le XML pour fusionner les text runs fragmentés
+  xml = normalizeXmlText(xml);
 
   // Surface
   const sup = s.superficie_pc ? escapeXml(String(s.superficie_pc)) : BLANK;
@@ -207,21 +227,21 @@ function replaceBlankFields(xml, soumission) {
     xml = xml.replace(/sloped 1% \/ 2%/g, `sloped ${pente}`);
   }
 
-  // Drains
+  // Drains — utiliser replaceInXml car le texte est splitté entre runs XML
   const drains = s.nb_drains || BLANK;
+  xml = replaceInXml(xml, 'installer__________nouveaux drains', `installer ${drains} nouveaux drains`);
+  xml = replaceInXml(xml, 'install__________new drains', `install ${drains} new drains`);
   xml = xml.replace(/_+(?=\s*nouveaux drains)/g, drains);
   xml = xml.replace(/_+(?=\s*new rigid copper)/g, drains);
 
-  // Manchons évents
+  // Manchons évents — même problème de split XML
   const events = s.nb_manchons_events || BLANK;
-  const reEvents = new RegExp(`_+(?=\\s*nouveaux manchons d[${CURLY_APOS}']évents)`, 'g');
-  xml = xml.replace(reEvents, events);
+  xml = replaceInXml(xml, `installer__________nouveaux manchons d${CURLY_APOS}évents`, `installer ${events} nouveaux manchons d${CURLY_APOS}évents`);
   xml = xml.replace(/_+(?=\s*new aluminum plumbing)/g, events);
 
-  // Manchons étanchéité — DISTINCT from évents
+  // Manchons étanchéité
   const etanch = s.nb_manchons_etancheite || BLANK;
-  const reEtanch = new RegExp(`_+(?=\\s*nouveaux manchons d[${CURLY_APOS}']étanch)`, 'g');
-  xml = xml.replace(reEtanch, etanch);
+  xml = replaceInXml(xml, `installer__________nouveaux manchons d${CURLY_APOS}étanchéité`, `installer ${etanch} nouveaux manchons d${CURLY_APOS}étanchéité`);
   xml = xml.replace(/_+(?=\s*new Chem-Curbs)/g, etanch);
 
   // Cols de cygne
@@ -263,8 +283,13 @@ function replaceBlankFields(xml, soumission) {
   // Documents reçus: “le ______ pour soumission”
   xml = xml.replace(/_+(?=\s*pour soumission)/g, s.documents_recus ? escapeXml(s.documents_recus) : BLANK);
 
+  // “spécifier type toiture” → remplacer par le système choisi ou enlever
+  const systLabel = s.systeme_toiture ? escapeXml(s.systeme_toiture.replace(/_/g, ' ')) : '';
+  xml = xml.replace(/sp[ée]cifier type toiture/gi, systLabel);
+  xml = xml.replace(/specified? which type/gi, systLabel);
+
   // Fibre de bois épaisseur
-  xml = xml.replace(/_+(?="\s*de fibre)/g, ep);
+  xml = xml.replace(/_+(?=”\s*de fibre)/g, ep);
   xml = xml.replace(/_+(?=\s*Roofboard)/gi, ep);
 
   // Nettoyer les underscores restants (3+ consécutifs) qui n'ont pas été remplis
