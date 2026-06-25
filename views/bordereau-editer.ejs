@@ -118,6 +118,7 @@ var overlays = {};
 var containerEl = document.getElementById('pdfContainer');
 var overlayEl = document.getElementById('overlay');
 var canvasW = 0, canvasH = 0;
+var pdfReady = false;
 
 pdfjsLib.getDocument({
   url: '/bordereaux/template-pdf/<%= bordereau.id %>',
@@ -140,6 +141,7 @@ pdfjsLib.getDocument({
     canvasH = displayH;
     containerEl.style.height = displayH + 'px';
     page.render({ canvasContext: ctx, viewport: svp }).promise.then(function() {
+      pdfReady = true;
       restoreSavedOverlays();
     });
   });
@@ -240,16 +242,24 @@ function restoreSavedOverlays() {
 }
 
 function savePositions() {
-  var pos = {};
   var rect = containerEl.getBoundingClientRect();
+  if (!rect.width || rect.width < 50 || !rect.height || rect.height < 50) return;
+
+  var pos = {};
+  // Garder les positions sauvegardées pour les overlays pas encore restaurés
+  if (!pdfReady) {
+    Object.keys(savedPositions).forEach(function(key) {
+      pos[key] = savedPositions[key];
+    });
+  }
   Object.keys(overlays).forEach(function(key) {
     var el = overlays[key].el;
     var elRect = el.getBoundingClientRect();
-    pos[key] = {
-      x: ((elRect.left - rect.left) / rect.width) * 100,
-      y: ((elRect.top - rect.top) / rect.height) * 100,
-      val: overlays[key].val
-    };
+    var x = ((elRect.left - rect.left) / rect.width) * 100;
+    var y = ((elRect.top - rect.top) / rect.height) * 100;
+    if (isFinite(x) && isFinite(y)) {
+      pos[key] = { x: x, y: y, val: overlays[key].val };
+    }
   });
   document.getElementById('positionsJson').value = JSON.stringify(pos);
 }
@@ -449,6 +459,12 @@ function setFieldValue(key, label, val) {
 }
 
 // Collecter toutes les données
+var _titre = <%= JSON.stringify(bordereau.titre || '') %>;
+var _numero_projet = <%= JSON.stringify(bordereau.numero_projet || '') %>;
+var _client = <%= JSON.stringify((bordereau.contenu.projet || {}).client || '') %>;
+var _adresse = <%= JSON.stringify((bordereau.contenu.projet || {}).adresse || '') %>;
+var _architecte = <%= JSON.stringify((bordereau.contenu.projet || {}).architecte || '') %>;
+
 function collectData() {
   savePositions();
   var posStr = document.getElementById('positionsJson').value || '{}';
@@ -456,11 +472,11 @@ function collectData() {
   try { posObj = JSON.parse(posStr); } catch(e) {}
 
   return {
-    titre: '<%= bordereau.titre.replace(/'/g, "\\'") %>',
-    numero_projet: '<%= (bordereau.numero_projet || '').replace(/'/g, "\\'") %>',
-    client: '<%= ((bordereau.contenu.projet || {}).client || '').replace(/'/g, "\\'") %>',
-    adresse: '<%= ((bordereau.contenu.projet || {}).adresse || '').replace(/'/g, "\\'") %>',
-    architecte: '<%= ((bordereau.contenu.projet || {}).architecte || '').replace(/'/g, "\\'") %>',
+    titre: _titre,
+    numero_projet: _numero_projet,
+    client: _client,
+    adresse: _adresse,
+    architecte: _architecte,
     positions_json: posStr,
     positions: posObj,
     fiches_json: JSON.stringify(fichesSelectionnees),
@@ -516,10 +532,15 @@ document.getElementById('btnPdf').addEventListener('click', function() {
   fetch('/bordereaux/sauvegarder-ajax/<%= bordereau.id %>', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
-  }).then(function() {
+    body: JSON.stringify(data),
+    credentials: 'same-origin'
+  }).then(function(r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }).then(function(res) {
     btn.disabled = false;
     btn.innerHTML = '<i class="bi bi-file-pdf"></i> Télécharger PDF';
+    if (res.error) { alert('Erreur sauvegarde: ' + res.error); return; }
     window.location.href = '/bordereaux/generer-pdf-get/<%= bordereau.id %>';
   }).catch(function(err) {
     btn.disabled = false;
