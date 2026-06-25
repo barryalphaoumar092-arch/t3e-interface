@@ -182,28 +182,24 @@ const CURLY_APOS = String.fromCharCode(0x2019);
 
 function replaceBlankFields(xml, soumission) {
   const s = soumission;
+  const BLANK = '______';
 
-  // Surface: "__________pieds carrés" / "_______ square feet"
-  if (s.superficie_pc) {
-    const sup = escapeXml(String(s.superficie_pc));
-    xml = xml.replace(/environ_+pieds/g, `environ ${sup} pieds`);
-    xml = xml.replace(/approximately_+square/g, `approximately ${sup} square`);
-    xml = xml.replace(/_+(?=\s*pieds carr)/g, sup);
-    xml = xml.replace(/_+(?=\s*square fee)/g, sup);
-    xml = xml.replace(/_+(?=\s*Polyisocyanurate)/gi, sup);
-  }
+  // Surface
+  const sup = s.superficie_pc ? escapeXml(String(s.superficie_pc)) : BLANK;
+  xml = xml.replace(/environ_+pieds/g, `environ ${sup} pieds`);
+  xml = xml.replace(/approximately_+square/g, `approximately ${sup} square`);
+  xml = xml.replace(/_+(?=\s*pieds carr)/g, sup);
+  xml = xml.replace(/_+(?=\s*square fee)/g, sup);
 
-  // Épaisseur isolant: “_________'' d'isolant” (curly apostrophe U+2019)
-  if (s.epaisseur_isolant) {
-    const ep = escapeXml(s.epaisseur_isolant);
-    const regex1 = new RegExp(`_+(?=[${CURLY_APOS}'''””]+\\s*d[${CURLY_APOS}']isolant)`, 'g');
-    xml = xml.replace(regex1, ep);
-    const regex2 = new RegExp(`_+(?=[${CURLY_APOS}'''””]+\\s*of\\s)`, 'g');
-    xml = xml.replace(regex2, ep);
-    xml = xml.replace(/_+(?=\s*Polyiso)/gi, ep);
-  }
+  // Épaisseur isolant (curly apostrophe U+2019)
+  const ep = s.epaisseur_isolant ? escapeXml(s.epaisseur_isolant) : BLANK;
+  const regex1 = new RegExp(`_+(?=[${CURLY_APOS}'''””]+\\s*d[${CURLY_APOS}']isolant)`, 'g');
+  xml = xml.replace(regex1, ep);
+  const regex2 = new RegExp(`_+(?=[${CURLY_APOS}'''””]+\\s*of\\s)`, 'g');
+  xml = xml.replace(regex2, ep);
+  xml = xml.replace(/_+(?=\s*Polyiso)/gi, ep);
 
-  // Pente isolant: "pente 1% / 2%" -> replace with selected
+  // Pente isolant
   if (s.pente_isolant) {
     const pente = escapeXml(s.pente_isolant);
     xml = xml.replace(/pente 1% \/ 2%/g, `pente ${pente}`);
@@ -211,55 +207,44 @@ function replaceBlankFields(xml, soumission) {
   }
 
   // Drains
-  if (s.nb_drains) {
-    xml = xml.replace(/_+(?=\s*nouveaux drains)/g, s.nb_drains);
-    xml = xml.replace(/_+(?=\s*new rigid copper)/g, s.nb_drains);
-    xml = xml.replace(/installer_+nouveaux drains/g, `installer ${s.nb_drains} nouveaux drains`);
-    xml = xml.replace(/install_+new drains/g, `install ${s.nb_drains} new drains`);
-  }
+  const drains = s.nb_drains || BLANK;
+  xml = xml.replace(/_+(?=\s*nouveaux drains)/g, drains);
+  xml = xml.replace(/_+(?=\s*new rigid copper)/g, drains);
 
-  // Manchons évents (curly apostrophe: d'évents U+2019)
-  if (s.nb_manchons_events) {
-    const regex = new RegExp(`_+(?=\\s*nouveaux manchons d[${CURLY_APOS}']évents)`, 'g');
-    xml = xml.replace(regex, s.nb_manchons_events);
-    xml = xml.replace(/_+(?=\s*new aluminum plumbing)/g, s.nb_manchons_events);
-  }
+  // Manchons évents
+  const events = s.nb_manchons_events || BLANK;
+  const reEvents = new RegExp(`_+(?=\\s*nouveaux manchons d[${CURLY_APOS}']évents)`, 'g');
+  xml = xml.replace(reEvents, events);
+  xml = xml.replace(/_+(?=\s*new aluminum plumbing)/g, events);
 
-  // Manchons étanchéité (curly apostrophe: d'étanchéité U+2019) — DISTINCT from évents
-  if (s.nb_manchons_etancheite) {
-    const regex = new RegExp(`_+(?=\\s*nouveaux manchons d[${CURLY_APOS}']étanch)`, 'g');
-    xml = xml.replace(regex, s.nb_manchons_etancheite);
-    xml = xml.replace(/_+(?=\s*new Chem-Curbs)/g, s.nb_manchons_etancheite);
-  }
+  // Manchons étanchéité — DISTINCT from évents
+  const etanch = s.nb_manchons_etancheite || BLANK;
+  const reEtanch = new RegExp(`_+(?=\\s*nouveaux manchons d[${CURLY_APOS}']étanch)`, 'g');
+  xml = xml.replace(reEtanch, etanch);
+  xml = xml.replace(/_+(?=\s*new Chem-Curbs)/g, etanch);
 
   // Cols de cygne
-  if (s.nb_cols_cygne) {
-    xml = xml.replace(/_+(?=\s*cols de cygne)/g, s.nb_cols_cygne);
-    xml = xml.replace(/_+(?=\s*new gooseneck)/g, s.nb_cols_cygne);
-  }
+  const cols = s.nb_cols_cygne || BLANK;
+  xml = xml.replace(/_+(?=\s*cols de cygne)/g, cols);
+  xml = xml.replace(/_+(?=\s*new gooseneck)/g, cols);
 
   // Ventilateur Maximum
-  if (s.ventilateur_max) {
-    const v = escapeXml(s.ventilateur_max);
-    xml = xml.replace(/#_+\./g, `#${v}.`);
-    xml = xml.replace(/#_+/g, `#${v}`);
-  }
+  const vent = s.ventilateur_max ? escapeXml(s.ventilateur_max) : BLANK;
+  xml = xml.replace(/#_+\./g, `#${vent}.`);
+  xml = xml.replace(/#_+/g, `#${vent}`);
 
-  // Coût remplacement contreplaqués — FIRST occurrence only
-  // FR: "$__________/ pied carré" appears twice: 1st = CP, 2nd = isolant
-  if (s.cout_remplacement_cp || s.cout_remplacement_isolant) {
-    let cpDone = false;
-    xml = xml.replace(/\$_+\/?\s*(?:pied carré|per square foot)/g, (match) => {
-      if (!cpDone) {
-        cpDone = true;
-        const val = s.cout_remplacement_cp || '______';
-        return match.includes('per square') ? `$${escapeXml(val)} per square foot` : `$${escapeXml(val)}/ pied carré`;
-      } else {
-        const val = s.cout_remplacement_isolant || s.cout_remplacement_cp || '______';
-        return match.includes('per square') ? `$${escapeXml(val)} per square foot` : `$${escapeXml(val)}/ pied carré`;
-      }
-    });
-  }
+  // Coût remplacement — 1st = contreplaqué, 2nd = isolant
+  let cpDone = false;
+  xml = xml.replace(/\$_+\/?\s*(?:pied carré|per square foot)/g, (match) => {
+    if (!cpDone) {
+      cpDone = true;
+      const val = s.cout_remplacement_cp || BLANK;
+      return match.includes('per square') ? `$${escapeXml(val)} per square foot` : `$${escapeXml(val)}/ pied carré`;
+    } else {
+      const val = s.cout_remplacement_isolant || s.cout_remplacement_cp || BLANK;
+      return match.includes('per square') ? `$${escapeXml(val)} per square foot` : `$${escapeXml(val)}/ pied carré`;
+    }
+  });
 
   // Pontage
   if (s.pontage) {
@@ -274,16 +259,16 @@ function replaceBlankFields(xml, soumission) {
     xml = xml.replace(/wood\s*\/\s*steel\s*\/\s*concrete/gi, escapeXml(selected));
   }
 
-  // Documents reçus: "le ______ pour soumission"
-  if (s.documents_recus) {
-    xml = xml.replace(/_+(?=\s*pour soumission)/g, escapeXml(s.documents_recus));
-  }
+  // Documents reçus: “le ______ pour soumission”
+  xml = xml.replace(/_+(?=\s*pour soumission)/g, s.documents_recus ? escapeXml(s.documents_recus) : BLANK);
 
-  // Fibre de bois épaisseur: "__________" de fibre de bois"
-  if (s.epaisseur_isolant) {
-    xml = xml.replace(/_+(?="\s*de fibre)/g, escapeXml(s.epaisseur_isolant));
-    xml = xml.replace(/_+(?=\s*Roofboard)/gi, escapeXml(s.epaisseur_isolant));
-  }
+  // Fibre de bois épaisseur
+  xml = xml.replace(/_+(?="\s*de fibre)/g, ep);
+  xml = xml.replace(/_+(?=\s*Roofboard)/gi, ep);
+
+  // Nettoyer les underscores restants (3+ consécutifs) qui n'ont pas été remplis
+  // Garder les underscores de signature (>15 chars) intacts
+  xml = xml.replace(/>_{3,14}</g, `>${BLANK}<`);
 
   return xml;
 }
@@ -312,16 +297,12 @@ async function generateSoumission(soumission) {
     modifiedXml = replaceInXml(modifiedXml, pattern, value);
   }
 
-  if (soumission.client_adresse) {
-    modifiedXml = replaceFirstInXml(modifiedXml, 'Adresse', soumission.client_adresse);
-    modifiedXml = replaceFirstInXml(modifiedXml, 'Address', soumission.client_adresse);
-  }
+  modifiedXml = replaceFirstInXml(modifiedXml, 'Adresse', soumission.client_adresse || '______');
+  modifiedXml = replaceFirstInXml(modifiedXml, 'Address', soumission.client_adresse || '______');
 
   modifiedXml = replaceBlankFields(modifiedXml, soumission);
 
-  if (soumission.superficie_pc) {
-    modifiedXml = replaceFirstInXml(modifiedXml, 'superficie', `${soumission.superficie_pc} pi²`);
-  }
+  modifiedXml = replaceFirstInXml(modifiedXml, 'superficie', soumission.superficie_pc ? `${soumission.superficie_pc} pi²` : '______ pi²');
 
   zip.file('word/document.xml', modifiedXml);
 
