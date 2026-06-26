@@ -1,14 +1,13 @@
-<%- include('partials/header', { title: 'Éditer bordereau #' + bordereau.id + ' — ' + bordereau.titre, page: 'bordereaux' }) %>
+<%- include('partials/header', { title: 'Bordereau #' + bordereau.id + ' — ' + bordereau.titre, page: 'bordereaux' }) %>
 
 <style>
   .field-overlay {
-    position: absolute; cursor: move; font-size: 11px; color: #0000cc;
-    font-weight: bold; padding: 1px 4px; border: 1px dashed transparent;
+    position: absolute; cursor: move; font-size: 10px; color: #000080;
+    font-weight: bold; padding: 1px 3px; border: 1px dashed transparent;
     white-space: nowrap; z-index: 10; user-select: none;
   }
-  .field-overlay:hover { border-color: red; background: rgba(255,255,0,0.3); }
-  .field-select { font-size: 0.8rem; }
-  .ft-selected { background: #d4edda; border-radius: 4px; padding: 4px 8px; margin: 2px 0; font-size: 0.75rem; }
+  .field-overlay:hover { border-color: #dc3545; background: rgba(255,255,0,0.4); }
+  .ft-selected { background: #d4edda; border-radius: 4px; padding: 3px 8px; margin: 2px 0; font-size: 0.75rem; display: flex; justify-content: space-between; align-items: center; }
 </style>
 
 <nav aria-label="breadcrumb">
@@ -18,712 +17,352 @@
   </ol>
 </nav>
 
-<div class="row">
-  <!-- ========== GAUCHE : FORMULAIRE ========== -->
-  <div class="col-md-4" style="max-height:92vh;overflow-y:auto;">
-    <form method="POST" action="/bordereaux/sauvegarder/<%= bordereau.id %>" id="formEdit">
+<div class="row g-2">
 
-      <!-- Sélection des fiches techniques -->
-      <div class="card mb-2">
-        <div class="card-header bg-success text-white py-1">
-          <small class="fw-bold">1. Sélectionner les fiches techniques</small>
-          <span class="badge bg-light text-dark float-end" id="countFT">0</span>
-        </div>
-        <div class="card-body py-2 px-2">
-          <input type="text" id="searchFT" class="form-control form-control-sm mb-1" placeholder="Rechercher...">
-          <div id="selectedFTList"></div>
-          <div style="max-height:150px;overflow-y:auto;font-size:0.7rem;" id="ftList">
-            <% var currentSource = ''; %>
-            <% ftDocs.forEach(function(doc) { %>
-              <% if (doc.source !== currentSource) { currentSource = doc.source; %>
-                <div class="ft-group fw-bold text-primary mt-1"><%= doc.source || 'Autre' %></div>
-              <% } %>
-              <div class="ft-item d-flex justify-content-between align-items-center py-0 px-1" data-search="<%= (doc.titre + ' ' + doc.source).toLowerCase() %>" data-id="<%= doc.id %>" data-titre="<%= doc.titre %>" data-fichier="<%= doc.nom_fichier %>" data-chemin="<%= doc.chemin_fichier %>" data-source="<%= doc.source %>">
-                <span><i class="bi bi-file-pdf text-danger"></i> <%= doc.titre %></span>
-                <button type="button" class="btn btn-outline-success btn-sm py-0 px-1 btn-add-ft" style="font-size:0.65rem">+</button>
-              </div>
-            <% }) %>
-          </div>
-        </div>
+  <!-- ====== PANNEAU GAUCHE ====== -->
+  <div class="col-md-3" style="max-height:92vh;overflow-y:auto;">
+
+    <% if (!hasTemplate) { %>
+    <!-- Pas de template : panneau upload prominent -->
+    <div class="card mb-2 border-danger">
+      <div class="card-header bg-danger text-white py-2">
+        <i class="bi bi-exclamation-triangle"></i> <strong>Template PDF requis</strong>
       </div>
-
-      <!-- Champs du bordereau (extraits dynamiquement) -->
-      <div class="card mb-2">
-        <div class="card-header bg-primary text-white py-1">
-          <small class="fw-bold">2. Remplir le bordereau</small>
-        </div>
-        <div class="card-body py-2 px-2" id="fieldsContainer">
-          <% var fields = templateFields || []; %>
-          <% if (fields.length === 0) { %>
-            <p class="text-muted small">Aucun champ détecté. Soumettez un bordereau PDF pour voir les champs.</p>
-          <% } %>
-          <% fields.forEach(function(f) { %>
-            <div class="mb-2">
-              <label class="form-label fw-bold mb-0" style="font-size:0.75rem"><%= f.label %></label>
-              <div class="d-flex gap-1">
-                <select class="form-select form-select-sm field-select" data-field="<%= f.key %>" data-label="<%= f.label %>">
-                  <option value="">— Choisir —</option>
-                  <option value="__autre__">✏️ Autre</option>
-                </select>
-              </div>
-              <input type="text" class="form-control form-control-sm mt-1 field-custom d-none" data-field="<%= f.key %>" data-label="<%= f.label %>" placeholder="Saisir...">
-            </div>
-          <% }) %>
-        </div>
-      </div>
-
-      <!-- Hidden data -->
-      <input type="hidden" name="titre" value="<%= bordereau.titre %>">
-      <input type="hidden" name="numero_projet" value="<%= bordereau.numero_projet || '' %>">
-      <input type="hidden" name="client" value="<%= (bordereau.contenu.projet || {}).client || '' %>">
-      <input type="hidden" name="adresse" value="<%= (bordereau.contenu.projet || {}).adresse || '' %>">
-      <input type="hidden" name="architecte" value="<%= (bordereau.contenu.projet || {}).architecte || '' %>">
-      <input type="hidden" name="fiches_json" id="fichesJson" value="[]">
-      <input type="hidden" name="positions_json" id="positionsJson" value="{}">
-
-      <!-- Boutons -->
-      <div class="d-grid gap-1 mb-3">
-        <% if (iaActive) { %>
-          <button type="button" class="btn btn-outline-info btn-sm" id="btnIA"><i class="bi bi-robot"></i> Remplir avec l'IA</button>
-        <% } else { %>
-          <button type="button" class="btn btn-outline-secondary btn-sm" id="btnIA" disabled
-            data-bs-toggle="tooltip" data-bs-placement="right"
-            title="Disponible bientôt — en attente de l'activation de l'IA">
-            <i class="bi bi-robot"></i> Remplir avec l'IA <span class="badge bg-warning text-dark ms-1">bientôt</span>
-          </button>
-        <% } %>
-        <button type="button" class="btn btn-primary btn-sm" id="btnSave"><i class="bi bi-save"></i> Sauvegarder</button>
-        <button type="button" class="btn btn-success" id="btnPdf"><i class="bi bi-file-pdf"></i> Télécharger PDF</button>
-      </div>
-    </form>
-
-    <!-- Changer le template PDF -->
-    <div class="card mb-2 border-warning">
-      <div class="card-header bg-warning text-dark py-1" style="cursor:pointer" id="toggleTemplate">
-        <small class="fw-bold"><i class="bi bi-upload"></i> Charger / Changer le template PDF</small>
-        <i class="bi bi-chevron-down float-end" id="templateChevron"></i>
-      </div>
-      <div class="card-body py-2 px-2 d-none" id="templateUploadZone">
-        <p class="text-muted" style="font-size:0.75rem;">Uploadez le bordereau PDF vierge T3E. Il sera affiché à droite et l'IA l'utilisera pour remplir les champs.</p>
+      <div class="card-body py-2 px-2">
+        <p class="text-muted small mb-2">Uploadez le bordereau PDF vierge T3E pour commencer.</p>
         <input type="file" id="templateFile" accept=".pdf" class="form-control form-control-sm mb-1">
-        <button type="button" class="btn btn-warning btn-sm w-100" id="btnUploadTemplate">
-          <i class="bi bi-cloud-upload"></i> Uploader le PDF
+        <button type="button" class="btn btn-danger btn-sm w-100" id="btnUploadTemplate">
+          <i class="bi bi-cloud-upload"></i> Charger le template PDF
         </button>
         <div id="uploadTemplateStatus" class="mt-1" style="font-size:0.75rem;"></div>
       </div>
     </div>
+    <% } %>
+
+    <!-- Bouton principal IA -->
+    <div class="card mb-2 border-primary">
+      <div class="card-body py-3 px-2 text-center">
+        <% if (iaActive && hasTemplate) { %>
+          <button type="button" class="btn btn-primary w-100 py-2" id="btnIAComplet" style="font-size:1rem;">
+            <i class="bi bi-robot"></i><br>
+            <strong>Analyser et générer le PDF</strong><br>
+            <small class="opacity-75">IA remplit tout automatiquement</small>
+          </button>
+        <% } else if (!hasTemplate) { %>
+          <button class="btn btn-secondary w-100 py-2" disabled>
+            <i class="bi bi-robot"></i><br>
+            <span>Chargez d'abord le template PDF</span>
+          </button>
+        <% } else { %>
+          <button class="btn btn-secondary w-100 py-2" disabled>
+            <i class="bi bi-robot"></i><br>
+            <span>IA non configurée</span><br>
+            <small>Ajoutez OPENAI_API_KEY sur Render</small>
+          </button>
+        <% } %>
+        <div id="iaStatus" class="mt-2" style="font-size:0.8rem;"></div>
+      </div>
+    </div>
+
+    <!-- Fiches techniques (optionnel — l'IA en sélectionne aussi) -->
+    <div class="card mb-2">
+      <div class="card-header bg-success text-white py-1 d-flex justify-content-between align-items-center">
+        <small class="fw-bold"><i class="bi bi-file-pdf"></i> Fiches techniques</small>
+        <span class="badge bg-light text-dark" id="countFT">0</span>
+      </div>
+      <div class="card-body py-2 px-2">
+        <p class="text-muted" style="font-size:0.7rem;margin-bottom:4px;">L'IA sélectionne automatiquement les fiches pertinentes. Vous pouvez en ajouter manuellement.</p>
+        <input type="text" id="searchFT" class="form-control form-control-sm mb-1" placeholder="Rechercher une fiche...">
+        <div id="selectedFTList" class="mb-1"></div>
+        <div style="max-height:200px;overflow-y:auto;font-size:0.7rem;" id="ftList">
+          <% var currentSource = ''; %>
+          <% ftDocs.forEach(function(doc) { %>
+            <% if (doc.source !== currentSource) { currentSource = doc.source; %>
+              <div class="ft-group fw-bold text-primary mt-1 px-1"><%= doc.source || 'Autre' %></div>
+            <% } %>
+            <div class="ft-item d-flex justify-content-between align-items-center py-0 px-1"
+              data-search="<%= (doc.titre + ' ' + doc.source).toLowerCase() %>"
+              data-id="<%= doc.id %>" data-titre="<%= doc.titre %>"
+              data-fichier="<%= doc.nom_fichier %>" data-chemin="<%= doc.chemin_fichier %>" data-source="<%= doc.source %>">
+              <span class="text-truncate"><i class="bi bi-file-pdf text-danger"></i> <%= doc.titre %></span>
+              <button type="button" class="btn btn-outline-success btn-sm py-0 px-1 btn-add-ft flex-shrink-0" style="font-size:0.65rem">+</button>
+            </div>
+          <% }) %>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bouton télécharger le PDF déjà sauvegardé -->
+    <div class="d-grid gap-1 mb-2">
+      <a href="/bordereaux/generer-pdf-get/<%= bordereau.id %>" class="btn btn-outline-success btn-sm">
+        <i class="bi bi-file-pdf"></i> Télécharger PDF (positions sauvegardées)
+      </a>
+    </div>
+
+    <!-- Changer le template PDF (avancé) -->
+    <div class="card mb-2 border-warning">
+      <div class="card-header bg-warning text-dark py-1" style="cursor:pointer" id="toggleTemplate">
+        <small class="fw-bold"><i class="bi bi-upload"></i> Changer le template PDF</small>
+        <i class="bi bi-chevron-down float-end" id="templateChevron"></i>
+      </div>
+      <div class="card-body py-2 px-2 d-none" id="templateUploadZone">
+        <p class="text-muted" style="font-size:0.75rem;">Remplacer le bordereau PDF vierge T3E.</p>
+        <input type="file" id="templateFileChange" accept=".pdf" class="form-control form-control-sm mb-1">
+        <button type="button" class="btn btn-warning btn-sm w-100" id="btnUploadTemplateChange">
+          <i class="bi bi-cloud-upload"></i> Uploader le nouveau PDF
+        </button>
+        <div id="uploadTemplateStatusChange" class="mt-1" style="font-size:0.75rem;"></div>
+      </div>
+    </div>
+
   </div>
 
-  <!-- ========== DROITE : APERÇU DU BORDEREAU ========== -->
-  <div class="col-md-8">
+  <!-- ====== PANNEAU DROIT : APERÇU PDF ====== -->
+  <div class="col-md-9">
     <div class="card">
-      <div class="card-header py-1 d-flex justify-content-between">
-        <small class="fw-bold">Aperçu — glissez le texte pour le positionner</small>
-        <span class="badge bg-secondary"><%= bordereau.statut %></span>
+      <div class="card-header py-1 d-flex justify-content-between align-items-center">
+        <small class="fw-bold">
+          <i class="bi bi-eye"></i> Aperçu du bordereau template
+          <% if (hasTemplate) { %><span class="badge bg-success ms-1">PDF chargé</span><% } else { %><span class="badge bg-danger ms-1">Aucun template</span><% } %>
+        </small>
+        <small class="text-muted">Les positions des champs peuvent être ajustées par glisser-déposer</small>
       </div>
       <div class="card-body p-1">
-        <div id="pdfContainer" style="position:relative;background:#fff;">
+        <div id="pdfContainer" style="position:relative;background:#f8f9fa;min-height:200px;">
+          <% if (!hasTemplate) { %>
+          <div class="p-5 text-center text-muted">
+            <i class="bi bi-file-earmark-pdf" style="font-size:4rem;color:#dc3545;opacity:0.5;"></i>
+            <p class="mt-3 fw-bold text-danger">Aucun template PDF chargé</p>
+            <p>Utilisez le panneau rouge "<strong>Template PDF requis</strong>" à gauche<br>pour uploader le bordereau PDF vierge T3E.</p>
+          </div>
+          <% } else { %>
           <canvas id="pdfCanvas" style="width:100%;display:block;"></canvas>
-          <div id="overlay" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:10;"></div>
+          <div id="overlay" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:10;pointer-events:none;"></div>
+          <% } %>
         </div>
-        <!-- FT sélectionnées affichées en dessous -->
-        <div id="ftPreview" class="mt-2"></div>
       </div>
     </div>
   </div>
 </div>
 
+<% if (hasTemplate) { %>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<% } %>
 <script>
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-
-var fichesSelectionnees = <%= JSON.stringify(bordereau.contenu.fiches_selectionnees || []) %>;
-var savedPositions = <%= JSON.stringify(bordereau.contenu.field_positions || {}) %>;
-var overlays = {};
-var containerEl = document.getElementById('pdfContainer');
-var overlayEl = document.getElementById('overlay');
-var canvasW = 0, canvasH = 0;
-var pdfReady = false;
-var pdfPage = null;
-
-function renderPdfPage(page) {
-  pdfPage = page;
-  var canvas = document.getElementById('pdfCanvas');
-  var ctx = canvas.getContext('2d');
-  // Attendre que le conteneur ait une vraie largeur
-  var cw = containerEl.offsetWidth || containerEl.parentElement.offsetWidth || 700;
-  if (cw < 100) cw = 700;
-  var vp = page.getViewport({ scale: 1 });
-  var renderScale = (cw * 2) / vp.width;
-  var svp = page.getViewport({ scale: renderScale });
-  canvas.width = svp.width;
-  canvas.height = svp.height;
-  var displayH = Math.round(cw * vp.height / vp.width);
-  canvas.style.width = cw + 'px';
-  canvas.style.height = displayH + 'px';
-  canvasW = cw;
-  canvasH = displayH;
-  containerEl.style.height = displayH + 'px';
-  page.render({ canvasContext: ctx, viewport: svp }).promise.then(function() {
-    pdfReady = true;
-    restoreSavedOverlays();
-  });
-}
-
-function chargerPdf() {
-  pdfjsLib.getDocument({
-    url: '/bordereaux/template-pdf/<%= bordereau.id %>',
-    cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
-    cMapPacked: true,
-  }).promise.then(function(pdf) {
-    pdf.getPage(1).then(function(page) {
-      setTimeout(function() { renderPdfPage(page); }, 400);
-    });
-  }).catch(function() {
-    containerEl.style.minHeight = '280px';
-    containerEl.innerHTML = '<div class="p-4 text-center text-muted">'
-      + '<i class="bi bi-file-earmark-pdf" style="font-size:3rem;color:#ffc107;"></i>'
-      + '<p class="mt-3 fw-bold text-dark">Aucun template PDF chargé</p>'
-      + '<p class="small">Utilisez le panneau "<strong>Charger / Changer le template PDF</strong>" à gauche<br>pour uploader le bordereau PDF vierge T3E.</p>'
-      + '</div>';
-  });
-}
-chargerPdf();
-
-// ============ Créer un overlay draggable ============
-function addOverlay(key, label, val) {
-  // Recalculer les dimensions si nécessaire
-  if (!canvasW || canvasW < 100) {
-    canvasW = containerEl.clientWidth || 600;
-    canvasH = containerEl.clientHeight || 800;
-  }
-  if (!val) return;
-  if (overlays[key]) {
-    overlays[key].el.textContent = val;
-    overlays[key].val = val;
-    savePositions();
-    return;
-  }
-
-  var div = document.createElement('div');
-  div.className = 'field-overlay';
-  div.textContent = val;
-  div.title = label + ' (glissez pour repositionner)';
-
-  // Positions par défaut proches du bon endroit sur le bordereau T3E
-  var defaultPos = {
-    nom_du_projet:      { x: 27, y: 16 },
-    num_ro_du_projet:   { x: 29, y: 18 },
-    nom:                { x: 16, y: 22.3 },
-    sp_cialit:          { x: 67, y: 22.3 },
-    adresse:            { x: 20, y: 25.8 },
-    ligne_num_ro:       { x: 82, y: 32.2 },
-    titre:              { x: 18, y: 38.4 },
-    num_ro_de_dessins:  { x: 30, y: 40.7 },
-    nombre_feuilles:    { x: 63, y: 40.7 },
-    r_vision:           { x: 83, y: 40.7 },
-    description:        { x: 24, y: 42.6 },
-    fournisseur:        { x: 25, y: 44.7 },
-    fabricant:          { x: 59, y: 44.7 },
-    section_item:       { x: 65, y: 47 },
-    article:            { x: 58, y: 49.2 },
-    d_lai:              { x: 18, y: 51 },
-    remarque:           { x: 24, y: 54.5 },
-  };
-
-  var rect = containerEl.getBoundingClientRect();
-  var dp = defaultPos[key] || { x: 40, y: 50 };
-  var startX = rect.width * (dp.x / 100);
-  var startY = rect.height * (dp.y / 100);
-
-  // Restaurer la position sauvegardée si elle existe
-  if (savedPositions[key]) {
-    startX = (savedPositions[key].x / 100) * rect.width;
-    startY = (savedPositions[key].y / 100) * rect.height;
-  }
-
-  div.style.left = startX + 'px';
-  div.style.top = startY + 'px';
-
-  // Drag
-  var dragging = false, ox, oy;
-  div.addEventListener('mousedown', function(e) {
-    e.preventDefault();
-    dragging = true;
-    ox = e.clientX - div.offsetLeft;
-    oy = e.clientY - div.offsetTop;
-  });
-  document.addEventListener('mousemove', function(e) {
-    if (!dragging) return;
-    div.style.left = (e.clientX - ox) + 'px';
-    div.style.top = (e.clientY - oy) + 'px';
-  });
-  document.addEventListener('mouseup', function() {
-    if (dragging) { dragging = false; savePositions(); }
-  });
-
-  overlayEl.appendChild(div);
-  overlays[key] = { el: div, val: val };
-  savePositions();
-}
-
-function removeOverlay(key) {
-  if (overlays[key]) {
-    overlays[key].el.remove();
-    delete overlays[key];
-    savePositions();
-  }
-}
-
-function restoreSavedOverlays() {
-  Object.keys(savedPositions).forEach(function(key) {
-    var p = savedPositions[key];
-    if (p && p.val) addOverlay(key, key, p.val);
-  });
-}
-
-function savePositions() {
-  var rect = containerEl.getBoundingClientRect();
-  if (!rect.width || rect.width < 50 || !rect.height || rect.height < 50) return;
-
-  var pos = {};
-  // Garder les positions sauvegardées pour les overlays pas encore restaurés
-  if (!pdfReady) {
-    Object.keys(savedPositions).forEach(function(key) {
-      pos[key] = savedPositions[key];
-    });
-  }
-  Object.keys(overlays).forEach(function(key) {
-    var el = overlays[key].el;
-    var elRect = el.getBoundingClientRect();
-    var x = ((elRect.left - rect.left) / rect.width) * 100;
-    var y = ((elRect.top - rect.top) / rect.height) * 100;
-    if (isFinite(x) && isFinite(y)) {
-      pos[key] = { x: x, y: y, val: overlays[key].val };
-    }
-  });
-  document.getElementById('positionsJson').value = JSON.stringify(pos);
-}
-
-// ============ Dropdowns : charger suggestions ============
-fetch('/bordereaux/suggestions/<%= bordereau.id %>').then(function(r) { return r.json(); }).then(function(sugg) {
-  var allSuggestions = [];
-  Object.values(sugg).forEach(function(arr) {
-    if (Array.isArray(arr)) arr.forEach(function(v) { if (v) allSuggestions.push(v); });
-  });
-  allSuggestions = [...new Set(allSuggestions)];
-
-  document.querySelectorAll('.field-select').forEach(function(sel) {
-    var fieldKey = sel.dataset.field;
-    var label = sel.dataset.label.toLowerCase();
-
-    // Trouver les suggestions pertinentes pour ce champ
-    var relevant = [];
-    if (label.includes('projet') && label.includes('nom')) relevant = sugg.nom_projet || [];
-    else if (label.includes('projet') && label.includes('num')) relevant = sugg.numero_projet || [];
-    else if (label.includes('adresse')) relevant = sugg.adresse || [];
-    else if (label.includes('architecte')) relevant = sugg.architecte || [];
-    else if (label.includes('titre')) relevant = sugg.titre || [];
-    else if (label.includes('description')) relevant = sugg.description || [];
-    else if (label.includes('fournisseur')) relevant = sugg.fournisseur || [];
-    else if (label.includes('fabricant')) relevant = sugg.fabricant || [];
-    else relevant = allSuggestions;
-
-    relevant = [...new Set(relevant.filter(Boolean))].slice(0, 20);
-
-    // Insérer avant "Autre"
-    var autreOpt = sel.querySelector('option[value="__autre__"]');
-    relevant.forEach(function(v) {
-      var opt = document.createElement('option');
-      opt.value = v; opt.textContent = v;
-      sel.insertBefore(opt, autreOpt);
-    });
-
-    // Restaurer la valeur sauvegardée
-    var saved = savedPositions[fieldKey];
-    if (saved && saved.val) {
-      var found = false;
-      for (var i = 0; i < sel.options.length; i++) {
-        if (sel.options[i].value === saved.val) { sel.selectedIndex = i; found = true; break; }
-      }
-      if (!found) {
-        var customOpt = document.createElement('option');
-        customOpt.value = saved.val; customOpt.textContent = saved.val; customOpt.selected = true;
-        sel.insertBefore(customOpt, autreOpt);
-      }
-    }
-  });
-});
-
-// ============ Événements dropdowns ============
-document.querySelectorAll('.field-select').forEach(function(sel) {
-  sel.addEventListener('change', function() {
-    var key = this.dataset.field;
-    var label = this.dataset.label;
-    var customInput = this.parentElement.parentElement.querySelector('.field-custom');
-
-    if (this.value === '__autre__') {
-      customInput.classList.remove('d-none');
-      customInput.focus();
-      return;
-    }
-    customInput.classList.add('d-none');
-
-    if (this.value) {
-      addOverlay(key, label, this.value);
-    } else {
-      removeOverlay(key);
-    }
-  });
-});
-
-document.querySelectorAll('.field-custom').forEach(function(inp) {
-  inp.addEventListener('input', function() {
-    var key = this.dataset.field;
-    var label = this.dataset.label;
-    if (this.value) addOverlay(key, label, this.value);
-    else removeOverlay(key);
-  });
-});
+pdfjsLib && (pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js');
 
 // ============ Fiches techniques ============
-function updateFT() {
-  document.getElementById('fichesJson').value = JSON.stringify(fichesSelectionnees);
-  document.getElementById('countFT').textContent = fichesSelectionnees.length;
+var fichesSelectionnees = <%= JSON.stringify((bordereau.contenu.fiches_selectionnees || []).map(function(f){return{id:f.id,titre:f.titre,nom_fichier:f.nom_fichier,chemin_fichier:f.chemin_fichier,source:f.source};})) %>;
+var savedPositions = <%= JSON.stringify(bordereau.contenu.field_positions || {}) %>;
 
+function updateFT() {
   var list = document.getElementById('selectedFTList');
+  var count = document.getElementById('countFT');
   list.innerHTML = '';
-  fichesSelectionnees.forEach(function(f, i) {
+  fichesSelectionnees.forEach(function(f) {
     var div = document.createElement('div');
-    div.className = 'ft-selected d-flex justify-content-between align-items-center';
-    div.innerHTML = '<span><i class="bi bi-check-circle text-success"></i> ' + f.titre + '</span><button type="button" class="btn btn-sm text-danger py-0" data-idx="' + i + '"><i class="bi bi-x"></i></button>';
-    div.querySelector('button').addEventListener('click', function() {
-      fichesSelectionnees.splice(i, 1); updateFT();
-    });
+    div.className = 'ft-selected';
+    div.innerHTML = '<span class="text-truncate"><i class="bi bi-file-pdf text-danger"></i> ' + f.titre + '</span>'
+      + '<button type="button" class="btn btn-sm btn-outline-danger py-0 px-1 ms-1 flex-shrink-0" style="font-size:0.65rem" onclick="removeFT(' + f.id + ')">×</button>';
     list.appendChild(div);
   });
-
-  // Preview des FT sous le bordereau à droite — afficher les PDF
-  var preview = document.getElementById('ftPreview');
-  preview.innerHTML = '';
-  fichesSelectionnees.forEach(function(f) {
-    if (!f.chemin_fichier || !f.chemin_fichier.toLowerCase().endsWith('.pdf')) return;
-    var pdfUrl = '/' + f.chemin_fichier;
-    var section = document.createElement('div');
-    section.className = 'mt-2';
-    section.innerHTML = '<div class="d-flex justify-content-between align-items-center bg-light p-1 border"><small class="fw-bold"><i class="bi bi-file-pdf text-danger"></i> ' + f.titre + ' (' + (f.source||'') + ')</small></div>';
-    var embed = document.createElement('embed');
-    embed.src = pdfUrl + '#toolbar=0&navpanes=0';
-    embed.type = 'application/pdf';
-    embed.style.cssText = 'width:100%;height:600px;border:1px solid #ccc;';
-    section.appendChild(embed);
-    preview.appendChild(section);
-  });
+  count.textContent = fichesSelectionnees.length;
 }
-updateFT();
+
+function removeFT(id) {
+  fichesSelectionnees = fichesSelectionnees.filter(function(f) { return f.id !== id; });
+  updateFT();
+}
 
 document.querySelectorAll('.btn-add-ft').forEach(function(btn) {
   btn.addEventListener('click', function() {
     var item = this.closest('.ft-item');
-    var already = fichesSelectionnees.some(function(f) { return f.id === parseInt(item.dataset.id); });
-    if (already) return;
-    var ft = {
-      id: parseInt(item.dataset.id), titre: item.dataset.titre,
-      nom_fichier: item.dataset.fichier, chemin_fichier: item.dataset.chemin, source: item.dataset.source
-    };
-    fichesSelectionnees.push(ft);
+    if (fichesSelectionnees.some(function(f) { return f.id === parseInt(item.dataset.id); })) return;
+    fichesSelectionnees.push({ id: parseInt(item.dataset.id), titre: item.dataset.titre, nom_fichier: item.dataset.fichier, chemin_fichier: item.dataset.chemin, source: item.dataset.source });
     updateFT();
-
-    // Auto-remplir les champs à partir de la FT sélectionnée
-    autoFillFromFT(ft);
-  });
-});
-
-function autoFillFromFT(ft) {
-  var titre = ft.titre || '';
-  var source = ft.source || '';
-
-  // Remplir Titre si vide
-  var titreField = document.querySelector('.field-select[data-field="titre"]');
-  if (titreField && !titreField.value) {
-    setFieldValue('titre', 'Titre', titre);
-  }
-
-  // Remplir Fournisseur si vide
-  var fournField = document.querySelector('.field-select[data-field="fournisseur"]');
-  if (fournField && !fournField.value) {
-    setFieldValue('fournisseur', 'Fournisseur', source);
-  }
-
-  // Remplir Fabricant si vide
-  var fabField = document.querySelector('.field-select[data-field="fabricant"]');
-  if (fabField && !fabField.value) {
-    setFieldValue('fabricant', 'Fabricant', source);
-  }
-
-  // Remplir Description si vide
-  var descField = document.querySelector('.field-select[data-field="description"]');
-  if (descField && !descField.value) {
-    var desc = 'Fiche technique — ' + titre + ' (' + source + ')';
-    setFieldValue('description', 'Description', desc);
-  }
-
-  // Remplir NOM entrepreneur si vide
-  var nomField = document.querySelector('.field-select[data-field="nom"]');
-  if (nomField && !nomField.value) {
-    setFieldValue('nom', 'NOM', 'Toitures Trois Étoiles Inc.');
-  }
-
-  // Remplir Spécialité si vide
-  var specField = document.querySelector('.field-select[data-field="sp_cialit"]');
-  if (specField && !specField.value) {
-    setFieldValue('sp_cialit', 'SPÉCIALITÉ', 'Couvreur');
-  }
-}
-
-function setFieldValue(key, label, val) {
-  var sel = document.querySelector('.field-select[data-field="' + key + '"]');
-  if (!sel) return;
-  // Ajouter l'option si elle n'existe pas
-  var found = false;
-  for (var i = 0; i < sel.options.length; i++) {
-    if (sel.options[i].value === val) { sel.selectedIndex = i; found = true; break; }
-  }
-  if (!found) {
-    var autreOpt = sel.querySelector('option[value="__autre__"]');
-    var opt = document.createElement('option');
-    opt.value = val; opt.textContent = val; opt.selected = true;
-    if (autreOpt) sel.insertBefore(opt, autreOpt);
-    else sel.appendChild(opt);
-  }
-  addOverlay(key, label, val);
-}
-
-// Collecter toutes les données
-var _titre = <%= JSON.stringify(bordereau.titre || '') %>;
-var _numero_projet = <%= JSON.stringify(bordereau.numero_projet || '') %>;
-var _client = <%= JSON.stringify((bordereau.contenu.projet || {}).client || '') %>;
-var _adresse = <%= JSON.stringify((bordereau.contenu.projet || {}).adresse || '') %>;
-var _architecte = <%= JSON.stringify((bordereau.contenu.projet || {}).architecte || '') %>;
-
-function collectData() {
-  savePositions();
-  var posStr = document.getElementById('positionsJson').value || '{}';
-  var posObj = {};
-  try { posObj = JSON.parse(posStr); } catch(e) {}
-
-  return {
-    titre: _titre,
-    numero_projet: _numero_projet,
-    client: _client,
-    adresse: _adresse,
-    architecte: _architecte,
-    positions_json: posStr,
-    positions: posObj,
-    fiches_json: JSON.stringify(fichesSelectionnees),
-    fiches: fichesSelectionnees,
-  };
-}
-
-// Sauvegarder via AJAX
-document.getElementById('btnSave').addEventListener('click', function() {
-  var data = collectData();
-  var btn = this;
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Sauvegarde...';
-
-  var jsonBody = JSON.stringify(data);
-  console.log('Envoi sauvegarde:', jsonBody.substring(0, 300));
-
-  fetch('/bordereaux/sauvegarder-ajax/<%= bordereau.id %>', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: jsonBody,
-    credentials: 'same-origin'
-  }).then(function(r) {
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    return r.json();
-  }).then(function(res) {
-    btn.disabled = false;
-    if (res.error) {
-      btn.innerHTML = '<i class="bi bi-x-circle"></i> Erreur!';
-      alert('Erreur: ' + res.error);
-    } else {
-      btn.innerHTML = '<i class="bi bi-check-circle"></i> Sauvegardé (' + (res.saved_positions||0) + ' champs, ' + (res.saved_fiches||0) + ' FT)';
-      btn.classList.replace('btn-primary', 'btn-success');
-      setTimeout(function() {
-        btn.innerHTML = '<i class="bi bi-save"></i> Sauvegarder';
-        btn.classList.replace('btn-success', 'btn-primary');
-      }, 3000);
-    }
-  }).catch(function(err) {
-    btn.disabled = false;
-    btn.innerHTML = '<i class="bi bi-save"></i> Sauvegarder';
-    alert('Erreur de sauvegarde: ' + err.message);
-  });
-});
-
-// Télécharger PDF (sauvegarde d'abord puis télécharge)
-document.getElementById('btnPdf').addEventListener('click', function() {
-  var data = collectData();
-  var btn = this;
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Génération...';
-
-  fetch('/bordereaux/sauvegarder-ajax/<%= bordereau.id %>', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-    credentials: 'same-origin'
-  }).then(function(r) {
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    return r.json();
-  }).then(function(res) {
-    btn.disabled = false;
-    btn.innerHTML = '<i class="bi bi-file-pdf"></i> Télécharger PDF';
-    if (res.error) { alert('Erreur sauvegarde: ' + res.error); return; }
-    window.location.href = '/bordereaux/generer-pdf-get/<%= bordereau.id %>';
-  }).catch(function(err) {
-    btn.disabled = false;
-    btn.innerHTML = '<i class="bi bi-file-pdf"></i> Télécharger PDF';
-    alert('Erreur: ' + err.message);
   });
 });
 
 document.getElementById('searchFT').addEventListener('input', function() {
   var q = this.value.toLowerCase();
-  document.querySelectorAll('.ft-item').forEach(function(item) { item.style.display = item.dataset.search.includes(q) ? '' : 'none'; });
+  document.querySelectorAll('.ft-item').forEach(function(i) { i.style.display = i.dataset.search.includes(q) ? '' : 'none'; });
   document.querySelectorAll('.ft-group').forEach(function(g) { g.style.display = q ? 'none' : ''; });
 });
 
-// Remplir avec l'IA — remplit TOUS les champs puis sauvegarde et télécharge le PDF
-document.getElementById('btnIA').addEventListener('click', function() {
-  var btn = this;
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Analyse IA...';
+updateFT();
 
-  fetch('/bordereaux/analyser-ia/<%= bordereau.id %>', {
+// ============ Bouton principal IA complet ============
+<% if (iaActive && hasTemplate) { %>
+document.getElementById('btnIAComplet').addEventListener('click', function() {
+  var btn = this;
+  var status = document.getElementById('iaStatus');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span><br><strong>Analyse en cours...</strong><br><small>L\'IA lit le devis et remplit le bordereau</small>';
+  status.innerHTML = '<div class="text-muted">Patientez ~10-20 secondes...</div>';
+
+  var ficheIds = fichesSelectionnees.map(function(f) { return f.id; });
+
+  fetch('/bordereaux/remplir-ia-complet/<%= bordereau.id %>', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fiches_manuelles: ficheIds }),
     credentials: 'same-origin'
-  }).then(function(r) {
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    return r.json();
-  }).then(function(res) {
-    if (res.error) {
-      btn.disabled = false;
-      btn.innerHTML = '<i class="bi bi-robot"></i> Remplir avec l\'IA';
-      alert(res.error);
-      return;
+  })
+  .then(function(r) {
+    if (r.headers.get('content-type') && r.headers.get('content-type').includes('application/json')) {
+      return r.json().then(function(data) { throw new Error(data.error || 'Erreur inconnue'); });
     }
-
-    // Appliquer toutes les suggestions IA (overwrite même les champs déjà remplis)
-    var suggestions = res.suggestions || {};
-    Object.keys(suggestions).forEach(function(fieldKey) {
-      var vals = suggestions[fieldKey];
-      if (!vals) return;
-      var val = Array.isArray(vals) ? vals[0] : vals;
-      if (!val) return;
-      // Chercher le champ par clé exacte d'abord, puis par label partiel
-      var sel = document.querySelector('.field-select[data-field="' + fieldKey + '"]');
-      if (!sel) {
-        document.querySelectorAll('.field-select').forEach(function(s) {
-          if (!sel && (s.dataset.label || '').toLowerCase().includes(fieldKey.toLowerCase())) sel = s;
-        });
-      }
-      if (sel) setFieldValue(sel.dataset.field, sel.dataset.label || fieldKey, val);
-    });
-
-    // Garantir les valeurs T3E fixes (même si l'IA ne les a pas fournies)
-    var fixedT3E = { 'nom': 'Toitures Trois Étoiles Inc.', 'sp_cialit': 'Couvreur' };
-    Object.keys(fixedT3E).forEach(function(key) {
-      var sel = document.querySelector('.field-select[data-field="' + key + '"]');
-      if (sel) setFieldValue(key, sel.dataset.label || key, fixedT3E[key]);
-    });
-
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Sauvegarde...';
-
-    // Auto-sauvegarder puis télécharger le PDF rempli
-    var data = collectData();
-    fetch('/bordereaux/sauvegarder-ajax/<%= bordereau.id %>', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-      credentials: 'same-origin'
-    }).then(function(r2) {
-      if (!r2.ok) throw new Error('HTTP ' + r2.status);
-      return r2.json();
-    }).then(function(saveRes) {
-      btn.disabled = false;
-      btn.innerHTML = '<i class="bi bi-check-circle"></i> PDF généré!';
-      btn.classList.replace('btn-outline-info', 'btn-success');
-      setTimeout(function() {
-        btn.innerHTML = '<i class="bi bi-robot"></i> Remplir avec l\'IA';
-        btn.classList.replace('btn-success', 'btn-outline-info');
-      }, 5000);
-      if (saveRes.error) { alert('IA appliquée mais erreur sauvegarde : ' + saveRes.error); return; }
-      // Télécharger le PDF rempli automatiquement
-      window.location.href = '/bordereaux/generer-pdf-get/<%= bordereau.id %>';
-    }).catch(function(err) {
-      btn.disabled = false;
-      btn.innerHTML = '<i class="bi bi-robot"></i> Remplir avec l\'IA';
-      alert('Erreur sauvegarde : ' + err.message);
-    });
-  }).catch(function(err) {
+    return r.blob();
+  })
+  .then(function(blob) {
     btn.disabled = false;
-    btn.innerHTML = '<i class="bi bi-robot"></i> Remplir avec l\'IA';
-    alert('Erreur IA : ' + err.message);
+    btn.innerHTML = '<i class="bi bi-check-circle text-success" style="font-size:1.5rem;"></i><br><strong>PDF généré !</strong><br><small>Téléchargement en cours...</small>';
+    status.innerHTML = '<div class="text-success"><i class="bi bi-check"></i> Succès — PDF rempli téléchargé</div>';
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = 'bordereau-<%= bordereau.id %>-rempli.pdf'; a.click();
+    URL.revokeObjectURL(url);
+    setTimeout(function() {
+      btn.innerHTML = '<i class="bi bi-robot"></i><br><strong>Analyser et générer le PDF</strong><br><small class="opacity-75">IA remplit tout automatiquement</small>';
+      btn.disabled = false;
+    }, 4000);
+  })
+  .catch(function(err) {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-robot"></i><br><strong>Analyser et générer le PDF</strong><br><small class="opacity-75">IA remplit tout automatiquement</small>';
+    status.innerHTML = '<div class="text-danger"><i class="bi bi-exclamation-triangle"></i> ' + err.message + '</div>';
   });
 });
+<% } %>
 
-// Toggle section upload template
+// ============ Aperçu PDF (si template chargé) ============
+<% if (hasTemplate) { %>
+var containerEl = document.getElementById('pdfContainer');
+var overlayEl   = document.getElementById('overlay');
+var canvasW = 0, canvasH = 0;
+var overlays = {};
+
+function renderPdfPage(page) {
+  var canvas = document.getElementById('pdfCanvas');
+  var ctx = canvas.getContext('2d');
+  var cw = containerEl.offsetWidth || containerEl.parentElement.offsetWidth || 800;
+  if (cw < 100) cw = 800;
+  var vp = page.getViewport({ scale: 1 });
+  var scale = (cw * 2) / vp.width;
+  var svp = page.getViewport({ scale: scale });
+  canvas.width = svp.width; canvas.height = svp.height;
+  var dh = Math.round(cw * vp.height / vp.width);
+  canvas.style.width = cw + 'px'; canvas.style.height = dh + 'px';
+  canvasW = cw; canvasH = dh;
+  containerEl.style.height = dh + 'px';
+  page.render({ canvasContext: ctx, viewport: svp }).promise.then(function() {
+    restoreOverlays();
+  });
+}
+
+pdfjsLib.getDocument({
+  url: '/bordereaux/template-pdf/<%= bordereau.id %>',
+  cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
+  cMapPacked: true,
+}).promise.then(function(pdf) {
+  pdf.getPage(1).then(function(page) {
+    setTimeout(function() { renderPdfPage(page); }, 400);
+  });
+}).catch(function() {
+  containerEl.innerHTML = '<div class="p-5 text-center"><i class="bi bi-exclamation-triangle text-warning" style="font-size:3rem;"></i><p class="mt-3">Erreur de chargement du PDF. Essayez de re-charger le template.</p></div>';
+});
+
+// Afficher les positions sauvegardées comme overlays (pour calibration visuelle)
+function addOverlay(key, label, val) {
+  if (!val || !canvasW) return;
+  if (overlays[key]) { overlays[key].el.textContent = val; return; }
+  var div = document.createElement('div');
+  div.className = 'field-overlay';
+  div.textContent = val;
+  div.title = label + ' — glisser pour repositionner';
+  var defaultPos = {
+    nom_du_projet:{x:27,y:16}, num_ro_du_projet:{x:29,y:18}, nom:{x:16,y:22.3},
+    sp_cialit:{x:67,y:22.3}, adresse:{x:20,y:25.8}, ligne_num_ro:{x:82,y:32.2},
+    titre:{x:18,y:38.4}, num_ro_de_dessins:{x:30,y:40.7}, nombre_feuilles:{x:63,y:40.7},
+    r_vision:{x:83,y:40.7}, description:{x:24,y:42.6}, fournisseur:{x:25,y:44.7},
+    fabricant:{x:59,y:44.7}, section_item:{x:65,y:47}, article:{x:58,y:49.2},
+    d_lai:{x:18,y:51}, remarque:{x:24,y:54.5},
+  };
+  var rect = containerEl.getBoundingClientRect();
+  var dp = savedPositions[key] || defaultPos[key] || { x: 40, y: 50 };
+  div.style.left = (rect.width * dp.x / 100) + 'px';
+  div.style.top = (rect.height * dp.y / 100) + 'px';
+  div.style.pointerEvents = 'all';
+
+  var dragging = false, ox, oy;
+  div.addEventListener('mousedown', function(e) { e.preventDefault(); dragging = true; ox = e.clientX - div.offsetLeft; oy = e.clientY - div.offsetTop; });
+  document.addEventListener('mousemove', function(e) { if (dragging) { div.style.left = (e.clientX-ox)+'px'; div.style.top = (e.clientY-oy)+'px'; } });
+  document.addEventListener('mouseup', function() { if (dragging) { dragging = false; savePositions(); } });
+
+  overlayEl.appendChild(div);
+  overlays[key] = { el: div, val: val };
+}
+
+function savePositions() {
+  var rect = containerEl.getBoundingClientRect();
+  if (!rect.width) return;
+  var pos = {};
+  Object.keys(overlays).forEach(function(key) {
+    var el = overlays[key].el;
+    pos[key] = { x: (el.offsetLeft / rect.width) * 100, y: (el.offsetTop / rect.height) * 100, val: overlays[key].val, page: 0, size: 9 };
+  });
+  fetch('/bordereaux/sauvegarder-ajax/<%= bordereau.id %>', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ titre: '<%= bordereau.titre %>', positions: pos, positions_json: JSON.stringify(pos), fiches: fichesSelectionnees, fiches_json: JSON.stringify(fichesSelectionnees) }),
+    credentials: 'same-origin'
+  }).catch(function(){});
+}
+
+function restoreOverlays() {
+  Object.keys(savedPositions).forEach(function(key) {
+    var p = savedPositions[key];
+    if (p && p.val) addOverlay(key, key, p.val);
+  });
+}
+<% } %>
+
+// ============ Upload template (bouton rouge si pas de template) ============
+<% if (!hasTemplate) { %>
+document.getElementById('btnUploadTemplate').addEventListener('click', function() { uploadTemplate('templateFile', 'uploadTemplateStatus', this); });
+<% } %>
+
+// ============ Changer template (panneau avancé) ============
 document.getElementById('toggleTemplate').addEventListener('click', function() {
   var zone = document.getElementById('templateUploadZone');
   var chev = document.getElementById('templateChevron');
   zone.classList.toggle('d-none');
   chev.className = zone.classList.contains('d-none') ? 'bi bi-chevron-down float-end' : 'bi bi-chevron-up float-end';
 });
+document.getElementById('btnUploadTemplateChange').addEventListener('click', function() { uploadTemplate('templateFileChange', 'uploadTemplateStatusChange', this); });
 
-// Upload du template PDF via AJAX
-document.getElementById('btnUploadTemplate').addEventListener('click', function() {
-  var file = document.getElementById('templateFile').files[0];
-  var status = document.getElementById('uploadTemplateStatus');
+function uploadTemplate(fileInputId, statusId, btn) {
+  var file = document.getElementById(fileInputId).files[0];
+  var status = document.getElementById(statusId);
   if (!file) { status.innerHTML = '<span class="text-danger">Choisissez un fichier PDF.</span>'; return; }
-  if (!file.name.toLowerCase().endsWith('.pdf')) { status.innerHTML = '<span class="text-danger">Le fichier doit être un PDF.</span>'; return; }
-
-  var btn = this;
+  var origLabel = btn.innerHTML;
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Upload...';
   status.innerHTML = '';
+  var fd = new FormData();
+  fd.append('template', file);
+  fetch('/bordereaux/remplacer-template/<%= bordereau.id %>', { method: 'POST', body: fd, credentials: 'same-origin' })
+    .then(function(r) { return r.json(); })
+    .then(function(res) {
+      btn.disabled = false; btn.innerHTML = origLabel;
+      if (res.error) { status.innerHTML = '<span class="text-danger">' + res.error + '</span>'; return; }
+      status.innerHTML = '<span class="text-success"><i class="bi bi-check-circle"></i> ' + res.fichier + ' chargé (' + res.nb_champs + ' champs). Rechargement...</span>';
+      setTimeout(function() { window.location.reload(); }, 1200);
+    })
+    .catch(function(err) { btn.disabled = false; btn.innerHTML = origLabel; status.innerHTML = '<span class="text-danger">Erreur : ' + err.message + '</span>'; });
+}
 
-  var formData = new FormData();
-  formData.append('template', file);
-
-  fetch('/bordereaux/remplacer-template/<%= bordereau.id %>', {
-    method: 'POST',
-    body: formData,
-    credentials: 'same-origin'
-  }).then(function(r) { return r.json(); })
-  .then(function(res) {
-    btn.disabled = false;
-    btn.innerHTML = '<i class="bi bi-cloud-upload"></i> Uploader le PDF';
-    if (res.error) {
-      status.innerHTML = '<span class="text-danger">' + res.error + '</span>';
-      return;
-    }
-    status.innerHTML = '<span class="text-success"><i class="bi bi-check-circle"></i> ' + res.fichier + ' chargé (' + res.nb_champs + ' champs détectés). Rechargement...</span>';
-    setTimeout(function() { window.location.reload(); }, 1500);
-  }).catch(function(err) {
-    btn.disabled = false;
-    btn.innerHTML = '<i class="bi bi-cloud-upload"></i> Uploader le PDF';
-    status.innerHTML = '<span class="text-danger">Erreur : ' + err.message + '</span>';
-  });
-});
-
-// Initialiser les tooltips Bootstrap
-document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function(el) {
-  new bootstrap.Tooltip(el);
-});
+// Initialiser les tooltips
+document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function(el) { new bootstrap.Tooltip(el); });
 </script>
 
 <%- include('partials/footer', { scripts: [] }) %>

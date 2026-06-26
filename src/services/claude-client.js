@@ -153,6 +153,46 @@ Format strict : { "suggestions": { "nom": ["Toitures Trois Étoiles Inc."], "sp_
   return callOpenAI(SYSTEM_T3E, userContent, {}, false);
 }
 
+// Remplissage complet du bordereau : champs + fiches recommandées — tout en une seule IA
+async function proposerContenuBordereauComplet(champs, projet, texteDevis, materiauxDB, fichesDispo) {
+  const champsListe = (champs || []).map(c => `- Clé: "${c.key}" | Label: "${c.label}"`).join('\n');
+  const fichesListe = (fichesDispo || []).slice(0, 80).map(f => `- ID ${f.id}: ${f.titre} (${f.source || ''})`).join('\n');
+
+  const userContent = `Tu remplis un bordereau technique de transmission de matériaux pour Toitures Trois Étoiles Inc. (T3E), couvreur commercial au Québec. Tu es expert en toiture — remplis comme si tu connaissais ce projet parfaitement.
+
+CHAMPS DU BORDEREAU À REMPLIR (tous obligatoires) :
+${champsListe || '- nom | NOM entrepreneur\n- sp_cialit | SPÉCIALITÉ\n- nom_du_projet | NOM DU PROJET\n- adresse | ADRESSE\n- titre | Titre\n- description | Description\n- fournisseur | Fournisseur\n- fabricant | Fabricant\n- d_lai | Délai\n- remarque | Remarque'}
+
+INFORMATIONS DU PROJET :
+${Object.entries(projet || {}).filter(([,v]) => v).map(([k,v]) => `- ${k}: ${v}`).join('\n') || 'À extraire du devis'}
+
+DEVIS DU PROJET (extrait matériaux, fabricants, spécifications, systèmes, quantités, notes) :
+${texteDevis ? texteDevis.substring(0, 4000) : 'Aucun devis — utilise tes connaissances pour un projet T3E typique'}
+
+MATÉRIAUX EN BASE DE CONNAISSANCES :
+${(materiauxDB || []).slice(0, 60).map(m => `- ${m.nom} (${m.fabricant}${m.type_produit ? ', ' + m.type_produit : ''})`).join('\n')}
+
+FICHES TECHNIQUES DISPONIBLES :
+${fichesListe || 'Aucune fiche disponible'}
+
+RÈGLES FIXES (ne jamais déroger) :
+1. "nom" → "Toitures Trois Étoiles Inc."
+2. "sp_cialit" → "Couvreur"
+3. "nombre_feuilles" → "1"
+4. "r_vision" → "A"
+5. "d_lai" → "3 à 4 semaines" si non précisé dans le devis
+6. Remplis TOUS les champs — jamais de chaîne vide
+7. "fiches_recommandees" → 2 à 6 IDs des fiches les plus pertinentes pour les matériaux de ce projet
+
+Retourne UNIQUEMENT ce JSON :
+{
+  "suggestions": { "nom": ["Toitures Trois Étoiles Inc."], "sp_cialit": ["Couvreur"], "nom_du_projet": ["..."], "fournisseur": ["..."], "fabricant": ["..."], "description": ["..."], ... },
+  "fiches_recommandees": [12, 45, 67]
+}`;
+
+  return callOpenAI(SYSTEM_T3E, userContent, {}, false);
+}
+
 function isConfigured() {
   return !!OPENAI_API_KEY;
 }
@@ -160,4 +200,4 @@ function isConfigured() {
 // Alias pour compatibilité avec tout code qui importerait callClaude
 const callClaude = callOpenAI;
 
-module.exports = { analyserDevis, proposerContenuBordereau, isConfigured, callClaude };
+module.exports = { analyserDevis, proposerContenuBordereau, proposerContenuBordereauComplet, isConfigured, callClaude };

@@ -227,7 +227,140 @@ router.get('/editer/:id', async (req, res) => {
   }
 
   const { isConfigured } = require('../services/claude-client');
-  res.render('bordereau-editer', { bordereau, historique, ftDocs: ftDocs.rows, templateFields, iaActive: isConfigured() });
+  res.render('bordereau-editer', { bordereau, historique, ftDocs: ftDocs.rows, templateFields, iaActive: isConfigured(), hasTemplate: !!row.template_data });
+});
+
+// Remplissage IA complet côté serveur : analyse + remplissage + PDF final en un clic
+router.post('/remplir-ia-complet/:id', async (req, res) => {
+  const db = req.db;
+  const id = parseInt(req.params.id);
+  const { isConfigured, proposerContenuBordereauComplet } = require('../services/claude-client');
+  const { fillTemplatePdf } = require('../services/pdf-filler');
+
+  const r = await db.execute({ sql: 'SELECT * FROM bordereaux WHERE id = ?', args: [id] });
+  if (r.rows.length === 0) return res.status(404).json({ error: 'Bordereau introuvable' });
+
+  const row = r.rows[0];
+  if (!row.template_data) return res.json({ error: 'Aucun template PDF chargé. Cliquez sur "Charger le template PDF" pour uploader le bordereau vierge T3E.' });
+  if (!isConfigured()) return res.json({ error: 'OPENAI_API_KEY non configurée dans Render.' });
+
+  const contenu = JSON.parse(row.contenu || '{}');
+  const devisTexte = row.devis_texte || '';
+  const templateTexte = row.template_texte || '';
+  const projet = contenu.projet || {};
+
+  let champs = extractTemplateFields(templateTexte);
+  if (champs.length === 0) {
+    champs = [
+      { key: 'nom_du_projet', label: 'NOM DU PROJET' },
+      { key: 'num_ro_du_projet', label: 'NUMÉRO DU PROJET' },
+      { key: 'nom', label: 'NOM (entrepreneur)' },
+      { key: 'sp_cialit', label: 'SPÉCIALITÉ' },
+      { key: 'adresse', label: 'ADRESSE' },
+      { key: 'ligne_num_ro', label: 'Ligne numéro' },
+      { key: 'titre', label: 'Titre' },
+      { key: 'num_ro_de_dessins', label: 'Numéro de dessins' },
+      { key: 'nombre_feuilles', label: 'Nombre feuilles' },
+      { key: 'r_vision', label: 'Révision' },
+      { key: 'description', label: 'Description' },
+      { key: 'fournisseur', label: 'Fournisseur' },
+      { key: 'fabricant', label: 'Fabricant' },
+      { key: 'section_item', label: 'Section (item)' },
+      { key: 'article', label: 'Article' },
+      { key: 'd_lai', label: 'Délai' },
+      { key: 'remarque', label: 'Remarque' },
+    ];
+  }
+
+  const allMats = await db.execute('SELECT nom, fabricant, type_produit FROM materiaux ORDER BY fabricant, nom LIMIT 150');
+  const allFiches = await db.execute("SELECT id, titre, source FROM documents WHERE categorie_id = (SELECT id FROM categories WHERE nom = 'Fiches techniques') AND statut = 'actif' ORDER BY source, titre");
+
+  let suggestions = {};
+  let fichesRecommandees = [];
+
+  try {
+    const iaResult = await proposerContenuBordereauComplet(champs, projet, devisTexte, allMats.rows, allFiches.rows);
+    suggestions = iaResult.suggestions || {};
+    fichesRecommandees = Array.isArray(iaResult.fiches_recommandees) ? iaResult.fiches_recommandees : [];
+  } catch (err) {
+    console.error('IA remplir-complet error:', err.message);
+    return res.json({ error: 'Erreur IA : ' + err.message });
+  }
+
+  // Valeurs T3E garanties
+  suggestions.nom = suggestions.nom || ['Toitures Trois Étoiles Inc.'];
+  suggestions.sp_cialit = suggestions.sp_cialit || ['Couvreur'];
+
+  // Positions par défaut calibrées pour le bordereau T3E standard
+  const defaultPos = {
+    nom_du_projet:    { x: 27, y: 16 },   nom:           { x: 16, y: 22.3 },
+    num_ro_du_projet: { x: 29, y: 18 },   sp_cialit:     { x: 67, y: 22.3 },
+    adresse:          { x: 20, y: 25.8 }, ligne_num_ro:  { x: 82, y: 32.2 },
+    titre:            { x: 18, y: 38.4 }, num_ro_de_dessins: { x: 30, y: 40.7 },
+    nombre_feuilles:  { x: 63, y: 40.7 }, r_vision:      { x: 83, y: 40.7 },
+    description:      { x: 24, y: 42.6 }, fournisseur:   { x: 25, y: 44.7 },
+    fabricant:        { x: 59, y: 44.7 }, section_item:  { x: 65, y: 47 },
+    article:          { x: 58, y: 49.2 }, d_lai:         { x: 18, y: 51 },
+    remarque:         { x: 24, y: 54.5 },
+  };
+
+  // Construire l'objet positions en fusionnant IA + positions sauvegardées + défauts
+  const savedPos = contenu.field_positions || {};
+  const positions = {};
+  Object.keys(suggestions).forEach(key => {
+    const vals = suggestions[key];
+    const val = Array.isArray(vals) ? vals[0] : vals;
+    if (!val) return;
+    const base = savedPos[key] || defaultPos[key] || { x: 40, y: 50 };
+    positions[key] = { x: base.x, y: base.y, val: String(val), page: base.page || 0, size: base.size || 9 };
+  });
+
+  // Remplir le PDF template
+  const templateBuffer = Buffer.from(row.template_data, 'base64');
+  const filledDoc = await fillTemplatePdf(templateBuffer, positions);
+  const filledBuffer = await filledDoc.save();
+
+  // Construire le PDF final : bordereau rempli + fiches techniques
+  const finalPdf = await PDFLib.create();
+  const filledLoaded = await PDFLib.load(filledBuffer);
+  const pages = await finalPdf.copyPages(filledLoaded, filledLoaded.getPageIndices());
+  pages.forEach(p => finalPdf.addPage(p));
+
+  // Fiches recommandées par l'IA + fiches sélectionnées manuellement (du body ou de la DB)
+  const fichesManuelles = (req.body.fiches_manuelles && Array.isArray(req.body.fiches_manuelles))
+    ? req.body.fiches_manuelles.map(Number)
+    : (contenu.fiches_selectionnees || []).map(f => f.id);
+  const toutesLesFiches = [...new Set([...fichesRecommandees, ...fichesManuelles])].slice(0, 12);
+
+  const fichesSelectionneesFinal = [];
+  for (const ficheId of toutesLesFiches) {
+    const fRow = await db.execute({ sql: 'SELECT id, titre, nom_fichier, chemin_fichier, source FROM documents WHERE id = ?', args: [ficheId] });
+    if (fRow.rows.length === 0) continue;
+    const fiche = fRow.rows[0];
+    fichesSelectionneesFinal.push({ id: fiche.id, titre: fiche.titre, nom_fichier: fiche.nom_fichier, chemin_fichier: fiche.chemin_fichier, source: fiche.source });
+    const ftPath = fiche.chemin_fichier ? path.join(__dirname, '..', '..', fiche.chemin_fichier) : null;
+    if (!ftPath || !fs.existsSync(ftPath) || !ftPath.toLowerCase().endsWith('.pdf')) continue;
+    try {
+      const ftBuf = fs.readFileSync(ftPath);
+      const ftDoc = await PDFLib.load(ftBuf, { ignoreEncryption: true });
+      const ftPages = await finalPdf.copyPages(ftDoc, ftDoc.getPageIndices());
+      ftPages.forEach(p => finalPdf.addPage(p));
+    } catch (e) { console.error('FT error:', e.message); }
+  }
+
+  // Sauvegarder les positions et fiches dans la DB pour la prochaine fois
+  contenu.field_positions = positions;
+  contenu.fiches_selectionnees = fichesSelectionneesFinal;
+  await db.execute({
+    sql: "UPDATE bordereaux SET contenu = ?, updated_at = datetime('now') WHERE id = ?",
+    args: [JSON.stringify(contenu), id],
+  });
+
+  if (finalPdf.getPageCount() === 0) finalPdf.addPage();
+  const finalBytes = await finalPdf.save();
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="bordereau-${id}-rempli.pdf"`);
+  res.send(Buffer.from(finalBytes));
 });
 
 // Remplacer / uploader le template PDF d'un bordereau existant
