@@ -1,61 +1,59 @@
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
-const MODEL = 'claude-sonnet-4-6';
-const API_URL = 'https://api.anthropic.com/v1/messages';
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
+const MODEL = 'gpt-4o';
+const API_URL = 'https://api.openai.com/v1/chat/completions';
 
-async function callClaude(systemPrompt, userContent, jsonSchema) {
-  if (!ANTHROPIC_API_KEY) {
-    return { error: 'ANTHROPIC_API_KEY non configurée. Ajoutez-la dans les variables d\'environnement Render.' };
+async function callOpenAI(systemPrompt, userContent, jsonSchema, strictMode = true) {
+  if (!OPENAI_API_KEY) {
+    return { error: "OPENAI_API_KEY non configurée. Ajoutez-la dans les variables d'environnement Render." };
   }
 
   const body = {
     model: MODEL,
     max_tokens: 4096,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: userContent }],
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userContent },
+    ],
   };
 
   if (jsonSchema) {
-    body.output_config = {
-      format: {
+    if (strictMode) {
+      body.response_format = {
         type: 'json_schema',
-        schema: jsonSchema,
-      },
-    };
+        json_schema: { name: 'response', schema: jsonSchema, strict: true },
+      };
+    } else {
+      body.response_format = { type: 'json_object' };
+    }
   }
 
   const resp = await fetch(API_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
+      'Authorization': 'Bearer ' + OPENAI_API_KEY,
     },
     body: JSON.stringify(body),
   });
 
   if (!resp.ok) {
     const text = await resp.text();
-    throw new Error(`Claude API ${resp.status}: ${text}`);
+    throw new Error(`OpenAI API ${resp.status}: ${text}`);
   }
 
   const data = await resp.json();
-
-  if (data.stop_reason === 'refusal') {
-    return { error: 'Claude a refusé la requête.' };
-  }
-
-  const textBlock = (data.content || []).find(b => b.type === 'text');
-  if (!textBlock) return { error: 'Pas de réponse textuelle.' };
+  const message = data.choices && data.choices[0] && data.choices[0].message;
+  if (!message) return { error: "Pas de réponse de l'API OpenAI." };
 
   if (jsonSchema) {
     try {
-      return JSON.parse(textBlock.text);
+      return JSON.parse(message.content);
     } catch (e) {
-      return { error: 'Réponse JSON invalide', raw: textBlock.text };
+      return { error: 'Réponse JSON invalide', raw: message.content };
     }
   }
 
-  return { text: textBlock.text };
+  return { text: message.content };
 }
 
 const SYSTEM_T3E = `Tu es un assistant spécialisé pour Toitures Trois Étoiles Inc. (T3E), une entreprise de couverture commerciale au Québec.
@@ -63,34 +61,43 @@ Tu connais les systèmes de toiture : BUR (asphalte et gravier), Soprasmart (pan
 Tu connais les types de travaux : Réfection complète et Pleumage (réfection partielle).
 Réponds toujours en français québécois professionnel.`;
 
+// OpenAI strict mode exige que TOUS les champs soient dans "required"
 const ANALYSE_DEVIS_SCHEMA = {
   type: 'object',
   properties: {
-    client_nom: { type: 'string' },
-    client_adresse: { type: 'string' },
-    client_ville: { type: 'string' },
-    client_province: { type: 'string' },
-    client_code_postal: { type: 'string' },
-    client_contact: { type: 'string' },
-    client_telephone: { type: 'string' },
-    client_courriel: { type: 'string' },
-    projet_nom: { type: 'string' },
-    projet_adresse: { type: 'string' },
-    systeme_toiture_recommande: { type: 'string' },
-    type_travaux_recommande: { type: 'string' },
-    superficie_pc: { type: 'string' },
-    pontage: { type: 'string' },
-    epaisseur_isolant: { type: 'string' },
-    pente_isolant: { type: 'string' },
-    nb_drains: { type: 'string' },
-    nb_manchons_events: { type: 'string' },
-    nb_manchons_etancheite: { type: 'string' },
-    nb_cols_cygne: { type: 'string' },
-    materiaux: { type: 'array', items: { type: 'string' } },
-    notes: { type: 'string' },
-    confiance: { type: 'string' },
+    client_nom:                   { type: 'string' },
+    client_adresse:               { type: 'string' },
+    client_ville:                 { type: 'string' },
+    client_province:              { type: 'string' },
+    client_code_postal:           { type: 'string' },
+    client_contact:               { type: 'string' },
+    client_telephone:             { type: 'string' },
+    client_courriel:              { type: 'string' },
+    projet_nom:                   { type: 'string' },
+    projet_adresse:               { type: 'string' },
+    systeme_toiture_recommande:   { type: 'string' },
+    type_travaux_recommande:      { type: 'string' },
+    superficie_pc:                { type: 'string' },
+    pontage:                      { type: 'string' },
+    epaisseur_isolant:            { type: 'string' },
+    pente_isolant:                { type: 'string' },
+    nb_drains:                    { type: 'string' },
+    nb_manchons_events:           { type: 'string' },
+    nb_manchons_etancheite:       { type: 'string' },
+    nb_cols_cygne:                { type: 'string' },
+    materiaux:                    { type: 'array', items: { type: 'string' } },
+    notes:                        { type: 'string' },
+    confiance:                    { type: 'string' },
   },
-  required: ['client_nom', 'systeme_toiture_recommande', 'type_travaux_recommande', 'confiance'],
+  required: [
+    'client_nom', 'client_adresse', 'client_ville', 'client_province', 'client_code_postal',
+    'client_contact', 'client_telephone', 'client_courriel',
+    'projet_nom', 'projet_adresse',
+    'systeme_toiture_recommande', 'type_travaux_recommande',
+    'superficie_pc', 'pontage', 'epaisseur_isolant', 'pente_isolant',
+    'nb_drains', 'nb_manchons_events', 'nb_manchons_etancheite', 'nb_cols_cygne',
+    'materiaux', 'notes', 'confiance',
+  ],
   additionalProperties: false,
 };
 
@@ -107,26 +114,12 @@ Extrais : client, adresse, superficie, matériaux, quantités, système de toitu
 Pour systeme_toiture_recommande, utilise EXACTEMENT une de ces valeurs : BUR, SOPRASMART, SOPRAFIX, COLVENT, EPDM_PVC, TPO_PVC_RHINOBOND, INVERSE, ANCESTRAL
 Pour type_travaux_recommande : REFECTION ou PLEUMAGE
 Pour confiance : "haute", "moyenne", ou "basse"
-Si une info n'est pas trouvée, laisse une chaîne vide.`;
+Si une info n'est pas trouvée, retourne une chaîne vide "".`;
 
-  return callClaude(SYSTEM_T3E, userContent, ANALYSE_DEVIS_SCHEMA);
+  return callOpenAI(SYSTEM_T3E, userContent, ANALYSE_DEVIS_SCHEMA, true);
 }
 
-const BORDEREAU_SUGGESTIONS_SCHEMA = {
-  type: 'object',
-  properties: {
-    suggestions: {
-      type: 'object',
-      additionalProperties: {
-        type: 'array',
-        items: { type: 'string' },
-      },
-    },
-  },
-  required: ['suggestions'],
-  additionalProperties: false,
-};
-
+// Pour les suggestions de bordereau, les clés sont dynamiques → json_object (non-strict)
 async function proposerContenuBordereau(texteTemplate, texteDevis, materiauxDB) {
   const userContent = `Voici un bordereau technique de transmission de matériaux pour un projet de toiture.
 
@@ -140,13 +133,17 @@ MATÉRIAUX DISPONIBLES EN BASE :
 ${(materiauxDB || []).slice(0, 50).map(m => `- ${m.nom} (${m.fabricant})`).join('\n')}
 
 Pour chaque champ du bordereau, propose 2-3 valeurs pertinentes basées sur le devis et les matériaux.
-Retourne un objet "suggestions" où chaque clé est le nom du champ et la valeur est un tableau de suggestions.`;
+Retourne un objet JSON avec une clé "suggestions" : un objet où chaque clé est le nom du champ et la valeur est un tableau de suggestions (strings).
+Exemple : { "suggestions": { "titre": ["Fiche technique membrane", "FT SOPRASMART"], "fournisseur": ["Soprema"] } }`;
 
-  return callClaude(SYSTEM_T3E, userContent, BORDEREAU_SUGGESTIONS_SCHEMA);
+  return callOpenAI(SYSTEM_T3E, userContent, { suggestions: 'object' }, false);
 }
 
 function isConfigured() {
-  return !!ANTHROPIC_API_KEY;
+  return !!OPENAI_API_KEY;
 }
+
+// Alias pour compatibilité avec tout code qui importerait callClaude
+const callClaude = callOpenAI;
 
 module.exports = { analyserDevis, proposerContenuBordereau, isConfigured, callClaude };

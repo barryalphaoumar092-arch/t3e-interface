@@ -77,8 +77,14 @@ TURSO_DATABASE_URL=libsql://t3e-barryalphaoumar092-arch.aws-us-east-1.turso.io
 TURSO_AUTH_TOKEN=eyJhbGci...
 MDP_APP=barry
 NODE_ENV=production
-ANTHROPIC_API_KEY=sk-ant-...  (à ajouter quand approuvé)
+OPENAI_API_KEY=sk-...  (à ajouter sur Render — active l'IA soumissions + bordereaux)
 ```
+
+## IA — OpenAI
+- Modèle : gpt-4o (via `src/services/claude-client.js` — le fichier garde ce nom pour ne pas changer les imports)
+- `analyserDevis()` : JSON schema strict (tous les champs required)
+- `proposerContenuBordereau()` : json_object (clés dynamiques, non-strict)
+- Sans clé : les fonctions retournent `{ error: '...' }`, le site continue de fonctionner sans IA
 
 ## Points d'attention
 - Express 5 gère les erreurs async nativement (pas besoin de express-async-errors)
