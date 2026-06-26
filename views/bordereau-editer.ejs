@@ -149,7 +149,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <% } %>
 <script>
-pdfjsLib && (pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js');
+if (typeof pdfjsLib !== 'undefined') pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
 // ============ Fiches techniques ============
 var fichesSelectionnees = <%= JSON.stringify((bordereau.contenu.fiches_selectionnees || []).map(function(f){return{id:f.id,titre:f.titre,nom_fichier:f.nom_fichier,chemin_fichier:f.chemin_fichier,source:f.source};})) %>;
