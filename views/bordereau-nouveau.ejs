@@ -8,7 +8,7 @@
 </nav>
 
 <div class="row justify-content-center">
-  <div class="col-md-7">
+  <div class="col-md-8">
     <div class="card shadow-sm">
       <div class="card-header bg-warning text-dark">
         <h5 class="mb-0"><i class="bi bi-magic"></i> Remplir un bordereau automatiquement</h5>
@@ -38,26 +38,100 @@
               Bordereau à remplir <span class="text-danger">*</span>
             </label>
             <input type="file" name="bordereau" class="form-control" accept=".docx" required>
-            <div class="form-text">Le bordereau vierge en format <strong>.docx</strong> (Word). Si votre bordereau est en <code>.doc</code>, ouvrez-le dans Word et sauvegardez-le en <code>.docx</code> d'abord.</div>
+            <div class="form-text">Le bordereau vierge en format <strong>.docx</strong>. Si votre bordereau est en <code>.doc</code>, ouvrez-le dans Word et sauvegardez en <code>.docx</code> d'abord.</div>
           </div>
 
-          <!-- 3. Nom du projet (optionnel) -->
+          <!-- 3. Identification de l'entrepreneur -->
           <div class="mb-4">
-            <label class="form-label fw-bold">
-              <span class="badge bg-secondary me-1">3</span>
-              Nom du projet <span class="text-muted fw-normal">(optionnel)</span>
-            </label>
-            <input type="text" name="nom_projet" class="form-control" placeholder="Ex: Réfection toiture Polytechnique Montréal">
-            <div class="form-text">Laissez vide pour que l'IA l'extraie du devis automatiquement.</div>
+            <div class="card border-secondary">
+              <div class="card-header bg-secondary bg-opacity-10 py-2">
+                <span class="fw-bold"><span class="badge bg-secondary me-1">3</span> Identification de l'entrepreneur</span>
+                <small class="text-muted ms-2">— pré-rempli T3E, modifiable</small>
+              </div>
+              <div class="card-body pb-2">
+                <div class="row g-2">
+                  <div class="col-md-6">
+                    <label class="form-label form-label-sm fw-semibold">NOM</label>
+                    <input type="text" name="nom_entrepreneur" class="form-control form-control-sm"
+                      value="Toitures Trois Étoiles Inc.">
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label form-label-sm fw-semibold">SPÉCIALITÉ</label>
+                    <input type="text" name="specialite" class="form-control form-control-sm"
+                      value="Couvreur">
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label form-label-sm fw-semibold">ADRESSE</label>
+                    <input type="text" name="adresse" class="form-control form-control-sm"
+                      value="2215, rue Michelin, Laval (Québec) H7L 5B7">
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label form-label-sm fw-semibold">ÉMIS PAR <span class="text-muted fw-normal">(optionnel)</span></label>
+                    <input type="text" name="emis_par" class="form-control form-control-sm"
+                      placeholder="Ex: Nicolas Parent">
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label form-label-sm fw-semibold">NOM DU PROJET <span class="text-muted fw-normal">(optionnel)</span></label>
+                    <input type="text" name="nom_projet" class="form-control form-control-sm"
+                      placeholder="Ex: Réfection toiture Polytechnique">
+                    <div class="form-text" style="font-size:0.72rem">Laissez vide → l'IA l'extrait du devis</div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
+
+          <!-- 4. Fiches techniques à joindre -->
+          <% if (typeof fiches !== 'undefined' && fiches && fiches.length > 0) { %>
+          <div class="mb-4">
+            <div class="card border-info">
+              <div class="card-header bg-info bg-opacity-10 py-2 d-flex justify-content-between align-items-center">
+                <span class="fw-bold"><span class="badge bg-info text-dark me-1">4</span> Fiches techniques à joindre</span>
+                <small class="text-muted">— seront ajoutées à la suite du bordereau dans le PDF final</small>
+              </div>
+              <div class="card-body p-0">
+                <!-- Filtre rapide -->
+                <div class="px-3 pt-3 pb-2">
+                  <input type="text" id="filtresFT" class="form-control form-control-sm"
+                    placeholder="Filtrer les fiches (ex: Soprema, IKO, membrane…)">
+                </div>
+                <div id="listeFT" style="max-height:280px; overflow-y:auto; border-top:1px solid #dee2e6">
+                  <%
+                    let derniereFournisseur = null;
+                    fiches.forEach(function(f) {
+                      const src = f.source || 'Autre';
+                      if (src !== derniereFournisseur) {
+                        derniereFournisseur = src;
+                  %>
+                    <div class="px-3 pt-2 pb-0 fournisseur-header" data-src="<%= src %>">
+                      <small class="text-uppercase text-muted fw-bold" style="font-size:0.68rem; letter-spacing:1px"><%= src %></small>
+                    </div>
+                  <% } %>
+                    <div class="form-check px-4 py-1 fiche-item" data-label="<%= (f.titre + ' ' + (f.source||'')).toLowerCase() %>">
+                      <input class="form-check-input" type="checkbox" name="fiches" value="<%= f.id %>" id="ft<%= f.id %>">
+                      <label class="form-check-label" for="ft<%= f.id %>" style="font-size:0.85rem; cursor:pointer">
+                        <%= f.titre %>
+                      </label>
+                    </div>
+                  <% }); %>
+                </div>
+                <div class="px-3 py-2 border-top bg-light d-flex gap-2">
+                  <button type="button" class="btn btn-outline-secondary btn-sm" onclick="toggleTous(true)">Tout sélectionner</button>
+                  <button type="button" class="btn btn-outline-secondary btn-sm" onclick="toggleTous(false)">Tout désélectionner</button>
+                  <span class="ms-auto text-muted small" id="compteFT">0 sélectionnée(s)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <% } %>
 
           <div class="d-grid">
             <button type="submit" class="btn btn-warning btn-lg" id="btnGenerer">
-              <i class="bi bi-magic"></i> Générer le bordereau rempli
+              <i class="bi bi-magic"></i> Générer le bordereau PDF
             </button>
           </div>
-        </form>
 
+        </form>
       </div>
     </div>
 
@@ -65,8 +139,8 @@
       <div class="card-body py-2 px-3">
         <small class="text-muted">
           <i class="bi bi-info-circle"></i>
-          L'IA lit le devis, extrait les informations du projet et remplit automatiquement tous les champs du bordereau.
-          Les champs fixes sont toujours pré-remplis : <strong>Toitures Trois Étoiles Inc.</strong>, <strong>Couvreur</strong>, adresse.
+          L'IA lit le devis et remplit automatiquement tous les champs. Le résultat est un <strong>PDF</strong> prêt à envoyer
+          — avec les fiches techniques sélectionnées ajoutées à la suite.
         </small>
       </div>
     </div>
@@ -79,6 +153,49 @@ document.getElementById('formGenerer').addEventListener('submit', function() {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>L\'IA remplit le bordereau&hellip;';
 });
+
+// Filtre fiches
+var filtreInput = document.getElementById('filtresFT');
+if (filtreInput) {
+  filtreInput.addEventListener('input', function() {
+    var q = this.value.toLowerCase().trim();
+    document.querySelectorAll('.fiche-item').forEach(function(el) {
+      var match = !q || el.dataset.label.includes(q);
+      el.style.display = match ? '' : 'none';
+    });
+    // Masquer les en-têtes fournisseur s'ils n'ont plus rien de visible en dessous
+    document.querySelectorAll('.fournisseur-header').forEach(function(hdr) {
+      var next = hdr.nextElementSibling;
+      var visible = false;
+      while (next && next.classList.contains('fiche-item')) {
+        if (next.style.display !== 'none') { visible = true; break; }
+        next = next.nextElementSibling;
+        if (next && next.classList.contains('fournisseur-header')) break;
+      }
+      hdr.style.display = visible ? '' : 'none';
+    });
+  });
+}
+
+// Compteur sélections
+function majCompteur() {
+  var n = document.querySelectorAll('input[name="fiches"]:checked').length;
+  var el = document.getElementById('compteFT');
+  if (el) el.textContent = n + ' sélectionnée(s)';
+}
+document.querySelectorAll('input[name="fiches"]').forEach(function(cb) {
+  cb.addEventListener('change', majCompteur);
+});
+majCompteur();
+
+function toggleTous(etat) {
+  document.querySelectorAll('.fiche-item').forEach(function(el) {
+    if (el.style.display !== 'none') {
+      el.querySelector('input[type="checkbox"]').checked = etat;
+    }
+  });
+  majCompteur();
+}
 </script>
 
 <%- include('partials/footer', { scripts: [] }) %>
