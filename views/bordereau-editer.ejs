@@ -128,6 +128,31 @@ var containerEl = document.getElementById('pdfContainer');
 var overlayEl = document.getElementById('overlay');
 var canvasW = 0, canvasH = 0;
 var pdfReady = false;
+var pdfPage = null;
+
+function renderPdfPage(page) {
+  pdfPage = page;
+  var canvas = document.getElementById('pdfCanvas');
+  var ctx = canvas.getContext('2d');
+  // Attendre que le conteneur ait une vraie largeur
+  var cw = containerEl.offsetWidth || containerEl.parentElement.offsetWidth || 700;
+  if (cw < 100) cw = 700;
+  var vp = page.getViewport({ scale: 1 });
+  var renderScale = (cw * 2) / vp.width;
+  var svp = page.getViewport({ scale: renderScale });
+  canvas.width = svp.width;
+  canvas.height = svp.height;
+  var displayH = Math.round(cw * vp.height / vp.width);
+  canvas.style.width = cw + 'px';
+  canvas.style.height = displayH + 'px';
+  canvasW = cw;
+  canvasH = displayH;
+  containerEl.style.height = displayH + 'px';
+  page.render({ canvasContext: ctx, viewport: svp }).promise.then(function() {
+    pdfReady = true;
+    restoreSavedOverlays();
+  });
+}
 
 pdfjsLib.getDocument({
   url: '/bordereaux/template-pdf/<%= bordereau.id %>',
@@ -135,24 +160,8 @@ pdfjsLib.getDocument({
   cMapPacked: true,
 }).promise.then(function(pdf) {
   pdf.getPage(1).then(function(page) {
-    var canvas = document.getElementById('pdfCanvas');
-    var ctx = canvas.getContext('2d');
-    var cw = containerEl.clientWidth;
-    var vp = page.getViewport({ scale: 1 });
-    var renderScale = (cw * 2) / vp.width;
-    var svp = page.getViewport({ scale: renderScale });
-    canvas.width = svp.width;
-    canvas.height = svp.height;
-    var displayH = Math.round(cw * vp.height / vp.width);
-    canvas.style.width = cw + 'px';
-    canvas.style.height = displayH + 'px';
-    canvasW = cw;
-    canvasH = displayH;
-    containerEl.style.height = displayH + 'px';
-    page.render({ canvasContext: ctx, viewport: svp }).promise.then(function() {
-      pdfReady = true;
-      restoreSavedOverlays();
-    });
+    // Petit délai pour laisser le DOM finaliser le layout
+    setTimeout(function() { renderPdfPage(page); }, 150);
   });
 }).catch(function() {
   containerEl.innerHTML = '<p class="text-center text-muted p-5">Template PDF non disponible.</p>';
@@ -564,7 +573,7 @@ document.getElementById('searchFT').addEventListener('input', function() {
   document.querySelectorAll('.ft-group').forEach(function(g) { g.style.display = q ? 'none' : ''; });
 });
 
-// Remplir avec l'IA
+// Remplir avec l'IA — remplit TOUS les champs puis sauvegarde et télécharge le PDF
 document.getElementById('btnIA').addEventListener('click', function() {
   var btn = this;
   btn.disabled = true;
@@ -578,46 +587,69 @@ document.getElementById('btnIA').addEventListener('click', function() {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     return r.json();
   }).then(function(res) {
-    btn.disabled = false;
     if (res.error) {
+      btn.disabled = false;
       btn.innerHTML = '<i class="bi bi-robot"></i> Remplir avec l\'IA';
       alert(res.error);
       return;
     }
-    btn.innerHTML = '<i class="bi bi-check-circle"></i> IA appliquée!';
-    btn.classList.replace('btn-outline-info', 'btn-success');
-    setTimeout(function() {
-      btn.innerHTML = '<i class="bi bi-robot"></i> Remplir avec l\'IA';
-      btn.classList.replace('btn-success', 'btn-outline-info');
-    }, 3000);
 
+    // Appliquer toutes les suggestions IA (overwrite même les champs déjà remplis)
     var suggestions = res.suggestions || {};
     Object.keys(suggestions).forEach(function(fieldKey) {
       var vals = suggestions[fieldKey];
-      if (!vals || !vals.length) return;
+      if (!vals) return;
+      var val = Array.isArray(vals) ? vals[0] : vals;
+      if (!val) return;
+      // Chercher le champ par clé exacte d'abord, puis par label partiel
       var sel = document.querySelector('.field-select[data-field="' + fieldKey + '"]');
       if (!sel) {
-        var allSels = document.querySelectorAll('.field-select');
-        allSels.forEach(function(s) {
-          var label = (s.dataset.label || '').toLowerCase();
-          if (label.includes(fieldKey.toLowerCase())) sel = s;
+        document.querySelectorAll('.field-select').forEach(function(s) {
+          if (!sel && (s.dataset.label || '').toLowerCase().includes(fieldKey.toLowerCase())) sel = s;
         });
       }
-      if (sel && !sel.value) {
-        var val = vals[0];
-        var autreOpt = sel.querySelector('option[value="__autre__"]');
-        var opt = document.createElement('option');
-        opt.value = val; opt.textContent = val; opt.selected = true;
-        if (autreOpt) sel.insertBefore(opt, autreOpt);
-        else sel.appendChild(opt);
-        var label = sel.dataset.label || fieldKey;
-        addOverlay(sel.dataset.field, label, val);
-      }
+      if (sel) setFieldValue(sel.dataset.field, sel.dataset.label || fieldKey, val);
+    });
+
+    // Garantir les valeurs T3E fixes (même si l'IA ne les a pas fournies)
+    var fixedT3E = { 'nom': 'Toitures Trois Étoiles Inc.', 'sp_cialit': 'Couvreur' };
+    Object.keys(fixedT3E).forEach(function(key) {
+      var sel = document.querySelector('.field-select[data-field="' + key + '"]');
+      if (sel) setFieldValue(key, sel.dataset.label || key, fixedT3E[key]);
+    });
+
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Sauvegarde...';
+
+    // Auto-sauvegarder puis télécharger le PDF rempli
+    var data = collectData();
+    fetch('/bordereaux/sauvegarder-ajax/<%= bordereau.id %>', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+      credentials: 'same-origin'
+    }).then(function(r2) {
+      if (!r2.ok) throw new Error('HTTP ' + r2.status);
+      return r2.json();
+    }).then(function(saveRes) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-check-circle"></i> PDF généré!';
+      btn.classList.replace('btn-outline-info', 'btn-success');
+      setTimeout(function() {
+        btn.innerHTML = '<i class="bi bi-robot"></i> Remplir avec l\'IA';
+        btn.classList.replace('btn-success', 'btn-outline-info');
+      }, 5000);
+      if (saveRes.error) { alert('IA appliquée mais erreur sauvegarde : ' + saveRes.error); return; }
+      // Télécharger le PDF rempli automatiquement
+      window.location.href = '/bordereaux/generer-pdf-get/<%= bordereau.id %>';
+    }).catch(function(err) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-robot"></i> Remplir avec l\'IA';
+      alert('Erreur sauvegarde : ' + err.message);
     });
   }).catch(function(err) {
     btn.disabled = false;
     btn.innerHTML = '<i class="bi bi-robot"></i> Remplir avec l\'IA';
-    alert('Erreur IA: ' + err.message);
+    alert('Erreur IA : ' + err.message);
   });
 });
 

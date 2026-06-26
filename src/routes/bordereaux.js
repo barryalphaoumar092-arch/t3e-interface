@@ -394,7 +394,7 @@ router.post('/analyser-ia/:id', async (req, res) => {
   const { isConfigured, proposerContenuBordereau } = require('../services/claude-client');
 
   if (!isConfigured()) {
-    return res.json({ error: 'L\'IA n\'est pas configurée. Ajoutez ANTHROPIC_API_KEY dans les variables d\'environnement.' });
+    return res.json({ error: 'L\'IA n\'est pas configurée. Ajoutez OPENAI_API_KEY dans les variables d\'environnement Render.' });
   }
 
   const r = await db.execute({ sql: 'SELECT contenu, devis_texte, template_texte FROM bordereaux WHERE id = ?', args: [parseInt(req.params.id)] });
@@ -404,10 +404,35 @@ router.post('/analyser-ia/:id', async (req, res) => {
   const devisTexte = r.rows[0].devis_texte || '';
   const templateTexte = r.rows[0].template_texte || '';
 
+  // Obtenir les champs du template (même logique que GET /editer)
+  let champs = extractTemplateFields(templateTexte);
+  if (champs.length === 0) {
+    champs = [
+      { key: 'nom_du_projet', label: 'NOM DU PROJET' },
+      { key: 'num_ro_du_projet', label: 'NUMÉRO DU PROJET' },
+      { key: 'nom', label: 'NOM (entrepreneur)' },
+      { key: 'sp_cialit', label: 'SPÉCIALITÉ' },
+      { key: 'adresse', label: 'ADRESSE' },
+      { key: 'ligne_num_ro', label: 'Ligne numéro' },
+      { key: 'titre', label: 'Titre' },
+      { key: 'num_ro_de_dessins', label: 'Numéro de dessins' },
+      { key: 'nombre_feuilles', label: 'Nombre feuilles' },
+      { key: 'r_vision', label: 'Révision' },
+      { key: 'description', label: 'Description' },
+      { key: 'fournisseur', label: 'Fournisseur' },
+      { key: 'fabricant', label: 'Fabricant' },
+      { key: 'section_item', label: 'Section (item)' },
+      { key: 'article', label: 'Article' },
+      { key: 'd_lai', label: 'Délai' },
+      { key: 'remarque', label: 'Remarque' },
+    ];
+  }
+
+  const projet = contenu.projet || {};
   const allMats = await db.execute('SELECT nom, fabricant, type_produit FROM materiaux ORDER BY fabricant, nom LIMIT 100');
 
   try {
-    const result = await proposerContenuBordereau(templateTexte, devisTexte, allMats.rows);
+    const result = await proposerContenuBordereau(champs, projet, devisTexte, allMats.rows);
     res.json(result);
   } catch (err) {
     console.error('Erreur IA bordereau:', err.message);

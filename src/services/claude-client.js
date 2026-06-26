@@ -120,23 +120,37 @@ Si une info n'est pas trouvée, retourne une chaîne vide "".`;
 }
 
 // Pour les suggestions de bordereau, les clés sont dynamiques → json_object (non-strict)
-async function proposerContenuBordereau(texteTemplate, texteDevis, materiauxDB) {
-  const userContent = `Voici un bordereau technique de transmission de matériaux pour un projet de toiture.
+async function proposerContenuBordereau(champs, projet, texteDevis, materiauxDB) {
+  const champsListe = (champs || []).map(c => `- Clé: "${c.key}" | Label: "${c.label}"`).join('\n');
 
-CHAMPS DU TEMPLATE :
-${texteTemplate || 'Aucun template'}
+  const userContent = `Tu dois remplir TOUS les champs d'un bordereau technique de transmission de matériaux pour Toitures Trois Étoiles Inc. (T3E), couvreur commercial au Québec.
 
-DEVIS DU PROJET :
-${texteDevis || 'Aucun devis'}
+CHAMPS DU BORDEREAU (remplis CHACUN sans exception) :
+${champsListe || '- nom | NOM entrepreneur\n- sp_cialit | SPÉCIALITÉ\n- nom_du_projet | NOM DU PROJET\n- adresse | ADRESSE\n- titre | Titre\n- description | Description\n- fournisseur | Fournisseur\n- fabricant | Fabricant\n- d_lai | Délai\n- remarque | Remarque'}
+
+INFORMATIONS DU PROJET (déjà extraites) :
+${Object.entries(projet || {}).filter(([,v]) => v).map(([k,v]) => `- ${k}: ${v}`).join('\n') || 'Aucune information de projet enregistrée'}
+
+DEVIS DU PROJET (extrais : client, adresse, matériaux, type de travaux, description du projet) :
+${texteDevis ? texteDevis.substring(0, 3500) : 'Aucun devis fourni — utilise les informations disponibles'}
 
 MATÉRIAUX DISPONIBLES EN BASE :
-${(materiauxDB || []).slice(0, 50).map(m => `- ${m.nom} (${m.fabricant})`).join('\n')}
+${(materiauxDB || []).slice(0, 40).map(m => `- ${m.nom} (${m.fabricant})`).join('\n')}
 
-Pour chaque champ du bordereau, propose 2-3 valeurs pertinentes basées sur le devis et les matériaux.
-Retourne un objet JSON avec une clé "suggestions" : un objet où chaque clé est le nom du champ et la valeur est un tableau de suggestions (strings).
-Exemple : { "suggestions": { "titre": ["Fiche technique membrane", "FT SOPRASMART"], "fournisseur": ["Soprema"] } }`;
+RÈGLES OBLIGATOIRES — respecte-les sans exception :
+1. Champ "nom" → TOUJOURS "Toitures Trois Étoiles Inc."
+2. Champ "sp_cialit" → TOUJOURS "Couvreur"
+3. Champ "nombre_feuilles" → "1" si non précisé
+4. Champ "r_vision" → "A" si non précisé
+5. Champ "d_lai" → "3 à 4 semaines" si non précisé
+6. Remplis TOUS les champs — ne laisse RIEN vide
+7. Si le devis mentionne des matériaux spécifiques, utilise-les pour "fournisseur", "fabricant", "description"
+8. Pour "nom_du_projet" et "adresse", utilise les infos du projet ou du devis
 
-  return callOpenAI(SYSTEM_T3E, userContent, { suggestions: 'object' }, false);
+Retourne un JSON avec la clé "suggestions" : objet où chaque clé correspond EXACTEMENT à une clé de la liste ci-dessus, et la valeur est un tableau avec la meilleure valeur en premier élément.
+Format strict : { "suggestions": { "nom": ["Toitures Trois Étoiles Inc."], "sp_cialit": ["Couvreur"], "nom_du_projet": ["École ABC — Réfection toiture"], "fournisseur": ["Soprema"], ... } }`;
+
+  return callOpenAI(SYSTEM_T3E, userContent, {}, false);
 }
 
 function isConfigured() {
