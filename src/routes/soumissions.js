@@ -125,64 +125,86 @@ router.get('/api/template-preview', (req, res) => {
   res.json({ found: true, ...tpl });
 });
 
-// Formulaire nouvelle soumission
+// ÉTAPE 1 : Formulaire initial (upload devis + infos de base)
 router.get('/nouveau', async (req, res) => {
   const db = req.db;
   const numero = await genererNumero(db);
+  const { isConfigured } = require('../services/claude-client');
 
-  res.render('soumission-nouveau', {
+  res.render('soumission-etape1', {
     numero,
-    systemes: SYSTEMES,
     types_travaux: TYPES_TRAVAUX,
-    pontages: PONTAGES,
-    types_soumission: TYPES_SOUMISSION,
-    garanties_t3e: GARANTIES_T3E,
-    garanties_manuf: GARANTIES_MANUF,
-    templates: listTemplates(),
+    iaActive: isConfigured(),
   });
 });
 
-// Créer la soumission
-router.post('/nouveau', uploadDevis.single('devis'), async (req, res) => {
+// ÉTAPE 1→2 : Analyser le devis et créer la soumission brouillon
+router.post('/analyser', uploadDevis.single('devis'), async (req, res) => {
   const db = req.db;
   const d = req.body || {};
-  console.log('POST /nouveau v4 body keys:', Object.keys(d), 'client_nom:', d.client_nom);
+  const { isConfigured, analyserDevis } = require('../services/claude-client');
 
-  // Si un devis a été uploadé, extraire les infos
+  let devisTexte = '';
   if (req.file) {
     try {
       const parsed = await parseDevis(req.file.path, req.file.originalname);
-      const devisTexte = parsed.text || '';
-      const info = extractProjectInfo(devisTexte);
-
-      if (!d.client_nom && info.client) d.client_nom = info.client;
-      if (!d.projet_nom && info.client) d.projet_nom = info.client;
-      if (!d.client_adresse && info.adresse) d.client_adresse = info.adresse;
-      if (!d.projet_adresse && info.adresse) d.projet_adresse = info.adresse;
-
-      const supMatch = devisTexte.match(/(\d[\d\s,.]*)\s*(?:pi(?:eds)?[\s²2]|sq\.?\s*f|square\s*f)/i);
-      if (supMatch && !d.superficie_pc) d.superficie_pc = supMatch[1].replace(/\s/g, '').replace(',', '');
-
-      const drainMatch = devisTexte.match(/(\d+)\s*(?:drain|drains)/i);
-      if (drainMatch && !d.nb_drains) d.nb_drains = drainMatch[1];
-
-      const telMatch = devisTexte.match(/(\d{3}[-.\s]\d{3}[-.\s]\d{4})/);
-      if (telMatch && !d.client_telephone) d.client_telephone = telMatch[1];
-
-      const emailMatch = devisTexte.match(/[\w.-]+@[\w.-]+\.\w+/);
-      if (emailMatch && !d.client_courriel) d.client_courriel = emailMatch[0];
-
+      devisTexte = parsed.text || '';
       d._documents_recus = req.file.originalname;
     } catch (err) {
-      console.error('Erreur parsing devis soumission:', err.message);
+      console.error('Erreur parsing devis:', err.message);
     }
   }
 
-  // Forcer des valeurs pour tous les champs NOT NULL — aucun ne peut être vide
-  const clientNom = (d.client_nom && d.client_nom.trim()) || d.projet_nom || 'Client sans nom';
+  // Extraction regex (toujours actif, même sans IA)
+  if (devisTexte) {
+    const info = extractProjectInfo(devisTexte);
+    if (!d.client_nom && info.client) d.client_nom = info.client;
+    if (!d.projet_nom && info.client) d.projet_nom = info.client;
+    if (!d.client_adresse && info.adresse) d.client_adresse = info.adresse;
+
+    const supMatch = devisTexte.match(/(\d[\d\s,.]*)\s*(?:pi(?:eds)?[\s²2]|sq\.?\s*f|square\s*f)/i);
+    if (supMatch) d.superficie_pc = supMatch[1].replace(/\s/g, '').replace(',', '');
+
+    const drainMatch = devisTexte.match(/(\d+)\s*(?:drain|drains)/i);
+    if (drainMatch) d.nb_drains = drainMatch[1];
+
+    const telMatch = devisTexte.match(/(\d{3}[-.\s]\d{3}[-.\s]\d{4})/);
+    if (telMatch && !d.client_telephone) d.client_telephone = telMatch[1];
+
+    const emailMatch = devisTexte.match(/[\w.-]+@[\w.-]+\.\w+/);
+    if (emailMatch && !d.client_courriel) d.client_courriel = emailMatch[0];
+  }
+
+  // Analyse IA (si configurée)
+  if (isConfigured() && (devisTexte || d.client_nom)) {
+    try {
+      const iaResult = await analyserDevis(devisTexte, `Client: ${d.client_nom || ''}, Type: ${d.type_travaux || ''}`);
+      if (iaResult && !iaResult.error) {
+        if (!d.client_nom && iaResult.client_nom) d.client_nom = iaResult.client_nom;
+        if (!d.client_adresse && iaResult.client_adresse) d.client_adresse = iaResult.client_adresse;
+        if (!d.client_ville && iaResult.client_ville) d.client_ville = iaResult.client_ville;
+        if (!d.client_contact && iaResult.client_contact) d.client_contact = iaResult.client_contact;
+        if (!d.client_telephone && iaResult.client_telephone) d.client_telephone = iaResult.client_telephone;
+        if (!d.client_courriel && iaResult.client_courriel) d.client_courriel = iaResult.client_courriel;
+        if (!d.projet_nom && iaResult.projet_nom) d.projet_nom = iaResult.projet_nom;
+        if (!d.superficie_pc && iaResult.superficie_pc) d.superficie_pc = iaResult.superficie_pc;
+        if (!d.pontage && iaResult.pontage) d.pontage = iaResult.pontage;
+        if (!d.epaisseur_isolant && iaResult.epaisseur_isolant) d.epaisseur_isolant = iaResult.epaisseur_isolant;
+        if (!d.nb_drains && iaResult.nb_drains) d.nb_drains = iaResult.nb_drains;
+        if (!d.nb_manchons_events && iaResult.nb_manchons_events) d.nb_manchons_events = iaResult.nb_manchons_events;
+        if (!d.nb_manchons_etancheite && iaResult.nb_manchons_etancheite) d.nb_manchons_etancheite = iaResult.nb_manchons_etancheite;
+        if (!d.nb_cols_cygne && iaResult.nb_cols_cygne) d.nb_cols_cygne = iaResult.nb_cols_cygne;
+        if (iaResult.systeme_toiture_recommande) d.systeme_toiture = iaResult.systeme_toiture_recommande;
+        if (iaResult.type_travaux_recommande) d.type_travaux = iaResult.type_travaux_recommande;
+      }
+    } catch (err) {
+      console.error('Erreur IA analyse devis:', err.message);
+    }
+  }
+
+  const clientNom = (d.client_nom && d.client_nom.trim()) || 'Client sans nom';
   const systeme = d.systeme_toiture || 'BUR';
   const typeTravaux = d.type_travaux || 'REFECTION';
-
   const numero = d.numero || await genererNumero(db);
   const templateKey = selectTemplate(systeme, typeTravaux);
 
@@ -209,7 +231,73 @@ router.post('/nouveau', uploadDevis.single('devis'), async (req, res) => {
   ]);
 
   const created = await db.execute('SELECT id FROM soumissions WHERE numero = ?', [numero]);
-  res.redirect(`/soumissions/${created.rows[0].id}`);
+  res.redirect(`/soumissions/etape2/${created.rows[0].id}`);
+});
+
+// ÉTAPE 2 : Validation des données
+router.get('/etape2/:id', async (req, res) => {
+  const db = req.db;
+  const result = await db.execute('SELECT * FROM soumissions WHERE id = ?', [req.params.id]);
+  if (result.rows.length === 0) return res.redirect('/soumissions');
+
+  const { isConfigured } = require('../services/claude-client');
+  res.render('soumission-etape2', {
+    soumission: result.rows[0],
+    systemes: SYSTEMES,
+    types_travaux: TYPES_TRAVAUX,
+    pontages: PONTAGES,
+    types_soumission: TYPES_SOUMISSION,
+    garanties_t3e: GARANTIES_T3E,
+    garanties_manuf: GARANTIES_MANUF,
+    iaActive: isConfigured(),
+  });
+});
+
+// ÉTAPE 2→3 : Confirmer, mettre à jour, et générer
+router.post('/:id/confirmer', async (req, res) => {
+  const db = req.db;
+  const d = req.body;
+  const templateKey = selectTemplate(d.systeme_toiture || '', d.type_travaux || '');
+
+  await db.execute(`
+    UPDATE soumissions SET
+      client_nom=?, client_adresse=?, client_ville=?, client_province=?, client_code_postal=?,
+      client_contact=?, client_telephone=?, client_courriel=?,
+      projet_nom=?, projet_adresse=?, systeme_toiture=?, type_travaux=?, langue=?, type_soumission=?,
+      superficie_pc=?, pontage=?, epaisseur_isolant=?, pente_isolant=?,
+      nb_drains=?, nb_manchons_events=?, nb_manchons_etancheite=?, nb_cols_cygne=?,
+      ventilateur_max=?, cout_remplacement_cp=?, cout_remplacement_isolant=?,
+      prix_total=?, garantie_t3e=?, garantie_manufacturier=?,
+      exclusions_specifiques=?, notes=?, template_utilise=?,
+      updated_at=datetime('now')
+    WHERE id=?
+  `, [
+    v(d.client_nom) || 'Client sans nom', v(d.client_adresse), v(d.client_ville), v(d.client_province) || 'QC', v(d.client_code_postal),
+    v(d.client_contact), v(d.client_telephone), v(d.client_courriel),
+    v(d.projet_nom), v(d.projet_adresse), v(d.systeme_toiture) || 'BUR', v(d.type_travaux) || 'REFECTION', v(d.langue) || 'FR', v(d.type_soumission) || 'prive',
+    v(d.superficie_pc), v(d.pontage), v(d.epaisseur_isolant), v(d.pente_isolant),
+    v(d.nb_drains), v(d.nb_manchons_events), v(d.nb_manchons_etancheite), v(d.nb_cols_cygne),
+    v(d.ventilateur_max), v(d.cout_remplacement_cp), v(d.cout_remplacement_isolant),
+    v(d.prix_total), v(d.garantie_t3e) || '5 ans', v(d.garantie_manufacturier) || '10 ans',
+    v(d.exclusions_specifiques), v(d.notes), v(templateKey),
+    req.params.id
+  ]);
+
+  // Générer automatiquement le document
+  const result = await db.execute('SELECT * FROM soumissions WHERE id = ?', [req.params.id]);
+  if (result.rows.length > 0) {
+    try {
+      const generated = await generateSoumission(result.rows[0]);
+      await db.execute(
+        "UPDATE soumissions SET fichier_genere=?, template_utilise=?, statut='genere', updated_at=datetime('now') WHERE id=?",
+        [generated.filename, generated.templateUsed, req.params.id]
+      );
+    } catch (err) {
+      console.error('Erreur génération:', err.message);
+    }
+  }
+
+  res.redirect(`/soumissions/${req.params.id}`);
 });
 
 // Détail d'une soumission

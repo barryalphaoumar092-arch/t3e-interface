@@ -1,0 +1,74 @@
+<%- include('partials/header', { title: 'Nouvelle soumission — Étape 1', page: 'soumissions' }) %>
+
+<div class="row justify-content-center">
+  <div class="col-md-8">
+    <div class="mb-4">
+      <h2><i class="bi bi-file-earmark-plus"></i> Nouvelle soumission</h2>
+      <div class="d-flex gap-2 mt-2">
+        <span class="badge bg-primary fs-6">1. Informations</span>
+        <span class="badge bg-secondary fs-6">2. Validation</span>
+        <span class="badge bg-secondary fs-6">3. Génération</span>
+      </div>
+    </div>
+
+    <form method="POST" action="/soumissions/analyser" enctype="multipart/form-data" id="formEtape1">
+      <input type="hidden" name="numero" value="<%= numero %>">
+
+      <div class="card mb-3">
+        <div class="card-header bg-primary text-white">
+          <h5 class="mb-0"><i class="bi bi-upload"></i> Importer le devis (optionnel)</h5>
+        </div>
+        <div class="card-body">
+          <input type="file" name="devis" class="form-control" accept=".pdf,.xlsx,.xls,.docx,.doc">
+          <div class="form-text">PDF, Excel ou Word — les informations seront extraites automatiquement<% if (iaActive) { %> par l'IA<% } %>.</div>
+        </div>
+      </div>
+
+      <div class="card mb-3">
+        <div class="card-header bg-dark text-white">
+          <h5 class="mb-0"><i class="bi bi-person"></i> Informations essentielles</h5>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-bold">Nom du client *</label>
+              <input type="text" name="client_nom" class="form-control" required placeholder="Ex: Syndicat de copropriété ABC">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-bold">Type de travaux *</label>
+              <select name="type_travaux" class="form-select" required>
+                <% types_travaux.forEach(t => { %>
+                <option value="<%= t.value %>"><%= t.label %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-bold">Langue</label>
+              <select name="langue" class="form-select">
+                <option value="FR">Français</option>
+                <option value="EN">Anglais</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex gap-3 mb-4">
+        <button type="submit" class="btn btn-primary btn-lg" id="btnAnalyser">
+          <i class="bi bi-arrow-right-circle"></i> Analyser et continuer
+        </button>
+        <a href="/soumissions" class="btn btn-outline-secondary btn-lg">Annuler</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+document.getElementById('formEtape1').addEventListener('submit', function() {
+  var btn = document.getElementById('btnAnalyser');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Analyse en cours...';
+});
+</script>
+
+<%- include('partials/footer', { scripts: [] }) %>

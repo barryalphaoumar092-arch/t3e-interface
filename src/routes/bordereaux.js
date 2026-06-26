@@ -387,6 +387,33 @@ router.get('/template-pdf/:id', async (req, res) => {
   res.send(buf);
 });
 
+// Analyse IA pour remplir le bordereau
+router.post('/analyser-ia/:id', async (req, res) => {
+  const db = req.db;
+  const { isConfigured, proposerContenuBordereau } = require('../services/claude-client');
+
+  if (!isConfigured()) {
+    return res.json({ error: 'L\'IA n\'est pas configurée. Ajoutez ANTHROPIC_API_KEY dans les variables d\'environnement.' });
+  }
+
+  const r = await db.execute({ sql: 'SELECT contenu, devis_texte, template_texte FROM bordereaux WHERE id = ?', args: [parseInt(req.params.id)] });
+  if (r.rows.length === 0) return res.json({ error: 'Bordereau introuvable' });
+
+  const contenu = JSON.parse(r.rows[0].contenu || '{}');
+  const devisTexte = r.rows[0].devis_texte || '';
+  const templateTexte = r.rows[0].template_texte || '';
+
+  const allMats = await db.execute('SELECT nom, fabricant, type_produit FROM materiaux ORDER BY fabricant, nom LIMIT 100');
+
+  try {
+    const result = await proposerContenuBordereau(templateTexte, devisTexte, allMats.rows);
+    res.json(result);
+  } catch (err) {
+    console.error('Erreur IA bordereau:', err.message);
+    res.json({ error: 'Erreur lors de l\'analyse IA: ' + err.message });
+  }
+});
+
 router.get('/suggestions/:id', async (req, res) => {
   const db = req.db;
   const r = await db.execute({ sql: 'SELECT contenu, devis_texte FROM bordereaux WHERE id = ?', args: [parseInt(req.params.id)] });

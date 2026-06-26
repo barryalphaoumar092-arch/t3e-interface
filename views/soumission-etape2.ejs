@@ -1,0 +1,224 @@
+<%- include('partials/header', { title: 'Soumission — Étape 2 Validation', page: 'soumissions' }) %>
+
+<div class="row justify-content-center">
+  <div class="col-md-10">
+    <div class="mb-4">
+      <h2><i class="bi bi-check2-circle"></i> Valider les informations — <%= soumission.numero %></h2>
+      <div class="d-flex gap-2 mt-2">
+        <span class="badge bg-success fs-6"><i class="bi bi-check"></i> 1. Informations</span>
+        <span class="badge bg-primary fs-6">2. Validation</span>
+        <span class="badge bg-secondary fs-6">3. Génération</span>
+      </div>
+      <% if (iaActive) { %>
+      <div class="alert alert-info mt-3 mb-0"><i class="bi bi-robot"></i> Les champs ci-dessous ont été pré-remplis par l'IA. Vérifiez et corrigez si nécessaire.</div>
+      <% } %>
+    </div>
+
+    <form method="POST" action="/soumissions/<%= soumission.id %>/confirmer">
+
+      <!-- Système de toiture -->
+      <div class="card mb-3">
+        <div class="card-header bg-warning text-dark"><h6 class="mb-0"><i class="bi bi-gear"></i> Système de toiture et template</h6></div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label fw-bold">Système de toiture *</label>
+              <select name="systeme_toiture" class="form-select" required>
+                <% systemes.forEach(s => { %>
+                <option value="<%= s.value %>" <%= soumission.systeme_toiture===s.value?'selected':'' %>><%= s.label %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-bold">Type de travaux *</label>
+              <select name="type_travaux" class="form-select" required>
+                <% types_travaux.forEach(t => { %>
+                <option value="<%= t.value %>" <%= soumission.type_travaux===t.value?'selected':'' %>><%= t.label %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label fw-bold">Langue</label>
+              <select name="langue" class="form-select">
+                <option value="FR" <%= soumission.langue==='FR'?'selected':'' %>>FR</option>
+                <option value="EN" <%= soumission.langue==='EN'?'selected':'' %>>EN</option>
+              </select>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label fw-bold">Type soumission</label>
+              <select name="type_soumission" class="form-select">
+                <% types_soumission.forEach(t => { %>
+                <option value="<%= t.value %>" <%= soumission.type_soumission===t.value?'selected':'' %>><%= t.label %></option>
+                <% }) %>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-3">
+        <!-- Client -->
+        <div class="col-lg-6">
+          <div class="card mb-3">
+            <div class="card-header"><h6 class="mb-0"><i class="bi bi-person"></i> Client</h6></div>
+            <div class="card-body">
+              <div class="row g-2">
+                <div class="col-12">
+                  <label class="form-label">Nom *</label>
+                  <input type="text" name="client_nom" class="form-control" value="<%= soumission.client_nom %>" required>
+                </div>
+                <div class="col-12">
+                  <label class="form-label">Contact</label>
+                  <input type="text" name="client_contact" class="form-control" value="<%= soumission.client_contact || '' %>">
+                </div>
+                <div class="col-8">
+                  <label class="form-label">Adresse</label>
+                  <input type="text" name="client_adresse" class="form-control" value="<%= soumission.client_adresse || '' %>">
+                </div>
+                <div class="col-4">
+                  <label class="form-label">Ville</label>
+                  <input type="text" name="client_ville" class="form-control" value="<%= soumission.client_ville || '' %>">
+                </div>
+                <div class="col-4">
+                  <label class="form-label">Province</label>
+                  <input type="text" name="client_province" class="form-control" value="<%= soumission.client_province || 'QC' %>">
+                </div>
+                <div class="col-4">
+                  <label class="form-label">Code postal</label>
+                  <input type="text" name="client_code_postal" class="form-control" value="<%= soumission.client_code_postal || '' %>">
+                </div>
+                <div class="col-6">
+                  <label class="form-label">Téléphone</label>
+                  <input type="tel" name="client_telephone" class="form-control" value="<%= soumission.client_telephone || '' %>">
+                </div>
+                <div class="col-6">
+                  <label class="form-label">Courriel</label>
+                  <input type="email" name="client_courriel" class="form-control" value="<%= soumission.client_courriel || '' %>">
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Projet -->
+        <div class="col-lg-6">
+          <div class="card mb-3">
+            <div class="card-header"><h6 class="mb-0"><i class="bi bi-building"></i> Projet et quantités</h6></div>
+            <div class="card-body">
+              <div class="row g-2">
+                <div class="col-6">
+                  <label class="form-label">Nom du projet</label>
+                  <input type="text" name="projet_nom" class="form-control" value="<%= soumission.projet_nom || '' %>">
+                </div>
+                <div class="col-6">
+                  <label class="form-label">Adresse du projet</label>
+                  <input type="text" name="projet_adresse" class="form-control" value="<%= soumission.projet_adresse || '' %>">
+                </div>
+                <div class="col-4">
+                  <label class="form-label">Superficie (pi²)</label>
+                  <input type="number" name="superficie_pc" class="form-control" value="<%= soumission.superficie_pc || '' %>">
+                </div>
+                <div class="col-4">
+                  <label class="form-label">Pontage</label>
+                  <select name="pontage" class="form-select">
+                    <option value="">--</option>
+                    <% pontages.forEach(p => { %>
+                    <option value="<%= p.value %>" <%= soumission.pontage===p.value?'selected':'' %>><%= p.label %></option>
+                    <% }) %>
+                  </select>
+                </div>
+                <div class="col-4">
+                  <label class="form-label">Épaisseur isolant</label>
+                  <input type="text" name="epaisseur_isolant" class="form-control" value="<%= soumission.epaisseur_isolant || '' %>">
+                </div>
+                <div class="col-3">
+                  <label class="form-label">Drains</label>
+                  <input type="number" name="nb_drains" class="form-control" value="<%= soumission.nb_drains || '' %>" min="0">
+                </div>
+                <div class="col-3">
+                  <label class="form-label">Manchons év.</label>
+                  <input type="number" name="nb_manchons_events" class="form-control" value="<%= soumission.nb_manchons_events || '' %>" min="0">
+                </div>
+                <div class="col-3">
+                  <label class="form-label">Manchons ét.</label>
+                  <input type="number" name="nb_manchons_etancheite" class="form-control" value="<%= soumission.nb_manchons_etancheite || '' %>" min="0">
+                </div>
+                <div class="col-3">
+                  <label class="form-label">Cols cygne</label>
+                  <input type="number" name="nb_cols_cygne" class="form-control" value="<%= soumission.nb_cols_cygne || '' %>" min="0">
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Prix et garantie -->
+      <div class="card mb-3">
+        <div class="card-header"><h6 class="mb-0"><i class="bi bi-currency-dollar"></i> Prix et garantie</h6></div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-3">
+              <label class="form-label fw-bold">Prix total ($) *</label>
+              <input type="number" name="prix_total" class="form-control" step="0.01" value="<%= soumission.prix_total || '' %>" required>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Garantie T3E</label>
+              <select name="garantie_t3e" class="form-select">
+                <% garanties_t3e.forEach(g => { %>
+                <option value="<%= g.value %>" <%= soumission.garantie_t3e===g.value?'selected':'' %>><%= g.label %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Garantie manuf.</label>
+              <select name="garantie_manufacturier" class="form-select">
+                <% garanties_manuf.forEach(g => { %>
+                <option value="<%= g.value %>" <%= soumission.garantie_manufacturier===g.value?'selected':'' %>><%= g.label %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Coût remp. CP ($/pi²)</label>
+              <input type="text" name="cout_remplacement_cp" class="form-control" value="<%= soumission.cout_remplacement_cp || '' %>">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Notes -->
+      <div class="card mb-3">
+        <div class="card-header"><h6 class="mb-0"><i class="bi bi-journal-text"></i> Notes et exclusions</h6></div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">Exclusions spécifiques</label>
+              <textarea name="exclusions_specifiques" class="form-control" rows="2"><%= soumission.exclusions_specifiques || '' %></textarea>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Notes internes</label>
+              <textarea name="notes" class="form-control" rows="2"><%= soumission.notes || '' %></textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex gap-3 mb-4">
+        <button type="submit" class="btn btn-success btn-lg" id="btnConfirmer">
+          <i class="bi bi-file-earmark-word"></i> Confirmer et générer le document
+        </button>
+        <a href="/soumissions" class="btn btn-outline-secondary btn-lg">Annuler</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+document.getElementById('btnConfirmer').closest('form').addEventListener('submit', function() {
+  var btn = document.getElementById('btnConfirmer');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Génération en cours...';
+});
+</script>
+
+<%- include('partials/footer', { scripts: [] }) %>
