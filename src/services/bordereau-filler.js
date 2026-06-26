@@ -13,28 +13,31 @@ async function remplirBordereau(champs, buf) {
   let xml = await zip.file('word/document.xml').async('string');
 
   const remplacements = [
-    [`NOM DU PROJET${N}:`,           `NOM DU PROJET${N}: ${champs.NOM_DU_PROJET || ''}`],
-    [`NUMÉRO DU PROJET${N}:`,   `NUMÉRO DU PROJET${N}: ${champs.NUMERO_DU_PROJET || ''}`],
-    [`NOM${N}: ${U.repeat(42)}`,     `NOM${N}: ${champs.NOM || 'Toitures Trois Étoiles'}`],
-    [`SPÉCIALITÉ${N}: ${U.repeat(36)}`, `SPÉCIALITÉ${N}: ${champs.SPECIALITE || 'COUVREUR'}`],
-    [`ADRESSE${N}: ${U.repeat(90)}`, `ADRESSE${N}: ${champs.ADRESSE || '7550 Rue Saint-Patrick, Montréal, QC H8N 1V1'}`],
-    [`Titre${N}:`,                   `Titre${N}: ${champs.TITRE || ''}`],
-    [`Numéro de dessins${N}:`,  `Numéro de dessins${N}: ${champs.NUMERO_DESSINS || 'FT-001'}`],
-    [`Nombre feuilles${N}:`,         `Nombre feuilles${N}: 1`],
-    [`Révision${N}:`,           `Révision${N}: A`],
-    [`Description${N}:`,             `Description${N}: ${champs.DESCRIPTION || ''}`],
-    [`Fournisseur${N}:`,             `Fournisseur${N}: ${champs.FOURNISSEUR || ''}`],
-    [`Fabricant${N}:`,               `Fabricant${N}: ${champs.FABRICANT || ''}`],
-    [`Section (item)${N}:`,          `Section (item)${N}: ${champs.SECTION || ''}`],
-    [`Article${N}:`,                 `Article${N}: ${champs.ARTICLE || ''}`],
-    [`Délai${N}:`,              `Délai${N}: ${champs.DELAI || '3 à 4 semaines'}`],
-    [`Remarque${N}: ${U.repeat(84)}`,`Remarque${N}: ${champs.REMARQUE || ''}`],
+    [`NOM DU PROJET${N}:`,    `NOM DU PROJET${N}: ${champs.NOM_DU_PROJET || ''}`],
+    [`NUMÉRO DU PROJET${N}:`, `NUMÉRO DU PROJET${N}: ${champs.NUMERO_DU_PROJET || ''}`],
+    [`NOM${N}:`,              `NOM${N}: ${champs.NOM || 'Toitures Trois Étoiles'}`],
+    [`SPÉCIALITÉ${N}:`,       `SPÉCIALITÉ${N}: ${champs.SPECIALITE || 'COUVREUR'}`],
+    [`ADRESSE${N}:`,          `ADRESSE${N}: ${champs.ADRESSE || '7550 Rue Saint-Patrick, Montréal, QC H8N 1V1'}`],
+    [`Titre${N}:`,            `Titre${N}: ${champs.TITRE || ''}`],
+    [`Numéro de dessins${N}:`,`Numéro de dessins${N}: ${champs.NUMERO_DESSINS || ''}`],
+    [`Nombre feuilles${N}:`,  `Nombre feuilles${N}: 1`],
+    [`Révision${N}:`,         `Révision${N}: A`],
+    [`Description${N}:`,      `Description${N}: ${champs.DESCRIPTION || ''}`],
+    [`Fournisseur${N}:`,      `Fournisseur${N}: ${champs.FOURNISSEUR || ''}`],
+    [`Fabricant${N}:`,        `Fabricant${N}: ${champs.FABRICANT || ''}`],
+    [`Section (item)${N}:`,   `Section (item)${N}: ${champs.SECTION || ''}`],
+    [`Article${N}:`,          `Article${N}: ${champs.ARTICLE || ''}`],
+    [`Délai${N}:`,            `Délai${N}: ${champs.DELAI || ''}`],
+    [`Remarque${N}:`,         `Remarque${N}: ${champs.REMARQUE || ''}`],
   ];
 
+  // Recherche flexible : on strip les underscores/espaces en fin de chaîne avant d'échapper,
+  // puis on ajoute [_ ]* dans le regex pour matcher peu importe le nombre de _ dans le template
   for (const [search, replace] of remplacements) {
-    const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const searchTrimmed = search.replace(/[\s_]+$/, '');
+    const escapedSearch = searchTrimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     xml = xml.replace(
-      new RegExp(`(<w:t[^>]*>)${escapedSearch}(</w:t>)`, 'g'),
+      new RegExp(`(<w:t[^>]*>)${escapedSearch}[_ ]*(</w:t>)`, 'g'),
       `$1${escapeXml(replace)}$2`
     );
   }
