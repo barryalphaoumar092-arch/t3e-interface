@@ -77,7 +77,7 @@ async function appelIA(messages) {
 
 router.get('/', async (req, res) => {
   const db = req.db;
-  const r = await db.execute("SELECT id, titre, numero_projet, cree_par, created_at FROM bordereaux WHERE statut != 'session' ORDER BY created_at DESC");
+  const r = await db.execute("SELECT id, titre, numero_projet, cree_par, created_at FROM bordereaux WHERE (session_actif = 0 OR session_actif IS NULL) ORDER BY created_at DESC");
   res.render('bordereaux', { bordereaux: r.rows });
 });
 
@@ -150,8 +150,8 @@ Commence l'étape 1 : analyse le devis et propose l'identification du projet (NO
 
     // Sauvegarder la session en DB
     const r = await db.execute({
-      sql: `INSERT INTO bordereaux (numero_projet, titre, contenu, statut, cree_par, devis_texte, template_data)
-            VALUES (?, ?, ?, 'session', ?, ?, ?)`,
+      sql: `INSERT INTO bordereaux (numero_projet, titre, contenu, statut, session_actif, cree_par, devis_texte, template_data)
+            VALUES (?, ?, ?, 'brouillon', 1, ?, ?, ?)`,
       args: [
         '',
         nom_projet || 'Bordereau en cours',
@@ -179,7 +179,7 @@ router.post('/repondre/:id', express.json(), async (req, res) => {
   const { reponse, correction } = req.body; // reponse: 'oui'|'non'|'autre', correction: string optionnel
 
   // Charger la session
-  const r = await db.execute({ sql: "SELECT * FROM bordereaux WHERE id = ? AND statut = 'session'", args: [sessionId] });
+  const r = await db.execute({ sql: "SELECT * FROM bordereaux WHERE id = ? AND session_actif = 1", args: [sessionId] });
   if (r.rows.length === 0) return res.status(404).json({ erreur: 'Session introuvable.' });
 
   const session = JSON.parse(r.rows[0].contenu);
@@ -225,7 +225,7 @@ router.post('/repondre/:id', express.json(), async (req, res) => {
 
     // Mettre à jour en DB (statut genere)
     await db.execute({
-      sql: `UPDATE bordereaux SET statut = 'genere', numero_projet = ?, titre = ?, contenu = ?, template_data = ? WHERE id = ?`,
+      sql: `UPDATE bordereaux SET statut = 'brouillon', session_actif = 0, numero_projet = ?, titre = ?, contenu = ?, template_data = ? WHERE id = ?`,
       args: [
         champsFinaux.NUMERO_DU_PROJET || champsFinaux.SECTION || '',
         champsFinaux.NOM_DU_PROJET || '',
@@ -285,7 +285,7 @@ router.post('/repondre/:id', express.json(), async (req, res) => {
 // Annuler une session en cours
 router.post('/annuler/:id', async (req, res) => {
   const db = req.db;
-  try { await db.execute({ sql: "DELETE FROM bordereaux WHERE id = ? AND statut = 'session'", args: [parseInt(req.params.id)] }); } catch (_) {}
+  try { await db.execute({ sql: "DELETE FROM bordereaux WHERE id = ? AND session_actif = 1", args: [parseInt(req.params.id)] }); } catch (_) {}
   res.json({ ok: true });
 });
 
