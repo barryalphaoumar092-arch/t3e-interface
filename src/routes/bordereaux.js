@@ -59,8 +59,8 @@ async function appelIA(messages) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + OPENAI_API_KEY },
     body: JSON.stringify({
-      model: 'gpt-4o',
-      max_tokens: 2000,
+      model: 'gpt-4o-mini',
+      max_tokens: 1000,
       response_format: { type: 'json_object' },
       messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...messages]
     })
@@ -139,20 +139,32 @@ router.post('/demarrer', uploadFields, async (req, res) => {
     EMIS_PAR:  emis_par?.trim()         || '',
   };
 
-  // Charger la liste des matériaux depuis la DB
+  // Charger et pré-filtrer les matériaux : on extrait les mots-clés du devis
+  // puis on ne garde que les matériaux pertinents (max 40) pour limiter les tokens
   let listeMateriaux = '';
   try {
+    const STOP_WORDS = new Set(['pour','dans','avec','sont','cette','leur','leurs','comme','mais','plus','tout','bien','aussi','sous','même','autre','entre','vers','être','fait','donc','très','peut','sans','part','dont','sera','avoir','nous','vous','ils','elles','une','des','les','par','sur','que','qui','est','pas','ces','aux','type','selon','voir','voir','afin']);
+    const mots = texteDevis.toLowerCase().match(/[a-zàâäéèêëîïôùûü]{4,}/g) || [];
+    const keywords = [...new Set(mots)].filter(m => !STOP_WORDS.has(m)).slice(0, 80);
+
     const matRows = (await db.execute(
       `SELECT nom, fabricant, fournisseur, type_produit FROM materiaux ORDER BY fabricant, nom`
     )).rows;
-    listeMateriaux = matRows
-      .map(m => [m.nom, m.fabricant && `Fabricant: ${m.fabricant}`, m.fournisseur && `Fournisseur: ${m.fournisseur}`, m.type_produit && `Type: ${m.type_produit}`].filter(Boolean).join(' | '))
+
+    const pertinents = matRows.filter(m => {
+      const txt = `${m.nom} ${m.fabricant || ''} ${m.fournisseur || ''} ${m.type_produit || ''}`.toLowerCase();
+      return keywords.some(k => txt.includes(k));
+    }).slice(0, 40);
+
+    const liste = pertinents.length > 0 ? pertinents : matRows.slice(0, 40);
+    listeMateriaux = liste
+      .map(m => [m.nom, m.fabricant && `Fabricant: ${m.fabricant}`, m.fournisseur && `Fournisseur: ${m.fournisseur}`].filter(Boolean).join(' | '))
       .join('\n');
   } catch (_) {}
 
   // Premier message vers l'IA : devis + liste matériaux
   const premierMessage = `DEVIS À ANALYSER :
-${texteDevis.substring(0, 8000)}
+${texteDevis.substring(0, 5000)}
 
 ${nom_projet ? `NOM DU PROJET indiqué par l'utilisateur : ${nom_projet}\n` : ''}
 LISTE DES MATÉRIAUX T3E (source: Excel) :
