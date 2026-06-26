@@ -1,17 +1,18 @@
 <%- include('partials/header', { title: 'Bordereau #' + bordereau.id + ' — ' + bordereau.titre, page: 'bordereaux' }) %>
 
 <style>
-  .field-overlay {
-    position: absolute; cursor: move; font-size: 10px; color: #000080;
-    font-weight: bold; padding: 1px 3px; border: 1px dashed transparent;
-    white-space: nowrap; z-index: 10; user-select: none;
-  }
-  .field-overlay:hover { border-color: #dc3545; background: rgba(255,255,0,0.4); }
   .ft-selected { background: #d4edda; border-radius: 4px; padding: 3px 8px; margin: 2px 0; font-size: 0.75rem; display: flex; justify-content: space-between; align-items: center; }
+  #chatBord { height: 460px; overflow-y: auto; background: #f8f9fa; }
+  .chat-msg-bot  { display:flex; justify-content:flex-start; margin-bottom:8px; }
+  .chat-msg-user { display:flex; justify-content:flex-end; margin-bottom:8px; }
+  .bubble-bot  { background:#fff; border:1px solid #dee2e6; color:#212529; padding:8px 12px; border-radius:12px 12px 12px 2px; font-size:0.83rem; max-width:92%; white-space:pre-wrap; word-break:break-word; }
+  .bubble-user { background:#0d6efd; color:#fff; padding:8px 12px; border-radius:12px 12px 2px 12px; font-size:0.83rem; max-width:88%; white-space:pre-wrap; word-break:break-word; }
+  .upload-zone { border:2px dashed #ced4da; border-radius:8px; padding:16px; text-align:center; cursor:pointer; transition:border-color 0.2s; }
+  .upload-zone:hover, .upload-zone.active { border-color:#0d6efd; background:#f0f4ff; }
 </style>
 
 <nav aria-label="breadcrumb">
-  <ol class="breadcrumb">
+  <ol class="breadcrumb mb-2">
     <li class="breadcrumb-item"><a href="/bordereaux">Bordereaux</a></li>
     <li class="breadcrumb-item active">#<%= bordereau.id %> — <%= bordereau.titre %></li>
   </ol>
@@ -20,58 +21,75 @@
 <div class="row g-2">
 
   <!-- ====== PANNEAU GAUCHE ====== -->
-  <div class="col-md-3" style="max-height:92vh;overflow-y:auto;">
+  <div class="col-md-4" style="max-height:92vh;overflow-y:auto;">
 
-    <% if (!hasTemplate) { %>
-    <!-- Pas de template : panneau upload prominent -->
-    <div class="card mb-2 border-danger">
-      <div class="card-header bg-danger text-white py-2">
-        <i class="bi bi-exclamation-triangle"></i> <strong>Template PDF requis</strong>
+    <!-- Template (Word recommandé) -->
+    <div class="card mb-2 <%= hasTemplate ? 'border-success' : 'border-warning' %>">
+      <div class="card-header <%= hasTemplate ? 'bg-success' : 'bg-warning' %> text-<%= hasTemplate ? 'white' : 'dark' %> py-2 d-flex justify-content-between align-items-center">
+        <small class="fw-bold"><i class="bi bi-file-earmark-word"></i>
+          Template bordereau
+          <% if (hasTemplate) { %>
+            <span class="badge bg-light text-dark ms-1"><%= templateType === 'word' ? 'Word' : 'PDF' %></span>
+          <% } %>
+        </small>
+        <% if (hasTemplate) { %>
+        <a href="/bordereaux/template-pdf/<%= bordereau.id %>" class="btn btn-sm btn-light py-0 px-1" title="Télécharger le template" style="font-size:0.7rem">
+          <i class="bi bi-download"></i>
+        </a>
+        <% } %>
       </div>
       <div class="card-body py-2 px-2">
-        <p class="text-muted small mb-2">Uploadez le bordereau PDF vierge T3E pour commencer.</p>
-        <input type="file" id="templateFile" accept=".pdf" class="form-control form-control-sm mb-1">
-        <button type="button" class="btn btn-danger btn-sm w-100" id="btnUploadTemplate">
-          <i class="bi bi-cloud-upload"></i> Charger le template PDF
-        </button>
-        <div id="uploadTemplateStatus" class="mt-1" style="font-size:0.75rem;"></div>
-      </div>
-    </div>
-    <% } %>
-
-    <!-- Bouton principal IA -->
-    <div class="card mb-2 border-primary">
-      <div class="card-body py-3 px-2 text-center">
-        <% if (iaActive && hasTemplate) { %>
-          <button type="button" class="btn btn-primary w-100 py-2" id="btnIAComplet" style="font-size:1rem;">
-            <i class="bi bi-robot"></i><br>
-            <strong>Analyser et générer le PDF</strong><br>
-            <small class="opacity-75">IA remplit tout automatiquement</small>
-          </button>
-        <% } else if (!hasTemplate) { %>
-          <button class="btn btn-secondary w-100 py-2" disabled>
-            <i class="bi bi-robot"></i><br>
-            <span>Chargez d'abord le template PDF</span>
-          </button>
+        <% if (!hasTemplate) { %>
+        <p class="text-muted small mb-2">
+          <strong>Recommandé :</strong> uploadez votre bordereau en Word (.docx) avec des <code>{{CHAMP}}</code> pour un remplissage parfait.<br>
+          Le PDF est aussi accepté mais la mise en page sera régénérée.
+        </p>
         <% } else { %>
-          <button class="btn btn-secondary w-100 py-2" disabled>
-            <i class="bi bi-robot"></i><br>
-            <span>IA non configurée</span><br>
-            <small>Ajoutez OPENAI_API_KEY sur Render</small>
-          </button>
+        <p class="text-muted small mb-1">Template chargé : <em><%= bordereau.template_fichier || '(aucun nom)' %></em></p>
         <% } %>
-        <div id="iaStatus" class="mt-2" style="font-size:0.8rem;"></div>
+        <label class="upload-zone w-100 mb-1" id="zoneTemplate">
+          <input type="file" id="templateFile" accept=".docx,.pdf,.doc" class="d-none">
+          <i class="bi bi-cloud-upload fs-5 text-primary"></i><br>
+          <small><%= hasTemplate ? 'Changer le template (Word ou PDF)' : 'Uploader le template (Word ou PDF)' %></small>
+        </label>
+        <button type="button" class="btn btn-sm <%= hasTemplate ? 'btn-outline-warning' : 'btn-primary' %> w-100" id="btnUploadTemplate">
+          <i class="bi bi-cloud-upload"></i> <%= hasTemplate ? 'Remplacer le template' : 'Charger le template' %>
+        </button>
+        <div id="statusTemplate" class="mt-1" style="font-size:0.73rem;"></div>
       </div>
     </div>
 
-    <!-- Fiches techniques (optionnel — l'IA en sélectionne aussi) -->
+    <!-- Devis -->
+    <div class="card mb-2 <%= bordereau.devis_fichier ? 'border-success' : 'border-secondary' %>">
+      <div class="card-header py-2 d-flex justify-content-between align-items-center">
+        <small class="fw-bold"><i class="bi bi-file-text"></i> Devis
+          <% if (bordereau.devis_fichier) { %><span class="badge bg-success ms-1">Chargé</span><% } %>
+        </small>
+      </div>
+      <div class="card-body py-2 px-2">
+        <% if (bordereau.devis_fichier) { %>
+        <p class="text-muted small mb-1"><em><%= bordereau.devis_fichier %></em></p>
+        <% } %>
+        <label class="upload-zone w-100 mb-1" id="zoneDevis">
+          <input type="file" id="devisFile" accept=".pdf,.docx,.doc,.xlsx" class="d-none">
+          <i class="bi bi-file-pdf fs-5 text-danger"></i><br>
+          <small><%= bordereau.devis_fichier ? 'Changer le devis' : 'Uploader le devis (PDF, Word, Excel)' %></small>
+        </label>
+        <button type="button" class="btn btn-sm btn-outline-primary w-100" id="btnUploadDevis">
+          <i class="bi bi-cloud-upload"></i> <%= bordereau.devis_fichier ? 'Remplacer le devis' : 'Uploader le devis' %>
+        </button>
+        <div id="statusDevis" class="mt-1" style="font-size:0.73rem;"></div>
+      </div>
+    </div>
+
+    <!-- Fiches techniques -->
     <div class="card mb-2">
       <div class="card-header bg-success text-white py-1 d-flex justify-content-between align-items-center">
         <small class="fw-bold"><i class="bi bi-file-pdf"></i> Fiches techniques</small>
         <span class="badge bg-light text-dark" id="countFT">0</span>
       </div>
       <div class="card-body py-2 px-2">
-        <p class="text-muted" style="font-size:0.7rem;margin-bottom:4px;">L'IA sélectionne automatiquement les fiches pertinentes. Vous pouvez en ajouter manuellement.</p>
+        <p class="text-muted" style="font-size:0.7rem;margin-bottom:4px;">L'IA sélectionne les fiches pertinentes. Ajoutez-en manuellement si nécessaire.</p>
         <input type="text" id="searchFT" class="form-control form-control-sm mb-1" placeholder="Rechercher une fiche...">
         <div id="selectedFTList" class="mb-1"></div>
         <div style="max-height:200px;overflow-y:auto;font-size:0.7rem;" id="ftList">
@@ -92,68 +110,51 @@
       </div>
     </div>
 
-    <!-- Bouton télécharger le PDF déjà sauvegardé -->
+    <!-- Bouton générer -->
     <div class="d-grid gap-1 mb-2">
-      <a href="/bordereaux/generer-pdf-get/<%= bordereau.id %>" class="btn btn-outline-success btn-sm">
-        <i class="bi bi-file-pdf"></i> Télécharger PDF (positions sauvegardées)
-      </a>
-    </div>
-
-    <!-- Changer le template PDF (avancé) -->
-    <div class="card mb-2 border-warning">
-      <div class="card-header bg-warning text-dark py-1" style="cursor:pointer" id="toggleTemplate">
-        <small class="fw-bold"><i class="bi bi-upload"></i> Changer le template PDF</small>
-        <i class="bi bi-chevron-down float-end" id="templateChevron"></i>
-      </div>
-      <div class="card-body py-2 px-2 d-none" id="templateUploadZone">
-        <p class="text-muted" style="font-size:0.75rem;">Remplacer le bordereau PDF vierge T3E.</p>
-        <input type="file" id="templateFileChange" accept=".pdf" class="form-control form-control-sm mb-1">
-        <button type="button" class="btn btn-warning btn-sm w-100" id="btnUploadTemplateChange">
-          <i class="bi bi-cloud-upload"></i> Uploader le nouveau PDF
-        </button>
-        <div id="uploadTemplateStatusChange" class="mt-1" style="font-size:0.75rem;"></div>
-      </div>
+      <% if (iaActive) { %>
+      <button type="button" class="btn btn-primary py-2" id="btnGenerer">
+        <i class="bi bi-robot"></i> <strong>Générer le bordereau rempli</strong><br>
+        <small class="opacity-75">IA lit le devis + banque de connaissances</small>
+      </button>
+      <div id="genStatus" style="font-size:0.78rem;"></div>
+      <% } else { %>
+      <button class="btn btn-secondary py-2" disabled>
+        <i class="bi bi-robot"></i> IA non configurée<br>
+        <small>Ajoutez OPENAI_API_KEY sur Render</small>
+      </button>
+      <% } %>
     </div>
 
   </div>
 
-  <!-- ====== PANNEAU DROIT : APERÇU PDF ====== -->
-  <div class="col-md-9">
-    <div class="card">
-      <div class="card-header py-1 d-flex justify-content-between align-items-center">
-        <small class="fw-bold">
-          <i class="bi bi-eye"></i> Aperçu du bordereau template
-          <% if (hasTemplate) { %><span class="badge bg-success ms-1">PDF chargé</span><% } else { %><span class="badge bg-danger ms-1">Aucun template</span><% } %>
-        </small>
-        <small class="text-muted">Les positions des champs peuvent être ajustées par glisser-déposer</small>
+  <!-- ====== PANNEAU DROIT : CHAT IA ====== -->
+  <div class="col-md-8">
+    <div class="card h-100" style="min-height:600px;">
+      <div class="card-header bg-primary text-white py-2 d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-robot"></i> <strong>Assistant IA — Bordereau</strong></span>
+        <small class="opacity-75">Propulsé par OpenAI gpt-4o • contexte : devis + banque de connaissances T3E</small>
       </div>
-      <div class="card-body p-1">
-        <div id="pdfContainer" style="position:relative;background:#f8f9fa;min-height:200px;">
-          <% if (!hasTemplate) { %>
-          <div class="p-5 text-center text-muted">
-            <i class="bi bi-file-earmark-pdf" style="font-size:4rem;color:#dc3545;opacity:0.5;"></i>
-            <p class="mt-3 fw-bold text-danger">Aucun template PDF chargé</p>
-            <p>Utilisez le panneau rouge "<strong>Template PDF requis</strong>" à gauche<br>pour uploader le bordereau PDF vierge T3E.</p>
-          </div>
-          <% } else { %>
-          <canvas id="pdfCanvas" style="width:100%;display:block;"></canvas>
-          <div id="overlay" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:10;pointer-events:none;"></div>
-          <% } %>
+      <div class="card-body p-2 d-flex flex-column" style="gap:8px;">
+        <div id="chatBord" class="flex-grow-1 rounded p-2">
+          <!-- Messages initiaux injectés par JS -->
         </div>
+        <div class="input-group">
+          <input type="text" id="chatInput" class="form-control" placeholder="Posez une question ou demandez de remplir le bordereau..." maxlength="600">
+          <button class="btn btn-primary px-3" id="chatSend">
+            <i class="bi bi-send-fill"></i>
+          </button>
+        </div>
+        <div style="font-size:0.7rem;color:#aaa;text-align:right;">Entrée pour envoyer</div>
       </div>
     </div>
   </div>
+
 </div>
 
-<% if (hasTemplate) { %>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<% } %>
 <script>
-if (typeof pdfjsLib !== 'undefined') pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-
-// ============ Fiches techniques ============
-var fichesSelectionnees = <%= JSON.stringify((bordereau.contenu.fiches_selectionnees || []).map(function(f){return{id:f.id,titre:f.titre,nom_fichier:f.nom_fichier,chemin_fichier:f.chemin_fichier,source:f.source};})) %>;
-var savedPositions = <%= JSON.stringify(bordereau.contenu.field_positions || {}) %>;
+// ==================== Fiches techniques ====================
+var fichesSelectionnees = <%= JSON.stringify((bordereau.contenu.fiches_selectionnees || []).map(function(f){ return {id:f.id,titre:f.titre,nom_fichier:f.nom_fichier,chemin_fichier:f.chemin_fichier,source:f.source}; })) %>;
 
 function updateFT() {
   var list = document.getElementById('selectedFTList');
@@ -162,7 +163,7 @@ function updateFT() {
   fichesSelectionnees.forEach(function(f) {
     var div = document.createElement('div');
     div.className = 'ft-selected';
-    div.innerHTML = '<span class="text-truncate"><i class="bi bi-file-pdf text-danger"></i> ' + f.titre + '</span>'
+    div.innerHTML = '<span class="text-truncate"><i class="bi bi-file-pdf text-danger"></i> ' + (f.titre||f.nom_fichier||'Fiche') + '</span>'
       + '<button type="button" class="btn btn-sm btn-outline-danger py-0 px-1 ms-1 flex-shrink-0" style="font-size:0.65rem" onclick="removeFT(' + f.id + ')">×</button>';
     list.appendChild(div);
   });
@@ -177,8 +178,9 @@ function removeFT(id) {
 document.querySelectorAll('.btn-add-ft').forEach(function(btn) {
   btn.addEventListener('click', function() {
     var item = this.closest('.ft-item');
-    if (fichesSelectionnees.some(function(f) { return f.id === parseInt(item.dataset.id); })) return;
-    fichesSelectionnees.push({ id: parseInt(item.dataset.id), titre: item.dataset.titre, nom_fichier: item.dataset.fichier, chemin_fichier: item.dataset.chemin, source: item.dataset.source });
+    var fid = parseInt(item.dataset.id);
+    if (fichesSelectionnees.some(function(f) { return f.id === fid; })) return;
+    fichesSelectionnees.push({ id: fid, titre: item.dataset.titre, nom_fichier: item.dataset.fichier, chemin_fichier: item.dataset.chemin, source: item.dataset.source });
     updateFT();
   });
 });
@@ -191,18 +193,78 @@ document.getElementById('searchFT').addEventListener('input', function() {
 
 updateFT();
 
-// ============ Bouton principal IA complet ============
-<% if (iaActive && hasTemplate) { %>
-document.getElementById('btnIAComplet').addEventListener('click', function() {
+// ==================== Upload template ====================
+document.getElementById('zoneTemplate').addEventListener('dragover', function(e) { e.preventDefault(); this.classList.add('active'); });
+document.getElementById('zoneTemplate').addEventListener('dragleave', function() { this.classList.remove('active'); });
+document.getElementById('zoneTemplate').addEventListener('drop', function(e) {
+  e.preventDefault(); this.classList.remove('active');
+  if (e.dataTransfer.files[0]) { document.getElementById('templateFile').files = e.dataTransfer.files; }
+});
+
+document.getElementById('btnUploadTemplate').addEventListener('click', function() {
+  var file = document.getElementById('templateFile').files[0];
+  var status = document.getElementById('statusTemplate');
+  if (!file) { status.innerHTML = '<span class="text-danger">Choisissez d\'abord un fichier.</span>'; return; }
   var btn = this;
-  var status = document.getElementById('iaStatus');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span><br><strong>Analyse en cours...</strong><br><small>L\'IA lit le devis et remplit le bordereau</small>';
-  status.innerHTML = '<div class="text-muted">Patientez ~10-20 secondes...</div>';
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Upload...';
+  status.innerHTML = '';
+  var fd = new FormData();
+  fd.append('template', file);
+  fetch('/bordereaux/remplacer-template/<%= bordereau.id %>', { method: 'POST', body: fd, credentials: 'same-origin' })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      btn.disabled = false; btn.innerHTML = '<i class="bi bi-cloud-upload"></i> Template chargé';
+      if (data.error) { status.innerHTML = '<span class="text-danger">' + data.error + '</span>'; return; }
+      status.innerHTML = '<span class="text-success"><i class="bi bi-check-circle"></i> ' + data.fichier + ' (' + (data.type === 'word' ? 'Word' : 'PDF') + ') chargé. Rechargement...</span>';
+      setTimeout(function() { window.location.reload(); }, 1200);
+    })
+    .catch(function(err) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-cloud-upload"></i> Charger le template'; status.innerHTML = '<span class="text-danger">Erreur : ' + err.message + '</span>'; });
+});
+
+// ==================== Upload devis ====================
+document.getElementById('zoneDevis').addEventListener('dragover', function(e) { e.preventDefault(); this.classList.add('active'); });
+document.getElementById('zoneDevis').addEventListener('dragleave', function() { this.classList.remove('active'); });
+document.getElementById('zoneDevis').addEventListener('drop', function(e) {
+  e.preventDefault(); this.classList.remove('active');
+  if (e.dataTransfer.files[0]) { document.getElementById('devisFile').files = e.dataTransfer.files; }
+});
+
+document.getElementById('btnUploadDevis').addEventListener('click', function() {
+  var file = document.getElementById('devisFile').files[0];
+  var status = document.getElementById('statusDevis');
+  if (!file) { status.innerHTML = '<span class="text-danger">Choisissez d\'abord un fichier.</span>'; return; }
+  var btn = this;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Upload...';
+  status.innerHTML = '';
+  var fd = new FormData();
+  fd.append('devis', file);
+  fetch('/bordereaux/uploader-devis/<%= bordereau.id %>', { method: 'POST', body: fd, credentials: 'same-origin' })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      btn.disabled = false; btn.innerHTML = '<i class="bi bi-cloud-upload"></i> Devis chargé';
+      if (data.error) { status.innerHTML = '<span class="text-danger">' + data.error + '</span>'; return; }
+      status.innerHTML = '<span class="text-success"><i class="bi bi-check-circle"></i> ' + data.fichier + ' chargé. Rechargement...</span>';
+      appendBot('Votre devis "' + data.fichier + '" a été chargé avec succès. Je peux maintenant analyser son contenu pour remplir le bordereau. Cliquez sur "Générer le bordereau rempli" ou demandez-moi de le remplir ici.');
+      setTimeout(function() { window.location.reload(); }, 2000);
+    })
+    .catch(function(err) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-cloud-upload"></i> Uploader le devis'; status.innerHTML = '<span class="text-danger">Erreur : ' + err.message + '</span>'; });
+});
+
+// ==================== Générer le bordereau ====================
+<% if (iaActive) { %>
+document.getElementById('btnGenerer').addEventListener('click', function() {
+  var btn = this;
+  var status = document.getElementById('genStatus');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> <strong>L\'IA analyse et génère...</strong><br><small>~15-25 secondes</small>';
+  status.innerHTML = '<div class="text-muted small">L\'IA lit le devis et la banque de connaissances T3E...</div>';
+  appendBot('Je génère votre bordereau rempli en utilisant votre devis et la banque de connaissances T3E. Cela peut prendre 15-25 secondes...');
 
   var ficheIds = fichesSelectionnees.map(function(f) { return f.id; });
 
-  fetch('/bordereaux/remplir-ia-complet/<%= bordereau.id %>', {
+  fetch('/bordereaux/generer/<%= bordereau.id %>', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ fiches_manuelles: ficheIds }),
@@ -212,157 +274,173 @@ document.getElementById('btnIAComplet').addEventListener('click', function() {
     if (r.headers.get('content-type') && r.headers.get('content-type').includes('application/json')) {
       return r.json().then(function(data) { throw new Error(data.error || 'Erreur inconnue'); });
     }
-    return r.blob();
+    return r.blob().then(function(blob) { return { blob: blob, filename: r.headers.get('content-disposition') }; });
   })
-  .then(function(blob) {
+  .then(function(result) {
     btn.disabled = false;
-    btn.innerHTML = '<i class="bi bi-check-circle text-success" style="font-size:1.5rem;"></i><br><strong>PDF généré !</strong><br><small>Téléchargement en cours...</small>';
-    status.innerHTML = '<div class="text-success"><i class="bi bi-check"></i> Succès — PDF rempli téléchargé</div>';
-    var url = URL.createObjectURL(blob);
+    btn.innerHTML = '<i class="bi bi-robot"></i> <strong>Générer le bordereau rempli</strong><br><small class="opacity-75">IA lit le devis + banque de connaissances</small>';
+    status.innerHTML = '<div class="text-success"><i class="bi bi-check-circle"></i> Bordereau généré — téléchargement en cours</div>';
+
+    // Déterminer l'extension depuis le Content-Type
+    var ext = result.blob.type.includes('wordprocessingml') ? '.docx' : '.pdf';
+    var nom = 'bordereau-<%= bordereau.id %>-rempli' + ext;
+    var url = URL.createObjectURL(result.blob);
     var a = document.createElement('a');
-    a.href = url; a.download = 'bordereau-<%= bordereau.id %>-rempli.pdf'; a.click();
+    a.href = url; a.download = nom; a.click();
     URL.revokeObjectURL(url);
-    setTimeout(function() {
-      btn.innerHTML = '<i class="bi bi-robot"></i><br><strong>Analyser et générer le PDF</strong><br><small class="opacity-75">IA remplit tout automatiquement</small>';
-      btn.disabled = false;
-    }, 4000);
+
+    appendBot('Votre bordereau a été généré avec succès (' + nom + '). Le téléchargement a démarré automatiquement.\n\nSi vous voulez apporter des corrections ou avez des questions sur le contenu, je suis là !');
+    setTimeout(function() { status.innerHTML = ''; }, 5000);
   })
   .catch(function(err) {
     btn.disabled = false;
-    btn.innerHTML = '<i class="bi bi-robot"></i><br><strong>Analyser et générer le PDF</strong><br><small class="opacity-75">IA remplit tout automatiquement</small>';
-    status.innerHTML = '<div class="text-danger"><i class="bi bi-exclamation-triangle"></i> ' + err.message + '</div>';
+    btn.innerHTML = '<i class="bi bi-robot"></i> <strong>Générer le bordereau rempli</strong><br><small class="opacity-75">IA lit le devis + banque de connaissances</small>';
+    status.innerHTML = '<div class="text-danger small"><i class="bi bi-exclamation-triangle"></i> ' + err.message + '</div>';
+    appendBot('Erreur lors de la génération : ' + err.message);
   });
 });
 <% } %>
 
-// ============ Aperçu PDF (si template chargé) ============
-<% if (hasTemplate) { %>
-var containerEl = document.getElementById('pdfContainer');
-var overlayEl   = document.getElementById('overlay');
-var canvasW = 0, canvasH = 0;
-var overlays = {};
+// ==================== Chat IA dédié ====================
+var chatHistory = [];
+var chatEl = document.getElementById('chatBord');
+var chatInput = document.getElementById('chatInput');
+var chatSend = document.getElementById('chatSend');
 
-function renderPdfPage(page) {
-  var canvas = document.getElementById('pdfCanvas');
-  var ctx = canvas.getContext('2d');
-  var cw = containerEl.offsetWidth || containerEl.parentElement.offsetWidth || 800;
-  if (cw < 100) cw = 800;
-  var vp = page.getViewport({ scale: 1 });
-  var scale = (cw * 2) / vp.width;
-  var svp = page.getViewport({ scale: scale });
-  canvas.width = svp.width; canvas.height = svp.height;
-  var dh = Math.round(cw * vp.height / vp.width);
-  canvas.style.width = cw + 'px'; canvas.style.height = dh + 'px';
-  canvasW = cw; canvasH = dh;
-  containerEl.style.height = dh + 'px';
-  page.render({ canvasContext: ctx, viewport: svp }).promise.then(function() {
-    restoreOverlays();
-  });
+function appendBot(text, quickReplies) {
+  var row = document.createElement('div');
+  row.className = 'chat-msg-bot';
+  var bubble = document.createElement('div');
+  bubble.className = 'bubble-bot';
+  bubble.textContent = text;
+  row.appendChild(bubble);
+  chatEl.appendChild(row);
+
+  if (quickReplies && quickReplies.length) {
+    var qrRow = document.createElement('div');
+    qrRow.className = 'chat-msg-bot';
+    var qrWrap = document.createElement('div');
+    qrWrap.className = 'd-flex flex-wrap gap-1 ms-1';
+    quickReplies.forEach(function(qr) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-outline-primary btn-sm py-0 px-2';
+      btn.style.fontSize = '0.75rem';
+      btn.textContent = qr;
+      btn.addEventListener('click', function() {
+        qrRow.remove();
+        chatInput.value = qr;
+        sendChat();
+      });
+      qrWrap.appendChild(btn);
+    });
+    qrRow.appendChild(qrWrap);
+    chatEl.appendChild(qrRow);
+  }
+
+  chatEl.scrollTop = chatEl.scrollHeight;
 }
 
-pdfjsLib.getDocument({
-  url: '/bordereaux/template-pdf/<%= bordereau.id %>',
-  cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
-  cMapPacked: true,
-}).promise.then(function(pdf) {
-  pdf.getPage(1).then(function(page) {
-    setTimeout(function() { renderPdfPage(page); }, 400);
-  });
-}).catch(function() {
-  containerEl.innerHTML = '<div class="p-5 text-center"><i class="bi bi-exclamation-triangle text-warning" style="font-size:3rem;"></i><p class="mt-3">Erreur de chargement du PDF. Essayez de re-charger le template.</p></div>';
-});
-
-// Afficher les positions sauvegardées comme overlays (pour calibration visuelle)
-function addOverlay(key, label, val) {
-  if (!val || !canvasW) return;
-  if (overlays[key]) { overlays[key].el.textContent = val; return; }
-  var div = document.createElement('div');
-  div.className = 'field-overlay';
-  div.textContent = val;
-  div.title = label + ' — glisser pour repositionner';
-  var defaultPos = {
-    nom_du_projet:{x:27,y:16}, num_ro_du_projet:{x:29,y:18}, nom:{x:16,y:22.3},
-    sp_cialit:{x:67,y:22.3}, adresse:{x:20,y:25.8}, ligne_num_ro:{x:82,y:32.2},
-    titre:{x:18,y:38.4}, num_ro_de_dessins:{x:30,y:40.7}, nombre_feuilles:{x:63,y:40.7},
-    r_vision:{x:83,y:40.7}, description:{x:24,y:42.6}, fournisseur:{x:25,y:44.7},
-    fabricant:{x:59,y:44.7}, section_item:{x:65,y:47}, article:{x:58,y:49.2},
-    d_lai:{x:18,y:51}, remarque:{x:24,y:54.5},
-  };
-  var rect = containerEl.getBoundingClientRect();
-  var dp = savedPositions[key] || defaultPos[key] || { x: 40, y: 50 };
-  div.style.left = (rect.width * dp.x / 100) + 'px';
-  div.style.top = (rect.height * dp.y / 100) + 'px';
-  div.style.pointerEvents = 'all';
-
-  var dragging = false, ox, oy;
-  div.addEventListener('mousedown', function(e) { e.preventDefault(); dragging = true; ox = e.clientX - div.offsetLeft; oy = e.clientY - div.offsetTop; });
-  document.addEventListener('mousemove', function(e) { if (dragging) { div.style.left = (e.clientX-ox)+'px'; div.style.top = (e.clientY-oy)+'px'; } });
-  document.addEventListener('mouseup', function() { if (dragging) { dragging = false; savePositions(); } });
-
-  overlayEl.appendChild(div);
-  overlays[key] = { el: div, val: val };
+function appendUser(text) {
+  var row = document.createElement('div');
+  row.className = 'chat-msg-user';
+  var bubble = document.createElement('div');
+  bubble.className = 'bubble-user';
+  bubble.textContent = text;
+  row.appendChild(bubble);
+  chatEl.appendChild(row);
+  chatEl.scrollTop = chatEl.scrollHeight;
 }
 
-function savePositions() {
-  var rect = containerEl.getBoundingClientRect();
-  if (!rect.width) return;
-  var pos = {};
-  Object.keys(overlays).forEach(function(key) {
-    var el = overlays[key].el;
-    pos[key] = { x: (el.offsetLeft / rect.width) * 100, y: (el.offsetTop / rect.height) * 100, val: overlays[key].val, page: 0, size: 9 };
-  });
-  fetch('/bordereaux/sauvegarder-ajax/<%= bordereau.id %>', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ titre: '<%= bordereau.titre %>', positions: pos, positions_json: JSON.stringify(pos), fiches: fichesSelectionnees, fiches_json: JSON.stringify(fichesSelectionnees) }),
+function appendTyping() {
+  var row = document.createElement('div');
+  row.className = 'chat-msg-bot';
+  row.id = 'chatTyping';
+  var bubble = document.createElement('div');
+  bubble.className = 'bubble-bot';
+  bubble.innerHTML = '<span class="spinner-border spinner-border-sm me-1" style="width:12px;height:12px;"></span>...';
+  row.appendChild(bubble);
+  chatEl.appendChild(row);
+  chatEl.scrollTop = chatEl.scrollHeight;
+}
+
+function removeTyping() {
+  var el = document.getElementById('chatTyping');
+  if (el) el.remove();
+}
+
+function sendChat() {
+  var msg = chatInput.value.trim();
+  if (!msg) return;
+  chatInput.value = '';
+  appendUser(msg);
+  chatHistory.push({ role: 'user', content: msg });
+  chatSend.disabled = true;
+  chatSend.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+  appendTyping();
+
+  fetch('/bordereaux/chat/<%= bordereau.id %>', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: msg, historique: chatHistory.slice(-8) }),
     credentials: 'same-origin'
-  }).catch(function(){});
-}
-
-function restoreOverlays() {
-  Object.keys(savedPositions).forEach(function(key) {
-    var p = savedPositions[key];
-    if (p && p.val) addOverlay(key, key, p.val);
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    removeTyping();
+    chatSend.disabled = false;
+    chatSend.innerHTML = '<i class="bi bi-send-fill"></i>';
+    var rep = data.reponse || 'Pas de réponse.';
+    appendBot(rep);
+    chatHistory.push({ role: 'assistant', content: rep });
+  })
+  .catch(function() {
+    removeTyping();
+    chatSend.disabled = false;
+    chatSend.innerHTML = '<i class="bi bi-send-fill"></i>';
+    appendBot('Erreur de connexion. Réessayez.');
   });
 }
-<% } %>
 
-// ============ Upload template (bouton rouge si pas de template) ============
-<% if (!hasTemplate) { %>
-document.getElementById('btnUploadTemplate').addEventListener('click', function() { uploadTemplate('templateFile', 'uploadTemplateStatus', this); });
-<% } %>
-
-// ============ Changer template (panneau avancé) ============
-document.getElementById('toggleTemplate').addEventListener('click', function() {
-  var zone = document.getElementById('templateUploadZone');
-  var chev = document.getElementById('templateChevron');
-  zone.classList.toggle('d-none');
-  chev.className = zone.classList.contains('d-none') ? 'bi bi-chevron-down float-end' : 'bi bi-chevron-up float-end';
+chatSend.addEventListener('click', sendChat);
+chatInput.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
 });
-document.getElementById('btnUploadTemplateChange').addEventListener('click', function() { uploadTemplate('templateFileChange', 'uploadTemplateStatusChange', this); });
 
-function uploadTemplate(fileInputId, statusId, btn) {
-  var file = document.getElementById(fileInputId).files[0];
-  var status = document.getElementById(statusId);
-  if (!file) { status.innerHTML = '<span class="text-danger">Choisissez un fichier PDF.</span>'; return; }
-  var origLabel = btn.innerHTML;
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Upload...';
-  status.innerHTML = '';
-  var fd = new FormData();
-  fd.append('template', file);
-  fetch('/bordereaux/remplacer-template/<%= bordereau.id %>', { method: 'POST', body: fd, credentials: 'same-origin' })
-    .then(function(r) { return r.json(); })
-    .then(function(res) {
-      btn.disabled = false; btn.innerHTML = origLabel;
-      if (res.error) { status.innerHTML = '<span class="text-danger">' + res.error + '</span>'; return; }
-      status.innerHTML = '<span class="text-success"><i class="bi bi-check-circle"></i> ' + res.fichier + ' chargé (' + res.nb_champs + ' champs). Rechargement...</span>';
-      setTimeout(function() { window.location.reload(); }, 1200);
-    })
-    .catch(function(err) { btn.disabled = false; btn.innerHTML = origLabel; status.innerHTML = '<span class="text-danger">Erreur : ' + err.message + '</span>'; });
-}
+// Message de bienvenue au chargement
+(function() {
+  var hasDevis = <%= bordereau.devis_fichier ? 'true' : 'false' %>;
+  var hasTemplate = <%= hasTemplate ? 'true' : 'false' %>;
+  var ia = <%= iaActive ? 'true' : 'false' %>;
 
-// Initialiser les tooltips
-document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function(el) { new bootstrap.Tooltip(el); });
+  if (!ia) {
+    appendBot('L\'IA n\'est pas configurée. Ajoutez OPENAI_API_KEY dans les variables d\'environnement Render pour activer l\'assistant.');
+    return;
+  }
+
+  if (hasDevis && hasTemplate) {
+    appendBot('Bonjour ! J\'ai accès à votre devis et à la banque de connaissances T3E (508 matériaux, 121 fiches techniques).\n\nJe peux remplir ce bordereau automatiquement en utilisant toutes ces informations.',
+      ['Remplir le bordereau maintenant', 'Quels matériaux sont disponibles ?', 'Expliquer le bordereau']);
+  } else if (hasDevis && !hasTemplate) {
+    appendBot('Votre devis est chargé. Pour générer un bordereau rempli, uploadez votre template (Word .docx recommandé) dans le panneau gauche.\n\nEn attendant, je peux répondre à vos questions sur le projet.',
+      ['Que contient mon devis ?', 'Quels matériaux correspondent à mon projet ?']);
+  } else if (!hasDevis && hasTemplate) {
+    appendBot('Votre template bordereau est chargé. Pour un meilleur résultat, uploadez votre devis pour que je puisse extraire automatiquement les informations du projet.\n\nSans devis, je peux quand même remplir le bordereau avec les informations disponibles.',
+      ['Remplir sans devis', 'Que me faut-il pour remplir un bordereau ?']);
+  } else {
+    appendBot('Bonjour ! Pour commencer, uploadez votre bordereau template (Word .docx) et votre devis dans le panneau gauche.\n\nJe m\'occupe ensuite du reste — l\'IA lira le devis et la banque de connaissances T3E pour remplir tous les champs automatiquement.',
+      ['Comment fonctionne le bordereau ?', 'Quels formats sont acceptés ?']);
+  }
+
+  // Si le bouton rapide "Remplir maintenant" est cliqué
+  document.getElementById('chatBord').addEventListener('click', function(e) {
+    if (e.target.textContent === 'Remplir le bordereau maintenant' || e.target.textContent === 'Remplir sans devis') {
+      if (document.getElementById('btnGenerer')) {
+        document.getElementById('btnGenerer').click();
+      }
+    }
+  });
+})();
 </script>
 
 <%- include('partials/footer', { scripts: [] }) %>

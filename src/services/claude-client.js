@@ -193,6 +193,64 @@ Retourne UNIQUEMENT ce JSON :
   return callOpenAI(SYSTEM_T3E, userContent, {}, false);
 }
 
+// Remplit un bordereau depuis le texte du template + devis + base de connaissances
+// Retourne { champs: { NOM_DU_PROJET: "...", ... }, fiches_recommandees: [id1, ...] }
+async function remplirBordereauIA(texteTemplate, texteDevis, materiauxDB, fichesDispo, projet) {
+  const fichesListe = (fichesDispo || []).slice(0, 80).map(f => `- ID ${f.id}: ${f.titre} (${f.source || ''})`).join('\n');
+
+  const userContent = `Tu remplis un bordereau technique de transmission de matériaux pour Toitures Trois Étoiles Inc. (T3E), couvreur commercial au Québec.
+
+STRUCTURE DU BORDEREAU (extrait du template) :
+${texteTemplate ? texteTemplate.substring(0, 3000) : 'Champs standards : NOM DU PROJET, NUMÉRO DU PROJET, NOM entrepreneur, SPÉCIALITÉ, ADRESSE, Titre, N° Dessins, Nbr feuilles, Révision, Description, Fournisseur, Fabricant, Section, Article, Délai, Remarque'}
+
+INFORMATIONS DU PROJET :
+${Object.entries(projet || {}).filter(([,v]) => v).map(([k,v]) => `- ${k}: ${v}`).join('\n') || 'À extraire du devis'}
+
+DEVIS DU PROJET :
+${texteDevis ? texteDevis.substring(0, 4000) : 'Aucun devis fourni — utilise les informations disponibles'}
+
+MATÉRIAUX EN BASE DE CONNAISSANCES :
+${(materiauxDB || []).slice(0, 80).map(m => `- ${m.nom} (${m.fabricant}${m.type_produit ? ', ' + m.type_produit : ''})`).join('\n')}
+
+FICHES TECHNIQUES DISPONIBLES :
+${fichesListe || 'Aucune fiche disponible'}
+
+RÈGLES FIXES (ne jamais déroger) :
+1. NOM_ENTREPRENEUR → TOUJOURS "Toitures Trois Étoiles Inc."
+2. SPECIALITE → TOUJOURS "Couvreur"
+3. NOMBRE_FEUILLES → "1" si non précisé
+4. REVISION → "A" si non précisé
+5. DELAI → "3 à 4 semaines" si non précisé dans le devis
+6. Remplis TOUS les champs — jamais de chaîne vide
+7. Utilise les matériaux de la base de connaissances pour FOURNISSEUR, FABRICANT, DESCRIPTION
+8. fiches_recommandees → 2 à 6 IDs des fiches les plus pertinentes pour ce projet
+
+Retourne UNIQUEMENT ce JSON :
+{
+  "champs": {
+    "NOM_DU_PROJET": "...",
+    "NUMERO_DU_PROJET": "...",
+    "NOM_ENTREPRENEUR": "Toitures Trois Étoiles Inc.",
+    "SPECIALITE": "Couvreur",
+    "ADRESSE": "...",
+    "TITRE": "...",
+    "NUMERO_DESSINS": "D-001",
+    "NOMBRE_FEUILLES": "1",
+    "REVISION": "A",
+    "DESCRIPTION": "...",
+    "FOURNISSEUR": "...",
+    "FABRICANT": "...",
+    "SECTION_ARTICLE": "07 50 00",
+    "ARTICLE": "...",
+    "DELAI": "3 à 4 semaines",
+    "REMARQUE": "Voir fiches techniques ci-jointes"
+  },
+  "fiches_recommandees": []
+}`;
+
+  return callOpenAI(SYSTEM_T3E, userContent, {}, false);
+}
+
 function isConfigured() {
   return !!OPENAI_API_KEY;
 }
@@ -200,4 +258,4 @@ function isConfigured() {
 // Alias pour compatibilité avec tout code qui importerait callClaude
 const callClaude = callOpenAI;
 
-module.exports = { analyserDevis, proposerContenuBordereau, proposerContenuBordereauComplet, isConfigured, callClaude };
+module.exports = { analyserDevis, proposerContenuBordereau, proposerContenuBordereauComplet, remplirBordereauIA, isConfigured, callClaude };
