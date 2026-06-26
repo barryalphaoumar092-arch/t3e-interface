@@ -9,42 +9,39 @@
 
 <div class="row justify-content-center">
   <div class="col-md-8">
-    <div class="card shadow-sm">
+
+    <!-- Formulaire initial -->
+    <div class="card shadow-sm" id="carteFormulaire">
       <div class="card-header bg-warning text-dark">
-        <h5 class="mb-0"><i class="bi bi-magic"></i> Remplir un bordereau automatiquement</h5>
+        <h5 class="mb-0"><i class="bi bi-magic"></i> Remplir un bordereau avec l'IA</h5>
       </div>
       <div class="card-body">
 
         <div id="zoneErreur" class="alert alert-danger d-none"></div>
 
-        <form id="formGenerer" enctype="multipart/form-data">
+        <form id="formDemarrer" enctype="multipart/form-data">
 
-          <!-- 1. Devis PDF -->
           <div class="mb-4">
             <label class="form-label fw-bold">
               <span class="badge bg-warning text-dark me-1">1</span>
               Devis du projet <span class="text-danger">*</span>
             </label>
             <input type="file" name="devis" class="form-control" accept=".pdf" required>
-            <div class="form-text">Le devis du projet en PDF.</div>
           </div>
 
-          <!-- 2. Bordereau à remplir -->
           <div class="mb-4">
             <label class="form-label fw-bold">
               <span class="badge bg-warning text-dark me-1">2</span>
               Bordereau à remplir <span class="text-danger">*</span>
             </label>
             <input type="file" name="bordereau" class="form-control" accept=".docx" required>
-            <div class="form-text">Le bordereau vierge en format <strong>.docx</strong>. Si votre bordereau est en <code>.doc</code>, ouvrez-le dans Word et sauvegardez en <code>.docx</code> d'abord.</div>
+            <div class="form-text">Format <strong>.docx</strong> (Word). Convertissez depuis .doc si nécessaire.</div>
           </div>
 
-          <!-- 3. Identification -->
           <div class="mb-4">
             <div class="card border-secondary">
               <div class="card-header bg-secondary bg-opacity-10 py-2">
-                <span class="fw-bold"><span class="badge bg-secondary me-1">3</span> Identification de l'entrepreneur</span>
-                <small class="text-muted ms-2">— pré-rempli T3E, modifiable</small>
+                <span class="fw-bold"><span class="badge bg-secondary me-1">3</span> Identification entrepreneur</span>
               </div>
               <div class="card-body pb-2">
                 <div class="row g-2">
@@ -61,19 +58,18 @@
                     <input type="text" name="adresse" class="form-control form-control-sm" value="2215, rue Michelin, Laval (Québec) H7L 5B7">
                   </div>
                   <div class="col-md-6">
-                    <label class="form-label form-label-sm fw-semibold">ÉMIS PAR <span class="text-muted fw-normal">(optionnel)</span></label>
-                    <input type="text" name="emis_par" class="form-control form-control-sm" placeholder="Ex: Nicolas Parent">
+                    <label class="form-label form-label-sm fw-semibold">ÉMIS PAR</label>
+                    <input type="text" name="emis_par" class="form-control form-control-sm" placeholder="Votre nom">
                   </div>
                   <div class="col-md-6">
                     <label class="form-label form-label-sm fw-semibold">NOM DU PROJET <span class="text-muted fw-normal">(optionnel)</span></label>
-                    <input type="text" name="nom_projet" class="form-control form-control-sm" placeholder="Laissez vide → l'IA l'extrait">
+                    <input type="text" name="nom_projet" class="form-control form-control-sm" placeholder="L'IA l'extrait du devis">
                   </div>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- 4. Fiches techniques -->
           <% if (typeof fiches !== 'undefined' && fiches && fiches.length > 0) { %>
           <div class="mb-4">
             <div class="card border-info">
@@ -83,18 +79,11 @@
               </div>
               <div class="card-body p-0">
                 <div class="px-3 pt-3 pb-2">
-                  <input type="text" id="filtresFT" class="form-control form-control-sm" placeholder="Filtrer (ex: Soprema, IKO, membrane…)">
+                  <input type="text" id="filtresFT" class="form-control form-control-sm" placeholder="Filtrer (ex: Soprema, IKO…)">
                 </div>
-                <div id="listeFT" style="max-height:250px; overflow-y:auto; border-top:1px solid #dee2e6">
-                  <%
-                    let derniereFournisseur = null;
-                    fiches.forEach(function(f) {
-                      const src = f.source || 'Autre';
-                      if (src !== derniereFournisseur) { derniereFournisseur = src;
-                  %>
-                    <div class="px-3 pt-2 pb-0 fournisseur-header" data-src="<%= src %>">
-                      <small class="text-uppercase text-muted fw-bold" style="font-size:0.68rem; letter-spacing:1px"><%= src %></small>
-                    </div>
+                <div id="listeFT" style="max-height:220px; overflow-y:auto; border-top:1px solid #dee2e6">
+                  <% let derniereFournisseur = null; fiches.forEach(function(f) { const src = f.source || 'Autre'; if (src !== derniereFournisseur) { derniereFournisseur = src; %>
+                    <div class="px-3 pt-2 pb-0 fournisseur-header"><small class="text-uppercase text-muted fw-bold" style="font-size:0.68rem; letter-spacing:1px"><%= src %></small></div>
                   <% } %>
                     <div class="form-check px-4 py-1 fiche-item" data-label="<%= (f.titre + ' ' + (f.source||'')).toLowerCase() %>">
                       <input class="form-check-input" type="checkbox" name="fiches" value="<%= f.id %>" id="ft<%= f.id %>">
@@ -113,125 +102,67 @@
           <% } %>
 
           <div class="d-grid">
-            <button type="submit" class="btn btn-warning btn-lg" id="btnGenerer">
-              <i class="bi bi-magic"></i> Analyser avec l'IA
+            <button type="submit" class="btn btn-warning btn-lg" id="btnDemarrer">
+              <i class="bi bi-magic"></i> Démarrer avec l'IA
             </button>
           </div>
         </form>
       </div>
     </div>
 
-    <div class="card mt-3 border-0 bg-light">
-      <div class="card-body py-2 px-3">
-        <small class="text-muted">
-          <i class="bi bi-info-circle"></i>
-          L'IA analyse le devis et propose tous les champs. Une fenêtre de confirmation apparaît pour vérifier et modifier avant de générer.
-        </small>
-      </div>
-    </div>
   </div>
 </div>
 
-<!-- ══════════════════════════════════════════════════════ -->
-<!--  MODALE DE CONFIRMATION                               -->
-<!-- ══════════════════════════════════════════════════════ -->
-<div class="modal fade" id="modalConfirm" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!--  POPUP DE DIALOGUE IA  (apparaît étape par étape)            -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<div class="modal fade" id="modalIA" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
-    <div class="modal-content">
-      <div class="modal-header bg-warning text-dark">
-        <h5 class="modal-title"><i class="bi bi-check2-square me-2"></i>Vérification des champs extraits</h5>
+    <div class="modal-content border-warning">
+
+      <div class="modal-header bg-warning text-dark py-2">
+        <div>
+          <span class="fw-bold" id="modalEtapeTitre">L'IA analyse…</span>
+          <span class="badge bg-dark ms-2" id="modalEtapeBadge"></span>
+        </div>
+        <div id="modalSpinner" class="spinner-border spinner-border-sm text-dark d-none ms-3"></div>
       </div>
+
       <div class="modal-body">
-        <p class="text-muted small mb-3">L'IA a rempli les champs ci-dessous à partir du devis. Vérifiez, modifiez si nécessaire, puis cliquez <strong>Oui</strong>.</p>
+        <!-- Message de l'IA -->
+        <div class="alert alert-light border mb-3" id="modalMessage" style="white-space:pre-wrap; font-size:0.93rem"></div>
 
-        <div class="row g-3" id="champsForms">
+        <!-- Champs proposés -->
+        <div id="modalChamps" class="row g-2"></div>
 
-          <div class="col-12">
-            <label class="form-label fw-semibold text-primary">NOM DU PROJET</label>
-            <input type="text" class="form-control" id="c_NOM_DU_PROJET" name="NOM_DU_PROJET">
-          </div>
-          <div class="col-md-6">
-            <label class="form-label fw-semibold text-primary">NUMÉRO DU PROJET / SECTION</label>
-            <input type="text" class="form-control" id="c_NUMERO_DU_PROJET" name="NUMERO_DU_PROJET">
-          </div>
-          <div class="col-md-6">
-            <label class="form-label fw-semibold text-primary">SECTION (item)</label>
-            <input type="text" class="form-control" id="c_SECTION" name="SECTION">
-          </div>
-          <div class="col-12">
-            <label class="form-label fw-semibold text-primary">TITRE</label>
-            <input type="text" class="form-control" id="c_TITRE" name="TITRE">
-          </div>
-          <div class="col-md-6">
-            <label class="form-label fw-semibold text-primary">NUMÉRO DE DESSINS</label>
-            <input type="text" class="form-control" id="c_NUMERO_DESSINS" name="NUMERO_DESSINS">
-          </div>
-          <div class="col-md-6">
-            <label class="form-label fw-semibold text-primary">DÉLAI</label>
-            <input type="text" class="form-control" id="c_DELAI" name="DELAI">
-          </div>
-          <div class="col-12">
-            <label class="form-label fw-semibold text-primary">DESCRIPTION</label>
-            <textarea class="form-control" id="c_DESCRIPTION" name="DESCRIPTION" rows="3"></textarea>
-          </div>
-          <div class="col-md-6">
-            <label class="form-label fw-semibold text-primary">FOURNISSEUR</label>
-            <input type="text" class="form-control" id="c_FOURNISSEUR" name="FOURNISSEUR">
-          </div>
-          <div class="col-md-6">
-            <label class="form-label fw-semibold text-primary">FABRICANT</label>
-            <input type="text" class="form-control" id="c_FABRICANT" name="FABRICANT">
-          </div>
-          <div class="col-12">
-            <label class="form-label fw-semibold text-primary">ARTICLE</label>
-            <input type="text" class="form-control" id="c_ARTICLE" name="ARTICLE">
-          </div>
-          <div class="col-12">
-            <label class="form-label fw-semibold text-primary">REMARQUE</label>
-            <textarea class="form-control" id="c_REMARQUE" name="REMARQUE" rows="4"></textarea>
-          </div>
-
-          <hr class="my-1">
-          <div class="col-12"><p class="text-muted small mb-1 fw-semibold">IDENTIFICATION ENTREPRENEUR</p></div>
-          <div class="col-md-6">
-            <label class="form-label form-label-sm">NOM</label>
-            <input type="text" class="form-control form-control-sm" id="c_NOM" name="NOM">
-          </div>
-          <div class="col-md-6">
-            <label class="form-label form-label-sm">SPÉCIALITÉ</label>
-            <input type="text" class="form-control form-control-sm" id="c_SPECIALITE" name="SPECIALITE">
-          </div>
-          <div class="col-md-8">
-            <label class="form-label form-label-sm">ADRESSE</label>
-            <input type="text" class="form-control form-control-sm" id="c_ADRESSE" name="ADRESSE">
-          </div>
-          <div class="col-md-4">
-            <label class="form-label form-label-sm">ÉMIS PAR</label>
-            <input type="text" class="form-control form-control-sm" id="c_EMIS_PAR" name="EMIS_PAR">
-          </div>
-
+        <!-- Zone Autre -->
+        <div id="zoneAutre" class="mt-3 d-none">
+          <label class="form-label fw-semibold text-danger">Votre correction :</label>
+          <textarea id="textCorrection" class="form-control" rows="3" placeholder="Décrivez la correction à apporter (ex: le nom du projet est X, la section est Y)…"></textarea>
         </div>
       </div>
+
       <div class="modal-footer d-flex gap-2">
         <button type="button" class="btn btn-danger" id="btnNon">
-          <i class="bi bi-x-circle me-1"></i>Non, annuler
+          <i class="bi bi-x-circle me-1"></i>Non — Annuler
         </button>
-        <div class="ms-auto d-flex gap-2">
-          <span id="spinnerConfirm" class="spinner-border spinner-border-sm text-secondary d-none mt-2"></span>
-          <button type="button" class="btn btn-success btn-lg" id="btnOui">
-            <i class="bi bi-check-circle me-1"></i>Oui, générer le bordereau
-          </button>
-        </div>
+        <button type="button" class="btn btn-secondary" id="btnAutre">
+          <i class="bi bi-pencil me-1"></i>Autre — Corriger
+        </button>
+        <button type="button" class="btn btn-success ms-auto btn-lg" id="btnOui">
+          <i class="bi bi-check-circle me-1"></i>Oui — Continuer
+        </button>
       </div>
+
     </div>
   </div>
 </div>
 
 <script>
-var brouillonId = null;
-var fichesIds = [];
+var sessionId = null;
+var modal = null;
 
-// ──── Filtre fiches ────
+// ──── Utilitaires fiches ────
 var filtreInput = document.getElementById('filtresFT');
 if (filtreInput) {
   filtreInput.addEventListener('input', function() {
@@ -259,25 +190,115 @@ document.querySelectorAll('input[name="fiches"]').forEach(function(cb) { cb.addE
 majCompteur();
 function toggleTous(etat) {
   document.querySelectorAll('.fiche-item').forEach(function(el) {
-    if (el.style.display !== 'none') el.querySelector('input[type="checkbox"]').checked = etat;
+    if (el.style.display !== 'none') el.querySelector('input').checked = etat;
   });
   majCompteur();
 }
 
-// ──── Soumission AJAX → extraction IA ────
-document.getElementById('formGenerer').addEventListener('submit', async function(e) {
+// ──── Afficher une proposition dans la modale ────
+function afficherProposition(data) {
+  document.getElementById('modalEtapeTitre').textContent = data.titre || 'Proposition IA';
+  document.getElementById('modalEtapeBadge').textContent = data.etape ? 'Étape ' + data.etape + '/5' : '';
+  document.getElementById('modalMessage').textContent = data.message || '';
+  document.getElementById('zoneAutre').classList.add('d-none');
+  document.getElementById('textCorrection').value = '';
+  document.getElementById('modalSpinner').classList.add('d-none');
+
+  // Afficher les champs proposés
+  var cont = document.getElementById('modalChamps');
+  cont.innerHTML = '';
+  var champs = data.champs || {};
+  Object.entries(champs).forEach(function(entry) {
+    var lbl = entry[0].replace(/_/g, ' ');
+    var val = entry[1] || '';
+    var col = document.createElement('div');
+    col.className = 'col-12';
+    col.innerHTML =
+      '<div class="p-2 rounded border bg-light">' +
+        '<span class="badge bg-warning text-dark me-2" style="font-size:0.7rem">' + lbl + '</span>' +
+        '<span style="font-size:0.9rem">' + escHTML(val) + '</span>' +
+      '</div>';
+    cont.appendChild(col);
+  });
+
+  document.getElementById('btnOui').disabled = false;
+  document.getElementById('btnNon').disabled = false;
+  document.getElementById('btnAutre').disabled = false;
+}
+
+function escHTML(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function setChargement() {
+  document.getElementById('modalSpinner').classList.remove('d-none');
+  document.getElementById('btnOui').disabled = true;
+  document.getElementById('btnNon').disabled = true;
+  document.getElementById('btnAutre').disabled = true;
+  document.getElementById('modalMessage').textContent = 'L\'IA réfléchit…';
+  document.getElementById('modalChamps').innerHTML = '';
+  document.getElementById('zoneAutre').classList.add('d-none');
+}
+
+// ──── Soumettre une réponse à l'IA ────
+async function repondre(reponse, correction) {
+  setChargement();
+  try {
+    var body = { reponse };
+    if (correction) body.correction = correction;
+
+    var resp = await fetch('/bordereaux/repondre/' + sessionId, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    // Réponse finale = fichier à télécharger
+    var ct = resp.headers.get('Content-Type') || '';
+    if (ct.includes('application/vnd') || ct.includes('application/zip')) {
+      var blob = await resp.blob();
+      var cd = resp.headers.get('Content-Disposition') || '';
+      var m = cd.match(/filename="([^"]+)"/);
+      var nom = m ? m[1] : 'Bordereau.docx';
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a'); a.href = url; a.download = nom; a.click();
+      URL.revokeObjectURL(url);
+      bootstrap.Modal.getInstance(document.getElementById('modalIA')).hide();
+      setTimeout(function() { window.location.href = '/bordereaux'; }, 800);
+      return;
+    }
+
+    var data = await resp.json();
+
+    if (!resp.ok) {
+      alert('Erreur : ' + (data.erreur || 'Inconnue'));
+      return;
+    }
+    if (data.type === 'annule') {
+      bootstrap.Modal.getInstance(document.getElementById('modalIA')).hide();
+      return;
+    }
+
+    afficherProposition(data);
+
+  } catch (err) {
+    alert('Erreur réseau : ' + err.message);
+    document.getElementById('modalSpinner').classList.add('d-none');
+  }
+}
+
+// ──── Démarrer la session ────
+document.getElementById('formDemarrer').addEventListener('submit', async function(e) {
   e.preventDefault();
-  var btn = document.getElementById('btnGenerer');
+  var btn = document.getElementById('btnDemarrer');
   var errZone = document.getElementById('zoneErreur');
   errZone.classList.add('d-none');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>L\'IA analyse le devis…';
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>L\'IA lit le devis…';
 
   try {
     var formData = new FormData(this);
-    fichesIds = Array.from(document.querySelectorAll('input[name="fiches"]:checked')).map(function(cb) { return parseInt(cb.value); });
-
-    var resp = await fetch('/bordereaux/generer', { method: 'POST', body: formData });
+    var resp = await fetch('/bordereaux/demarrer', { method: 'POST', body: formData });
     var data = await resp.json();
 
     if (!resp.ok || data.erreur) {
@@ -286,28 +307,9 @@ document.getElementById('formGenerer').addEventListener('submit', async function
       return;
     }
 
-    brouillonId = data.id;
-    var c = data.champs;
-    var id = data.identification;
-
-    // Remplir la modale
-    document.getElementById('c_NOM_DU_PROJET').value   = c.NOM_DU_PROJET   || '';
-    document.getElementById('c_NUMERO_DU_PROJET').value = c.NUMERO_DU_PROJET || '';
-    document.getElementById('c_SECTION').value         = c.SECTION          || '';
-    document.getElementById('c_TITRE').value           = c.TITRE            || '';
-    document.getElementById('c_NUMERO_DESSINS').value  = c.NUMERO_DESSINS   || '';
-    document.getElementById('c_DELAI').value           = c.DELAI            || '';
-    document.getElementById('c_DESCRIPTION').value     = c.DESCRIPTION      || '';
-    document.getElementById('c_FOURNISSEUR').value     = c.FOURNISSEUR      || '';
-    document.getElementById('c_FABRICANT').value       = c.FABRICANT        || '';
-    document.getElementById('c_ARTICLE').value         = c.ARTICLE          || '';
-    document.getElementById('c_REMARQUE').value        = c.REMARQUE         || '';
-    document.getElementById('c_NOM').value             = id.NOM             || '';
-    document.getElementById('c_SPECIALITE').value      = id.SPECIALITE      || '';
-    document.getElementById('c_ADRESSE').value         = id.ADRESSE         || '';
-    document.getElementById('c_EMIS_PAR').value        = id.EMIS_PAR        || '';
-
-    var modal = new bootstrap.Modal(document.getElementById('modalConfirm'));
+    sessionId = data.sessionId;
+    modal = new bootstrap.Modal(document.getElementById('modalIA'));
+    afficherProposition(data);
     modal.show();
 
   } catch (err) {
@@ -315,82 +317,51 @@ document.getElementById('formGenerer').addEventListener('submit', async function
     errZone.classList.remove('d-none');
   } finally {
     btn.disabled = false;
-    btn.innerHTML = '<i class="bi bi-magic"></i> Analyser avec l\'IA';
+    btn.innerHTML = '<i class="bi bi-magic"></i> Démarrer avec l\'IA';
   }
 });
 
-// ──── Oui → confirmer et télécharger ────
-document.getElementById('btnOui').addEventListener('click', async function() {
-  if (!brouillonId) return;
-  var spinner = document.getElementById('spinnerConfirm');
-  var btn = this;
-  btn.disabled = true;
-  spinner.classList.remove('d-none');
-
-  var champs = {
-    NOM_DU_PROJET:    document.getElementById('c_NOM_DU_PROJET').value,
-    NUMERO_DU_PROJET: document.getElementById('c_NUMERO_DU_PROJET').value,
-    SECTION:          document.getElementById('c_SECTION').value,
-    TITRE:            document.getElementById('c_TITRE').value,
-    NUMERO_DESSINS:   document.getElementById('c_NUMERO_DESSINS').value,
-    DELAI:            document.getElementById('c_DELAI').value,
-    DESCRIPTION:      document.getElementById('c_DESCRIPTION').value,
-    FOURNISSEUR:      document.getElementById('c_FOURNISSEUR').value,
-    FABRICANT:        document.getElementById('c_FABRICANT').value,
-    ARTICLE:          document.getElementById('c_ARTICLE').value,
-    REMARQUE:         document.getElementById('c_REMARQUE').value,
-  };
-  var identification = {
-    NOM:       document.getElementById('c_NOM').value,
-    SPECIALITE: document.getElementById('c_SPECIALITE').value,
-    ADRESSE:   document.getElementById('c_ADRESSE').value,
-    EMIS_PAR:  document.getElementById('c_EMIS_PAR').value,
-  };
-
-  try {
-    var resp = await fetch('/bordereaux/confirmer/' + brouillonId, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ champs, identification, fiches_ids: fichesIds })
-    });
-
-    if (!resp.ok) {
-      var err = await resp.json();
-      alert('Erreur : ' + (err.erreur || 'Impossible de générer.'));
-      return;
-    }
-
-    // Déclencher le téléchargement
-    var blob = await resp.blob();
-    var contentDisp = resp.headers.get('Content-Disposition') || '';
-    var match = contentDisp.match(/filename="([^"]+)"/);
-    var nomFichier = match ? match[1] : 'Bordereau.docx';
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url; a.download = nomFichier; a.click();
-    URL.revokeObjectURL(url);
-
-    bootstrap.Modal.getInstance(document.getElementById('modalConfirm')).hide();
-    brouillonId = null;
-    // Rediriger vers la liste
-    setTimeout(function() { window.location.href = '/bordereaux'; }, 800);
-
-  } catch (err) {
-    alert('Erreur réseau : ' + err.message);
-  } finally {
-    btn.disabled = false;
-    spinner.classList.add('d-none');
-  }
+// ──── Boutons Oui / Non / Autre ────
+document.getElementById('btnOui').addEventListener('click', function() {
+  document.getElementById('zoneAutre').classList.add('d-none');
+  repondre('oui');
 });
 
-// ──── Non → annuler ────
 document.getElementById('btnNon').addEventListener('click', async function() {
-  if (brouillonId) {
-    await fetch('/bordereaux/annuler/' + brouillonId, { method: 'POST' }).catch(function(){});
-    brouillonId = null;
+  if (sessionId) {
+    await fetch('/bordereaux/annuler/' + sessionId, { method: 'POST' }).catch(function(){});
+    sessionId = null;
   }
-  bootstrap.Modal.getInstance(document.getElementById('modalConfirm')).hide();
+  bootstrap.Modal.getInstance(document.getElementById('modalIA')).hide();
 });
+
+document.getElementById('btnAutre').addEventListener('click', function() {
+  var zone = document.getElementById('zoneAutre');
+  if (zone.classList.contains('d-none')) {
+    zone.classList.remove('d-none');
+    document.getElementById('textCorrection').focus();
+    // Remplacer Autre par Envoyer correction
+    this.innerHTML = '<i class="bi bi-send me-1"></i>Envoyer correction';
+    this.onclick = function() {
+      var correction = document.getElementById('textCorrection').value.trim();
+      if (!correction) { alert('Décrivez la correction à apporter.'); return; }
+      // Remettre le bouton
+      document.getElementById('btnAutre').innerHTML = '<i class="bi bi-pencil me-1"></i>Autre — Corriger';
+      document.getElementById('btnAutre').onclick = null;
+      // Rebind original handler
+      bindBtnAutre();
+      repondre('autre', correction);
+    };
+  }
+});
+
+function bindBtnAutre() {
+  document.getElementById('btnAutre').onclick = function() {
+    var zone = document.getElementById('zoneAutre');
+    zone.classList.toggle('d-none');
+    if (!zone.classList.contains('d-none')) document.getElementById('textCorrection').focus();
+  };
+}
 </script>
 
 <%- include('partials/footer', { scripts: [] }) %>
