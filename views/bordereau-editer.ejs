@@ -96,6 +96,22 @@
         <button type="button" class="btn btn-success" id="btnPdf"><i class="bi bi-file-pdf"></i> Télécharger PDF</button>
       </div>
     </form>
+
+    <!-- Changer le template PDF -->
+    <div class="card mb-2 border-warning">
+      <div class="card-header bg-warning text-dark py-1" style="cursor:pointer" id="toggleTemplate">
+        <small class="fw-bold"><i class="bi bi-upload"></i> Charger / Changer le template PDF</small>
+        <i class="bi bi-chevron-down float-end" id="templateChevron"></i>
+      </div>
+      <div class="card-body py-2 px-2 d-none" id="templateUploadZone">
+        <p class="text-muted" style="font-size:0.75rem;">Uploadez le bordereau PDF vierge T3E. Il sera affiché à droite et l'IA l'utilisera pour remplir les champs.</p>
+        <input type="file" id="templateFile" accept=".pdf" class="form-control form-control-sm mb-1">
+        <button type="button" class="btn btn-warning btn-sm w-100" id="btnUploadTemplate">
+          <i class="bi bi-cloud-upload"></i> Uploader le PDF
+        </button>
+        <div id="uploadTemplateStatus" class="mt-1" style="font-size:0.75rem;"></div>
+      </div>
+    </div>
   </div>
 
   <!-- ========== DROITE : APERÇU DU BORDEREAU ========== -->
@@ -154,18 +170,25 @@ function renderPdfPage(page) {
   });
 }
 
-pdfjsLib.getDocument({
-  url: '/bordereaux/template-pdf/<%= bordereau.id %>',
-  cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
-  cMapPacked: true,
-}).promise.then(function(pdf) {
-  pdf.getPage(1).then(function(page) {
-    // Petit délai pour laisser le DOM finaliser le layout
-    setTimeout(function() { renderPdfPage(page); }, 150);
+function chargerPdf() {
+  pdfjsLib.getDocument({
+    url: '/bordereaux/template-pdf/<%= bordereau.id %>',
+    cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
+    cMapPacked: true,
+  }).promise.then(function(pdf) {
+    pdf.getPage(1).then(function(page) {
+      setTimeout(function() { renderPdfPage(page); }, 400);
+    });
+  }).catch(function() {
+    containerEl.style.minHeight = '280px';
+    containerEl.innerHTML = '<div class="p-4 text-center text-muted">'
+      + '<i class="bi bi-file-earmark-pdf" style="font-size:3rem;color:#ffc107;"></i>'
+      + '<p class="mt-3 fw-bold text-dark">Aucun template PDF chargé</p>'
+      + '<p class="small">Utilisez le panneau "<strong>Charger / Changer le template PDF</strong>" à gauche<br>pour uploader le bordereau PDF vierge T3E.</p>'
+      + '</div>';
   });
-}).catch(function() {
-  containerEl.innerHTML = '<p class="text-center text-muted p-5">Template PDF non disponible.</p>';
-});
+}
+chargerPdf();
 
 // ============ Créer un overlay draggable ============
 function addOverlay(key, label, val) {
@@ -650,6 +673,50 @@ document.getElementById('btnIA').addEventListener('click', function() {
     btn.disabled = false;
     btn.innerHTML = '<i class="bi bi-robot"></i> Remplir avec l\'IA';
     alert('Erreur IA : ' + err.message);
+  });
+});
+
+// Toggle section upload template
+document.getElementById('toggleTemplate').addEventListener('click', function() {
+  var zone = document.getElementById('templateUploadZone');
+  var chev = document.getElementById('templateChevron');
+  zone.classList.toggle('d-none');
+  chev.className = zone.classList.contains('d-none') ? 'bi bi-chevron-down float-end' : 'bi bi-chevron-up float-end';
+});
+
+// Upload du template PDF via AJAX
+document.getElementById('btnUploadTemplate').addEventListener('click', function() {
+  var file = document.getElementById('templateFile').files[0];
+  var status = document.getElementById('uploadTemplateStatus');
+  if (!file) { status.innerHTML = '<span class="text-danger">Choisissez un fichier PDF.</span>'; return; }
+  if (!file.name.toLowerCase().endsWith('.pdf')) { status.innerHTML = '<span class="text-danger">Le fichier doit être un PDF.</span>'; return; }
+
+  var btn = this;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Upload...';
+  status.innerHTML = '';
+
+  var formData = new FormData();
+  formData.append('template', file);
+
+  fetch('/bordereaux/remplacer-template/<%= bordereau.id %>', {
+    method: 'POST',
+    body: formData,
+    credentials: 'same-origin'
+  }).then(function(r) { return r.json(); })
+  .then(function(res) {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-cloud-upload"></i> Uploader le PDF';
+    if (res.error) {
+      status.innerHTML = '<span class="text-danger">' + res.error + '</span>';
+      return;
+    }
+    status.innerHTML = '<span class="text-success"><i class="bi bi-check-circle"></i> ' + res.fichier + ' chargé (' + res.nb_champs + ' champs détectés). Rechargement...</span>';
+    setTimeout(function() { window.location.reload(); }, 1500);
+  }).catch(function(err) {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-cloud-upload"></i> Uploader le PDF';
+    status.innerHTML = '<span class="text-danger">Erreur : ' + err.message + '</span>';
   });
 });
 

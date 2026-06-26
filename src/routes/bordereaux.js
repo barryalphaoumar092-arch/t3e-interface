@@ -230,6 +230,39 @@ router.get('/editer/:id', async (req, res) => {
   res.render('bordereau-editer', { bordereau, historique, ftDocs: ftDocs.rows, templateFields, iaActive: isConfigured() });
 });
 
+// Remplacer / uploader le template PDF d'un bordereau existant
+router.post('/remplacer-template/:id', upload.single('template'), async (req, res) => {
+  const db = req.db;
+  const id = parseInt(req.params.id);
+
+  if (!req.file) return res.json({ error: 'Aucun fichier envoyé' });
+
+  const rawBuffer = fs.readFileSync(req.file.path);
+  const isPdf = rawBuffer.length > 4 && rawBuffer.slice(0, 5).toString() === '%PDF-';
+
+  if (!isPdf) {
+    try { fs.unlinkSync(req.file.path); } catch (e) {}
+    return res.json({ error: 'Le fichier doit être un PDF valide' });
+  }
+
+  let templateTexte = '';
+  try {
+    const parsed = await parseTemplate(req.file.path, req.file.originalname);
+    templateTexte = parsed.text || '';
+  } catch (e) {}
+
+  const templateData = rawBuffer.toString('base64');
+  try { fs.unlinkSync(req.file.path); } catch (e) {}
+
+  await db.execute({
+    sql: "UPDATE bordereaux SET template_data = ?, template_texte = ?, template_fichier = ?, updated_at = datetime('now') WHERE id = ?",
+    args: [templateData, templateTexte, req.file.originalname, id],
+  });
+
+  const champs = extractTemplateFields(templateTexte);
+  res.json({ ok: true, fichier: req.file.originalname, nb_champs: champs.length });
+});
+
 router.post('/sauvegarder-ajax/:id', async (req, res) => {
   try {
     const db = req.db;
