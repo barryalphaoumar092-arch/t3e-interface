@@ -226,7 +226,8 @@ router.get('/editer/:id', async (req, res) => {
     ];
   }
 
-  res.render('bordereau-editer', { bordereau, historique, ftDocs: ftDocs.rows, templateFields });
+  const { isConfigured } = require('../services/claude-client');
+  res.render('bordereau-editer', { bordereau, historique, ftDocs: ftDocs.rows, templateFields, iaActive: isConfigured() });
 });
 
 router.post('/sauvegarder-ajax/:id', async (req, res) => {

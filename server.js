@@ -14,6 +14,9 @@ app.set('views', path.join(__dirname, 'views'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Endpoint public pour le keep-alive (avant le middleware d'auth)
+app.get('/health', (req, res) => res.json({ status: 'ok', ts: Date.now() }));
+
 app.get('/login', (req, res) => {
   const erreur = req.query.erreur === '1';
   res.render('login', { erreur });
@@ -95,6 +98,15 @@ async function start() {
         console.log(`    Mode:   Cloud (Turso)`);
       }
       console.log();
+
+      // Auto-ping toutes les 14 min pour éviter le cold start Render free tier
+      if (process.env.RENDER || process.env.NODE_ENV === 'production') {
+        const siteUrl = process.env.RENDER_EXTERNAL_URL || 'https://t3e-interface.onrender.com';
+        setInterval(() => {
+          fetch(siteUrl + '/health').catch(() => {});
+        }, 14 * 60 * 1000);
+        console.log('  Keep-alive actif (ping /health toutes les 14 min)');
+      }
     });
   } catch (err) {
     console.error('Erreur au demarrage:', err);

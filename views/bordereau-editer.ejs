@@ -83,7 +83,15 @@
 
       <!-- Boutons -->
       <div class="d-grid gap-1 mb-3">
-        <button type="button" class="btn btn-outline-info btn-sm" id="btnIA"><i class="bi bi-robot"></i> Remplir avec l'IA</button>
+        <% if (iaActive) { %>
+          <button type="button" class="btn btn-outline-info btn-sm" id="btnIA"><i class="bi bi-robot"></i> Remplir avec l'IA</button>
+        <% } else { %>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="btnIA" disabled
+            data-bs-toggle="tooltip" data-bs-placement="right"
+            title="Disponible bientôt — en attente de l'activation de l'IA">
+            <i class="bi bi-robot"></i> Remplir avec l'IA <span class="badge bg-warning text-dark ms-1">bientôt</span>
+          </button>
+        <% } %>
         <button type="button" class="btn btn-primary btn-sm" id="btnSave"><i class="bi bi-save"></i> Sauvegarder</button>
         <button type="button" class="btn btn-success" id="btnPdf"><i class="bi bi-file-pdf"></i> Télécharger PDF</button>
       </div>
@@ -611,6 +619,11 @@ document.getElementById('btnIA').addEventListener('click', function() {
     btn.innerHTML = '<i class="bi bi-robot"></i> Remplir avec l\'IA';
     alert('Erreur IA: ' + err.message);
   });
+});
+
+// Initialiser les tooltips Bootstrap
+document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function(el) {
+  new bootstrap.Tooltip(el);
 });
 </script>
 

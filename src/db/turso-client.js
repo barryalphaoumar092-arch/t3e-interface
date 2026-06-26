@@ -36,6 +36,22 @@ function createTursoClient(url, authToken) {
     };
   }
 
+  async function fetchWithRetry(url, options, maxRetries = 3) {
+    let lastError;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const resp = await fetch(url, options);
+        return resp;
+      } catch (err) {
+        lastError = err;
+        if (attempt < maxRetries - 1) {
+          await new Promise(r => setTimeout(r, 300 * Math.pow(2, attempt)));
+        }
+      }
+    }
+    throw lastError;
+  }
+
   async function execute(query, paramsArray) {
     let sql, args = [];
     if (typeof query === 'string') {
@@ -55,7 +71,7 @@ function createTursoClient(url, authToken) {
       ],
     };
 
-    const resp = await fetch(baseUrl + '/v2/pipeline', {
+    const resp = await fetchWithRetry(baseUrl + '/v2/pipeline', {
       method: 'POST',
       headers: {
         'Authorization': 'Bearer ' + authToken,
@@ -93,7 +109,7 @@ function createTursoClient(url, authToken) {
     }
     requests.push({ type: 'close' });
 
-    const resp = await fetch(baseUrl + '/v2/pipeline', {
+    const resp = await fetchWithRetry(baseUrl + '/v2/pipeline', {
       method: 'POST',
       headers: {
         'Authorization': 'Bearer ' + authToken,

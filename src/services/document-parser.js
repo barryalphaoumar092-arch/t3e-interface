@@ -90,19 +90,38 @@ async function parseDoc(filePath) {
 }
 
 function extractProjectInfo(text) {
-  const info = { numero: '', client: '', adresse: '', architecte: '', date: '' };
+  const info = { numero: '', client: '', adresse: '', architecte: '', date: '', ville: '', code_postal: '' };
 
   const numMatch = text.match(/(?:projet|project|no\.?|num[ée]ro|dossier)\s*[:#]?\s*([A-Z0-9][\w.-]{1,20})/i);
   if (numMatch) info.numero = numMatch[1].trim();
 
   const archMatch = text.match(/(?:architecte|arch\.?|professionnel)\s*[:#]?\s*([^\n\r]{3,60})/i);
-  if (archMatch) info.architecte = archMatch[1].trim();
+  if (archMatch) info.architecte = archMatch[1].trim().replace(/[,;.]+$/, '');
 
-  const clientMatch = text.match(/(?:client|propri[ée]taire|donneur|destinataire|attention)\s*[:#]?\s*([^\n\r]{3,60})/i);
-  if (clientMatch) info.client = clientMatch[1].trim();
+  // Client : plusieurs patterns courants dans les devis québécois
+  const clientPatterns = [
+    /(?:client|propri[ée]taire|donneur d'ordre|destinataire|attention|à l'attention de)\s*[:#]?\s*([^\n\r]{3,80})/i,
+    /(?:syndicat de copropri[ée]t[ée]|condo|r[ée]sidence|immeuble|b[aâ]timent)\s*[^\n\r]{0,20}\n?\s*([^\n\r]{3,60})/i,
+  ];
+  for (const pat of clientPatterns) {
+    const m = text.match(pat);
+    if (m) { info.client = m[1].trim().replace(/[,;.]+$/, ''); break; }
+  }
 
-  const adresseMatch = text.match(/(?:adresse|lieu|site|emplacement|address|location)\s*[:#]?\s*([^\n\r]{5,80})/i);
-  if (adresseMatch) info.adresse = adresseMatch[1].trim();
+  const adresseMatch = text.match(/(?:adresse|lieu|site|emplacement|address|location)\s*[:#]?\s*([^\n\r]{5,100})/i);
+  if (adresseMatch) info.adresse = adresseMatch[1].trim().replace(/[,;.]+$/, '');
+
+  // Code postal québécois (ex: H2X 1A1 ou H2X1A1)
+  const cpMatch = text.match(/\b([A-Za-z]\d[A-Za-z])[\s-]?(\d[A-Za-z]\d)\b/);
+  if (cpMatch) info.code_postal = (cpMatch[1] + ' ' + cpMatch[2]).toUpperCase();
+
+  // Ville : ligne avant ou après le code postal
+  if (cpMatch) {
+    const idx = text.indexOf(cpMatch[0]);
+    const avant = text.substring(Math.max(0, idx - 60), idx);
+    const villeMatch = avant.match(/([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s-]{2,30})\s*(?:,\s*(?:QC|Québec|Quebec|ON|AB|BC))?\s*$/i);
+    if (villeMatch) info.ville = villeMatch[1].trim();
+  }
 
   const dateMatch = text.match(/(?:date|émis|issued)\s*[:#]?\s*(\d{4}[-/]\d{2}[-/]\d{2}|\d{1,2}\s+\w+\s+\d{4})/i);
   if (dateMatch) info.date = dateMatch[1].trim();

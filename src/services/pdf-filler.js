@@ -1,9 +1,17 @@
 const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 
+const COULEUR_TEXTE = rgb(0, 0, 0);
+const CHARS_PAR_PT = 0.55; // estimation largeur moyenne d'un caractère Helvetica
+
+function tronquerLigne(texte, xPx, largeurPage, fontSize) {
+  const largeurDispo = largeurPage - xPx - 4;
+  const maxChars = Math.max(10, Math.floor(largeurDispo / (fontSize * CHARS_PAR_PT)));
+  return texte.length > maxChars ? texte.substring(0, maxChars) : texte;
+}
+
 async function fillTemplatePdf(templateBuffer, positions) {
   const pdfDoc = await PDFDocument.load(templateBuffer, { ignoreEncryption: true });
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const bleu = rgb(0, 0, 0.6);
 
   const pages = pdfDoc.getPages();
   if (pages.length === 0) return pdfDoc;
@@ -23,18 +31,15 @@ async function fillTemplatePdf(templateBuffer, positions) {
     const fontSize = p.size || 9;
     const val = String(p.val);
 
-    if (val.includes('\n')) {
-      val.split('\n').forEach(function(line, i) {
-        page.drawText(line.substring(0, 200), {
-          x, y: y - (i * (fontSize + 2)),
-          size: fontSize, font, color: bleu,
-        });
+    const lignes = val.includes('\n') ? val.split('\n') : [val];
+    lignes.forEach(function(ligne, i) {
+      const ligneTronquee = tronquerLigne(ligne, x, width, fontSize);
+      if (!ligneTronquee) return;
+      page.drawText(ligneTronquee, {
+        x, y: y - (i * (fontSize + 2)),
+        size: fontSize, font, color: COULEUR_TEXTE,
       });
-    } else {
-      page.drawText(val.substring(0, 200), {
-        x, y, size: fontSize, font, color: bleu,
-      });
-    }
+    });
   });
 
   return pdfDoc;

@@ -161,18 +161,72 @@ router.post('/analyser', uploadDevis.single('devis'), async (req, res) => {
     if (!d.client_nom && info.client) d.client_nom = info.client;
     if (!d.projet_nom && info.client) d.projet_nom = info.client;
     if (!d.client_adresse && info.adresse) d.client_adresse = info.adresse;
+    if (!d.client_ville && info.ville) d.client_ville = info.ville;
+    if (!d.client_code_postal && info.code_postal) d.client_code_postal = info.code_postal;
 
-    const supMatch = devisTexte.match(/(\d[\d\s,.]*)\s*(?:pi(?:eds)?[\s²2]|sq\.?\s*f|square\s*f)/i);
-    if (supMatch) d.superficie_pc = supMatch[1].replace(/\s/g, '').replace(',', '');
+    // Superficie en pieds carrés
+    const supPcMatch = devisTexte.match(/(\d[\d\s,.]*)\s*(?:pi(?:eds?)?[\s²2]|sq\.?\s*f(?:t|eet)?|square\s*f(?:eet|t)?)/i);
+    if (supPcMatch && !d.superficie_pc) d.superficie_pc = supPcMatch[1].replace(/[\s,]/g, '');
 
-    const drainMatch = devisTexte.match(/(\d+)\s*(?:drain|drains)/i);
-    if (drainMatch) d.nb_drains = drainMatch[1];
+    // Superficie en m² → convertir en pi²
+    const supM2Match = devisTexte.match(/(\d[\d\s,.]*)\s*m[²2]/i);
+    if (supM2Match && !d.superficie_pc) {
+      const valM2 = parseFloat(supM2Match[1].replace(/[\s,]/g, ''));
+      if (!isNaN(valM2)) d.superficie_pc = Math.round(valM2 * 10.764).toString();
+    }
 
-    const telMatch = devisTexte.match(/(\d{3}[-.\s]\d{3}[-.\s]\d{4})/);
-    if (telMatch && !d.client_telephone) d.client_telephone = telMatch[1];
+    // Drains
+    const drainMatch = devisTexte.match(/(\d+)\s*drain[s]?/i);
+    if (drainMatch && !d.nb_drains) d.nb_drains = drainMatch[1];
 
-    const emailMatch = devisTexte.match(/[\w.-]+@[\w.-]+\.\w+/);
+    // Manchons d'évent
+    const manchonEventMatch = devisTexte.match(/(\d+)\s*manchon[s]?\s*d['']?[ée]vent/i);
+    if (manchonEventMatch && !d.nb_manchons_events) d.nb_manchons_events = manchonEventMatch[1];
+
+    // Manchons d'étanchéité
+    const manchonEtanchMatch = devisTexte.match(/(\d+)\s*manchon[s]?\s*(?:d['']?[ée]tanch[ée]it[ée]|de\s+tuyauterie)/i);
+    if (manchonEtanchMatch && !d.nb_manchons_etancheite) d.nb_manchons_etancheite = manchonEtanchMatch[1];
+
+    // Cols de cygne
+    const colCygneMatch = devisTexte.match(/(\d+)\s*col[s]?[\s-]de[\s-]cygne|col[s]?[\s-]cygne/i);
+    if (colCygneMatch && !d.nb_cols_cygne) d.nb_cols_cygne = colCygneMatch[1];
+
+    // Téléphone
+    const telMatch = devisTexte.match(/(?:t[ée]l(?:[ée]phone)?|phone|t\.)\s*[:#]?\s*(\d{3}[-.\s]\d{3}[-.\s]\d{4})/i)
+      || devisTexte.match(/(\d{3}[-.\s]\d{3}[-.\s]\d{4})/);
+    if (telMatch && !d.client_telephone) d.client_telephone = telMatch[1] || telMatch[0];
+
+    // Courriel
+    const emailMatch = devisTexte.match(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/i);
     if (emailMatch && !d.client_courriel) d.client_courriel = emailMatch[0];
+
+    // Système de toiture détecté dans le texte
+    if (!d.systeme_toiture) {
+      const systemeMap = [
+        [/\bBUR\b|asphalte\s+(?:et\s+)?gravier|built[\s-]up/i, 'BUR'],
+        [/\bSoprasmart\b/i, 'SOPRASMART'],
+        [/\bSoprafix\b/i, 'SOPRAFIX'],
+        [/\bColvent\b/i, 'COLVENT'],
+        [/\bEPDM\b/i, 'EPDM_PVC'],
+        [/\bTPO\b|Rhinobond/i, 'TPO_PVC_RHINOBOND'],
+        [/toiture\s+invers[ée]e?|roof\s+invers/i, 'INVERSE'],
+        [/ancestral|patrimonial/i, 'ANCESTRAL'],
+      ];
+      for (const [pat, val] of systemeMap) {
+        if (pat.test(devisTexte)) { d.systeme_toiture = val; break; }
+      }
+    }
+
+    // Épaisseur isolant
+    const isolantMatch = devisTexte.match(/(\d+(?:[.,]\d+)?)\s*(?:po(?:uces?)?|inch(?:es)?|mm|cm)\s*(?:d['']isolant|isolant|insulation)/i);
+    if (isolantMatch && !d.epaisseur_isolant) d.epaisseur_isolant = isolantMatch[1].replace(',', '.');
+
+    // Type de pontage
+    if (!d.pontage) {
+      if (/pontage\s+(?:en\s+)?bois|wood\s+deck/i.test(devisTexte)) d.pontage = 'bois';
+      else if (/pontage\s+(?:en\s+)?acier|metal\s+deck/i.test(devisTexte)) d.pontage = 'acier';
+      else if (/pontage\s+(?:en\s+)?b[ée]ton|concrete\s+deck/i.test(devisTexte)) d.pontage = 'béton';
+    }
   }
 
   // Analyse IA (si configurée)
