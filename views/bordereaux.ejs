@@ -6,39 +6,42 @@
 </div>
 
 <div class="table-responsive">
-  <table class="table table-hover">
-    <thead>
-      <tr><th>#</th><th>Projet</th><th>Titre</th><th>Statut</th><th>Créé par</th><th>Date</th><th>Actions</th></tr>
+  <table class="table table-hover align-middle">
+    <thead class="table-light">
+      <tr>
+        <th>#</th>
+        <th>Projet</th>
+        <th>Section</th>
+        <th>Date</th>
+        <th>Actions</th>
+      </tr>
     </thead>
     <tbody>
       <% bordereaux.forEach(function(b) { %>
       <tr>
-        <td><%= b.id %></td>
-        <td><strong><%= b.numero_projet || '-' %></strong></td>
-        <td><%= b.titre %></td>
+        <td class="text-muted"><%= b.id %></td>
+        <td><strong><%= b.titre || '-' %></strong></td>
+        <td><span class="badge bg-secondary"><%= b.numero_projet || '-' %></span></td>
+        <td><small class="text-muted"><%= b.created_at ? b.created_at.substring(0,10) : '-' %></small></td>
         <td>
-          <span class="badge badge-<%= b.statut %>">
-            <% if (b.statut === 'brouillon') { %><i class="bi bi-pencil"></i><% } %>
-            <% if (b.statut === 'revise') { %><i class="bi bi-eye"></i><% } %>
-            <% if (b.statut === 'approuve') { %><i class="bi bi-check-circle"></i><% } %>
-            <%= b.statut.charAt(0).toUpperCase() + b.statut.slice(1) %>
-          </span>
-        </td>
-        <td><%= b.cree_par || '-' %></td>
-        <td><%= b.created_at || '-' %></td>
-        <td>
-          <a href="/bordereaux/editer/<%= b.id %>" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i></a>
+          <a href="/bordereaux/telecharger/<%= b.id %>" class="btn btn-sm btn-outline-success" title="Télécharger .docx">
+            <i class="bi bi-download"></i> .docx
+          </a>
           <form method="POST" action="/bordereaux/supprimer/<%= b.id %>" style="display:inline" onsubmit="return confirm('Supprimer ce bordereau ?')">
-            <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+            <button type="submit" class="btn btn-sm btn-outline-danger" title="Supprimer">
+              <i class="bi bi-trash"></i>
+            </button>
           </form>
         </td>
       </tr>
       <% }) %>
       <% if (bordereaux.length === 0) { %>
-      <tr><td colspan="7" class="text-center text-muted py-5">
-        <i class="bi bi-inbox" style="font-size:3rem;"></i><br>
-        Aucun bordereau créé.<br>
-        <a href="/bordereaux/nouveau" class="btn btn-warning mt-2">Créer votre premier bordereau</a>
+      <tr><td colspan="5" class="text-center text-muted py-5">
+        <i class="bi bi-inbox" style="font-size:3rem;display:block;margin-bottom:.5rem;"></i>
+        Aucun bordereau généré.<br>
+        <a href="/bordereaux/nouveau" class="btn btn-warning mt-3">
+          <i class="bi bi-magic"></i> Générer votre premier bordereau
+        </a>
       </td></tr>
       <% } %>
     </tbody>
