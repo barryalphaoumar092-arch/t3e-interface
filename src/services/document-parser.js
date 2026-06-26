@@ -33,9 +33,7 @@ async function parseTemplate(filePath, originalName) {
 }
 
 async function parsePdf(filePath) {
-  const lib = require('pdf-parse');
-  const pdfParse = typeof lib === 'function' ? lib : (lib.default || lib.pdfParse || Object.values(lib).find(v => typeof v === 'function'));
-  if (typeof pdfParse !== 'function') throw new Error('pdf-parse: fonction introuvable dans le module');
+  const pdfParse = require('pdf-parse');
   const buffer = fs.readFileSync(filePath);
   const data = await pdfParse(buffer);
   return {
