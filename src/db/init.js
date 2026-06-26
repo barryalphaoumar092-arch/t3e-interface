@@ -14,6 +14,19 @@ if (url && url.startsWith('libsql://')) {
   console.log('Mode: Local SQLite');
 }
 
+async function runNamedMigration(name, fn) {
+  try {
+    await db.execute(`CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, applied_at TEXT DEFAULT (datetime('now')))`);
+    const r = await db.execute({ sql: 'SELECT name FROM _migrations WHERE name = ?', args: [name] });
+    if (r.rows.length > 0) return;
+    await fn();
+    await db.execute({ sql: 'INSERT OR IGNORE INTO _migrations (name) VALUES (?)', args: [name] });
+    console.log('Migration appliquée:', name);
+  } catch (e) {
+    console.error('Erreur migration', name, e.message);
+  }
+}
+
 async function initDb() {
   const r = await db.execute('SELECT COUNT(*) as c FROM categories');
   console.log(`Base de donnees connectee (${r.rows[0].c} categories)`);
@@ -72,6 +85,42 @@ async function initDb() {
   for (const sql of migrations) {
     try { await db.execute(sql); } catch (e) { /* colonne deja existante */ }
   }
+
+  // Recréer bordereaux avec le bon CHECK (session + genere autorisés)
+  await runNamedMigration('fix-bordereaux-statut-v2', async () => {
+    await db.execute(`DROP TABLE IF EXISTS bordereaux_v2`);
+    await db.execute(`CREATE TABLE bordereaux_v2 (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      numero_projet TEXT,
+      titre TEXT NOT NULL,
+      contenu JSON,
+      document_source_id INTEGER,
+      statut TEXT DEFAULT 'brouillon' CHECK(statut IN ('brouillon','revise','approuve','session','genere')),
+      cree_par TEXT,
+      modifie_par TEXT,
+      approuve_par TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      devis_fichier TEXT,
+      devis_texte TEXT,
+      template_fichier TEXT,
+      template_texte TEXT,
+      template_chemin TEXT,
+      fiches_selectionnees TEXT,
+      template_data TEXT,
+      FOREIGN KEY (document_source_id) REFERENCES documents(id)
+    )`);
+    await db.execute(`INSERT INTO bordereaux_v2
+      SELECT id, numero_projet, titre, contenu, document_source_id, statut,
+             cree_par, modifie_par, approuve_par, created_at, updated_at,
+             devis_fichier, devis_texte, template_fichier, template_texte,
+             template_chemin, fiches_selectionnees, template_data
+      FROM bordereaux`);
+    await db.execute(`DROP TABLE bordereaux`);
+    await db.execute(`ALTER TABLE bordereaux_v2 RENAME TO bordereaux`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_bordereaux_statut ON bordereaux(statut)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_bordereaux_projet ON bordereaux(numero_projet)`);
+  });
 }
 
 function getDb() {

@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS bordereaux (
   titre TEXT NOT NULL,
   contenu JSON,
   document_source_id INTEGER,
-  statut TEXT DEFAULT 'brouillon' CHECK(statut IN ('brouillon', 'revise', 'approuve')),
+  statut TEXT DEFAULT 'brouillon' CHECK(statut IN ('brouillon', 'revise', 'approuve', 'session', 'genere')),
   cree_par TEXT,
   modifie_par TEXT,
   approuve_par TEXT,
