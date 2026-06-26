@@ -219,6 +219,70 @@ document.getElementById('btnConfirmer').closest('form').addEventListener('submit
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Génération en cours...';
 });
+
+// Vérifier les infos manquantes et poser les questions dans le chat
+window.addEventListener('load', function() {
+  if (!window.chatWidgetAPI) return;
+
+  var questions = [];
+
+  // Nom du client manquant
+  var champNom = document.querySelector('[name="client_nom"]');
+  if (champNom && (!champNom.value || champNom.value === 'Client sans nom')) {
+    questions.push({
+      texte: "Je n'ai pas trouvé le nom du client dans le devis. Quel est le nom du client ou de l'organisation ?",
+      quickReplies: [],
+      fieldTarget: 'client_nom',
+      fieldLabel: 'Nom du client'
+    });
+  }
+
+  // Superficie manquante
+  var champSup = document.querySelector('[name="superficie_pc"]');
+  if (champSup && !champSup.value) {
+    questions.push({
+      texte: "La superficie du toit n'est pas indiquée dans le devis. Quelle est la superficie approximative (en pieds carrés) ?",
+      quickReplies: [
+        { label: '< 5 000 pi²',    value: '4000',  fieldTarget: 'superficie_pc', fieldLabel: 'Superficie' },
+        { label: '5 000 pi²',      value: '5000',  fieldTarget: 'superficie_pc', fieldLabel: 'Superficie' },
+        { label: '10 000 pi²',     value: '10000', fieldTarget: 'superficie_pc', fieldLabel: 'Superficie' },
+        { label: '20 000 pi²',     value: '20000', fieldTarget: 'superficie_pc', fieldLabel: 'Superficie' },
+      ]
+    });
+  }
+
+  // Système de toiture (BUR est le défaut — vérifier si c'était une valeur choisie ou un défaut)
+  var champSys = document.querySelector('[name="systeme_toiture"]');
+  var champTypeTrav = document.querySelector('[name="type_travaux"]');
+  var iaInfoBanner = document.querySelector('.alert-info');
+
+  // Si l'IA était active mais le système est BUR et il n'y a pas d'alerte IA → probablement une valeur par défaut
+  <% if (!iaActive) { %>
+  if (champSys && champSys.value === 'BUR' && champTypeTrav) {
+    questions.push({
+      texte: "Quel est le système de toiture pour ce projet ? (Je n'ai pas pu le détecter automatiquement)",
+      quickReplies: [
+        { label: 'BUR — Asphalte/Gravier',  value: 'BUR',               fieldTarget: 'systeme_toiture', fieldLabel: 'Système' },
+        { label: 'Soprasmart',               value: 'SOPRASMART',        fieldTarget: 'systeme_toiture', fieldLabel: 'Système' },
+        { label: 'Soprafix',                 value: 'SOPRAFIX',          fieldTarget: 'systeme_toiture', fieldLabel: 'Système' },
+        { label: 'EPDM/PVC',                 value: 'EPDM_PVC',          fieldTarget: 'systeme_toiture', fieldLabel: 'Système' },
+      ]
+    });
+  }
+  <% } %>
+
+  // Poser les questions avec un délai pour laisser le chat se charger
+  if (questions.length > 0) {
+    setTimeout(function() {
+      // Poser les questions une à une avec délai
+      questions.forEach(function(q, i) {
+        setTimeout(function() {
+          chatWidgetAPI.poserQuestion(q.texte, q.quickReplies);
+        }, i * 800);
+      });
+    }, 1200);
+  }
+});
 </script>
 
 <%- include('partials/footer', { scripts: [] }) %>

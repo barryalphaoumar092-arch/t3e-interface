@@ -1,15 +1,17 @@
 <!-- Widget Chat IA T3E — visible sur toutes les pages -->
-<div id="chatWidget" style="position:fixed;bottom:80px;right:20px;z-index:9999;width:350px;display:none;">
+<div id="chatWidget" style="position:fixed;bottom:80px;right:20px;z-index:9999;width:360px;display:none;">
   <div class="card shadow-lg" style="border:2px solid #0d6efd;">
     <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center py-2">
       <span><i class="bi bi-robot"></i> <strong>Assistant T3E</strong> <small class="opacity-75">• IA</small></span>
       <button type="button" class="btn-close btn-close-white btn-sm" id="chatClose" title="Fermer"></button>
     </div>
-    <div class="card-body p-2" style="height:300px;overflow-y:auto;background:#f8f9fa;" id="chatMessages">
+    <div class="card-body p-2" style="height:320px;overflow-y:auto;background:#f8f9fa;" id="chatMessages">
       <div class="d-flex justify-content-start mb-2">
-        <span class="p-2 rounded border bg-white text-dark" style="font-size:0.82rem;max-width:92%;display:inline-block;">
-          Bonjour ! Je suis votre assistant T3E. Posez-moi une question sur vos soumissions, bordereaux, systèmes de toiture ou matériaux.
-        </span>
+        <div style="max-width:92%">
+          <span class="p-2 rounded border bg-white text-dark" style="font-size:0.82rem;display:block;word-break:break-word;">
+            Bonjour ! Je suis votre assistant T3E. Posez-moi une question sur vos soumissions, bordereaux, systèmes de toiture ou matériaux.
+          </span>
+        </div>
       </div>
     </div>
     <div class="card-footer p-2 bg-white">
@@ -36,36 +38,88 @@
   var history = [];
   var contexte = (document.body.dataset.chatContexte || '').substring(0, 300);
 
-  var widget = document.getElementById('chatWidget');
-  var msgs   = document.getElementById('chatMessages');
-  var input  = document.getElementById('chatInput');
-  var sendBtn = document.getElementById('chatSend');
+  var widget    = document.getElementById('chatWidget');
+  var msgs      = document.getElementById('chatMessages');
+  var input     = document.getElementById('chatInput');
+  var sendBtn   = document.getElementById('chatSend');
+  var toggleBtn = document.getElementById('chatToggle');
   var toggleIcon = document.getElementById('chatToggleIcon');
 
-  document.getElementById('chatToggle').addEventListener('click', function() {
-    open = !open;
-    widget.style.display = open ? 'block' : 'none';
-    toggleIcon.className = open ? 'bi bi-x-lg' : 'bi bi-robot';
-    if (open) { input.focus(); msgs.scrollTop = msgs.scrollHeight; }
+  function openChat() {
+    open = true;
+    widget.style.display = 'block';
+    toggleIcon.className = 'bi bi-x-lg';
+    input.focus();
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  toggleBtn.addEventListener('click', function() {
+    open ? closeChat() : openChat();
   });
 
-  document.getElementById('chatClose').addEventListener('click', function() {
+  function closeChat() {
     open = false;
     widget.style.display = 'none';
     toggleIcon.className = 'bi bi-robot';
-  });
+  }
 
-  function appendMsg(role, text) {
-    var div = document.createElement('div');
-    div.className = 'd-flex mb-2 ' + (role === 'user' ? 'justify-content-end' : 'justify-content-start');
+  document.getElementById('chatClose').addEventListener('click', closeChat);
+
+  // Afficher un message (avec boutons de réponse rapide optionnels)
+  // quickReplies = [{label, value, fieldTarget, fieldLabel}]
+  function appendMsg(role, text, quickReplies) {
+    var isUser = role === 'user';
+    var row = document.createElement('div');
+    row.className = 'd-flex mb-2 ' + (isUser ? 'justify-content-end' : 'justify-content-start');
+
+    var wrap = document.createElement('div');
+    wrap.style.maxWidth = '94%';
+
     var span = document.createElement('span');
-    span.className = role === 'user'
+    span.className = isUser
       ? 'p-2 rounded bg-primary text-white'
       : 'p-2 rounded border bg-white text-dark';
-    span.style.cssText = 'font-size:0.82rem;max-width:92%;white-space:pre-wrap;display:inline-block;word-break:break-word;';
+    span.style.cssText = 'font-size:0.82rem;display:block;word-break:break-word;white-space:pre-wrap;';
     span.textContent = text;
-    div.appendChild(span);
-    msgs.appendChild(div);
+    wrap.appendChild(span);
+
+    // Boutons de réponse rapide (uniquement pour les messages du bot)
+    if (!isUser && quickReplies && quickReplies.length) {
+      var qrRow = document.createElement('div');
+      qrRow.className = 'mt-1 d-flex flex-wrap gap-1';
+      quickReplies.forEach(function(qr) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-outline-primary btn-sm py-0 px-2';
+        btn.style.fontSize = '0.72rem';
+        btn.textContent = qr.label;
+        btn.addEventListener('click', function() {
+          // Remplir le champ du formulaire si spécifié
+          if (qr.fieldTarget) {
+            var field = document.querySelector('[name="' + qr.fieldTarget + '"]');
+            if (field) {
+              field.value = qr.value !== undefined ? qr.value : qr.label;
+              field.dispatchEvent(new Event('change', { bubbles: true }));
+              // Surligner brièvement le champ rempli
+              field.style.borderColor = '#198754';
+              field.style.boxShadow = '0 0 0 0.2rem rgba(25,135,84,0.25)';
+              setTimeout(function() { field.style.borderColor = ''; field.style.boxShadow = ''; }, 2500);
+              // Scroller vers le champ
+              field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+          }
+          // Enlever les boutons et envoyer la réponse au chat
+          qrRow.remove();
+          input.value = qr.fieldLabel ? (qr.fieldLabel + ' : ' + qr.label) : qr.label;
+          send();
+        });
+        qrRow.appendChild(btn);
+      });
+      wrap.appendChild(qrRow);
+    }
+
+    row.appendChild(wrap);
+    msgs.appendChild(row);
     msgs.scrollTop = msgs.scrollHeight;
   }
 
@@ -93,7 +147,7 @@
       appendMsg('assistant', rep);
       history.push({ role: 'assistant', content: rep });
     })
-    .catch(function(err) {
+    .catch(function() {
       sendBtn.disabled = false;
       sendBtn.innerHTML = '<i class="bi bi-send-fill"></i>';
       appendMsg('assistant', 'Erreur de connexion. Réessayez.');
@@ -104,5 +158,25 @@
   input.addEventListener('keydown', function(e) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
   });
+
+  // API globale — accessible depuis n'importe quelle page
+  window.chatWidgetAPI = {
+    open: openChat,
+    close: closeChat,
+    // Injecter un message bot avec boutons de réponse rapide optionnels
+    // quickReplies = [{label, value, fieldTarget, fieldLabel}]
+    poserQuestion: function(texte, quickReplies) {
+      openChat();
+      setTimeout(function() {
+        appendMsg('assistant', texte, quickReplies || []);
+        history.push({ role: 'assistant', content: texte });
+      }, 200);
+    },
+    // Envoyer un message de l'utilisateur programmatiquement
+    envoyerMessage: function(texte) {
+      input.value = texte;
+      send();
+    }
+  };
 })();
 </script>
