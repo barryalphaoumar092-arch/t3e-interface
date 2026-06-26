@@ -221,6 +221,18 @@ router.post('/repondre/:id', express.json(), async (req, res) => {
     return res.json({ type: 'annule' });
   }
 
+  // Accumuler les champs confirmés — AVANT d'appeler l'IA pour l'étape suivante
+  // Quand l'utilisateur dit 'oui', la dernière réponse de l'IA (proposition) est confirmée
+  if (reponse === 'oui') {
+    const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
+    if (lastAssistant) {
+      try {
+        const lastParsed = JSON.parse(lastAssistant.content);
+        if (lastParsed.champs) Object.assign(champs_confirmes, lastParsed.champs);
+      } catch (_) {}
+    }
+  }
+
   // Construire le message utilisateur
   let msgUtilisateur;
   if (reponse === 'oui') {
@@ -243,7 +255,9 @@ router.post('/repondre/:id', express.json(), async (req, res) => {
 
   // Si réponse finale → générer le .docx
   if (iaResult.parsed.type === 'final') {
-    const champsFinaux = { ...iaResult.parsed.champs, ...identification };
+    // identification en dernier = valeurs fixes T3E ne peuvent pas être écrasées par l'IA
+    // champs_confirmes contient les valeurs accumulées des étapes 1-4 (filet de sécurité si l'IA oublie)
+    const champsFinaux = { ...champs_confirmes, ...iaResult.parsed.champs, ...identification };
     const bordereauBuffer = Buffer.from(r.rows[0].template_data, 'base64');
 
     let docxBuffer;

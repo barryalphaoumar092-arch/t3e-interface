@@ -1,9 +1,8 @@
-const JSZip = require('jszip');
+﻿const JSZip = require('jszip');
 const path = require('path');
 const fs = require('fs');
 
 const TEMPLATE_PATH = path.join(__dirname, '..', '..', 'documents', 'bordereau-template.docx');
-const N = ' '; // espace insécable (U+00A0) dans le template Word
 
 function escapeXml(str) {
   return String(str || '')
@@ -12,7 +11,7 @@ function escapeXml(str) {
     .replace(/>/g, '&gt;');
 }
 
-// Fusionne les <w:t> fragmentés sur plusieurs runs dans le même paragraphe
+// Fusionne les <w:t> fragmentes sur plusieurs runs dans le meme paragraphe
 function normalizeXmlText(xml) {
   let result = xml;
   let changed = true;
@@ -20,82 +19,74 @@ function normalizeXmlText(xml) {
   while (changed && passes < 5) {
     passes++;
     const before = result;
-    result = result.replace(/<\/w:t>(<\/w:r><w:r(?:\s[^>]*)?>(?:<w:rPr>(?:[^<]|<(?!\/w:rPr>))*<\/w:rPr>)?<w:t(?:\s[^>]*)?>)/g, '');
+    result = result.replace(
+      /<\/w:t>(<\/w:r><w:r(?:\s[^>]*)?>(?:<w:rPr>(?:[^<]|<(?!\/w:rPr>))*<\/w:rPr>)?<w:t(?:\s[^>]*)?>)/g,
+      ''
+    );
     changed = result !== before;
   }
   return result;
 }
 
-// Remplace pattern par value dans le XML, même si le texte est splitté entre runs
-function replaceInXml(xml, pattern, value) {
-  const escaped = escapeXml(pattern);
-  const safeValue = escapeXml(value);
+// Genere 3 variantes du label : NBSP (U+00A0), espace normal (U+0020), sans espace
+// Toutes nos etiquettes finissent par ':', on gere les variantes du caractere juste avant ':'
+function labelVariants(label) {
+  const base = label.replace(/[  ]:$/, '');
+  return [
+    base + ' :',  // espace insecable — format Word standard
+    base + ' :',  // espace normal — fallback
+    base + ':',        // sans espace — fallback extreme
+  ];
+}
 
-  if (xml.includes(escaped)) {
-    return xml.split(escaped).join(safeValue);
+// Cherche le label dans le XML et remplace le contenu apres ':' jusqu'a '</w:t>'
+function remplirChampDansXml(xml, label, valeur) {
+  for (const variant of labelVariants(label)) {
+    const idx = xml.indexOf(variant);
+    if (idx === -1) continue;
+
+    const colonIdx = idx + variant.length - 1; // ':' est le dernier char du variant
+    const closeIdx = xml.indexOf('</w:t>', colonIdx);
+    if (closeIdx === -1) continue;
+
+    const nouvelleValeur = valeur ? ' ' + escapeXml(String(valeur)) : '';
+    xml = xml.substring(0, colonIdx + 1) + nouvelleValeur + xml.substring(closeIdx);
+    return xml;
   }
-
-  const chars = escaped.split('');
-  const regex = chars.map(c => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('(?:<[^>]*>)*');
-  try {
-    const re = new RegExp(regex, 'g');
-    if (re.test(xml)) {
-      xml = xml.replace(re, (match) => {
-        const firstRunMatch = match.match(/<w:rPr>[\s\S]*?<\/w:rPr>/);
-        if (firstRunMatch) {
-          return `<w:r>${firstRunMatch[0]}<w:t xml:space="preserve">${safeValue}</w:t></w:r>`;
-        }
-        return safeValue;
-      });
-    }
-  } catch (e) { /* regex trop complexe, on passe */ }
-
   return xml;
 }
 
-// buf optionnel — si absent, utilise le template T3E par défaut
+// buf optionnel — si absent, utilise le template T3E par defaut
 async function remplirBordereau(champs, buf) {
   const templateBuf = buf || fs.readFileSync(TEMPLATE_PATH);
   const zip = await JSZip.loadAsync(templateBuf);
   let xml = await zip.file('word/document.xml').async('string');
 
-  // Fusionner les runs XML fragmentés AVANT les remplacements
   xml = normalizeXmlText(xml);
 
+  // Labels plus longs EN PREMIER pour eviter correspondances partielles
+  // ex: "NOM DU PROJET" avant "NOM"
   const remplacements = [
-    [`NOM DU PROJET${N}:`,    champs.NOM_DU_PROJET    || ''],
-    [`NUMÉRO DU PROJET${N}:`, champs.NUMERO_DU_PROJET || ''],
-    [`NOM${N}:`,              champs.NOM              || 'Toitures Trois Étoiles'],
-    [`SPÉCIALITÉ${N}:`,       champs.SPECIALITE       || 'COUVREUR'],
-    [`ADRESSE${N}:`,          champs.ADRESSE          || '7550 Rue Saint-Patrick, Montréal, QC H8N 1V1'],
-    [`Titre${N}:`,            champs.TITRE            || ''],
-    [`Numéro de dessins${N}:`,champs.NUMERO_DESSINS   || ''],
-    [`Nombre feuilles${N}:`,  ''],
-    [`Révision${N}:`,         ''],
-    [`Description${N}:`,      champs.DESCRIPTION      || ''],
-    [`Fournisseur${N}:`,      champs.FOURNISSEUR      || ''],
-    [`Fabricant${N}:`,        champs.FABRICANT        || ''],
-    [`Section (item)${N}:`,   champs.SECTION          || ''],
-    [`Article${N}:`,          champs.ARTICLE          || ''],
-    [`Délai${N}:`,            champs.DELAI            || ''],
-    [`Remarque${N}:`,         champs.REMARQUE         || ''],
+    ['NOM DU PROJET :',      champs.NOM_DU_PROJET    || ''],
+    ['NUMÉRO DU PROJET :', champs.NUMERO_DU_PROJET || ''],
+    ['SPÉCIALITÉ :', champs.SPECIALITE     || 'COUVREUR'],
+    ['ADRESSE :',             champs.ADRESSE          || '7550 Rue Saint-Patrick, Montréal, QC H8N 1V1'],
+    ['NOM :',                 champs.NOM              || 'Toitures Trois Étoiles'],
+    ['Titre :',               champs.TITRE            || ''],
+    ['Numéro de dessins :', champs.NUMERO_DESSINS || ''],
+    ['Nombre feuilles :',     ''],
+    ['Révision :',       ''],
+    ['Description :',         champs.DESCRIPTION      || ''],
+    ['Fournisseur :',         champs.FOURNISSEUR      || ''],
+    ['Fabricant :',           champs.FABRICANT        || ''],
+    ['Section (item) :',      champs.SECTION          || ''],
+    ['Article :',             champs.ARTICLE          || ''],
+    ['Délai :',          champs.DELAI            || ''],
+    ['Remarque :',            champs.REMARQUE         || ''],
   ];
 
   for (const [label, valeur] of remplacements) {
-    // On cherche le label (sans underscores trailing) suivi de n'importe quels _/espaces
-    const labelTrimmed = label.replace(/[\s_]+$/, '');
-    const escaped = labelTrimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const replacement = escapeXml(`${label} ${valeur}`.trimEnd());
-
-    // 1) Tentative via <w:t> avec underscores optionnels
-    const re = new RegExp(`(<w:t[^>]*>)(${escaped})[_ ]*(</w:t>)`, 'g');
-    const before = xml;
-    xml = xml.replace(re, `$1${replacement}$3`);
-
-    // 2) Si rien n'a changé, fallback replaceInXml (gère les runs encore fragmentés)
-    if (xml === before) {
-      xml = replaceInXml(xml, labelTrimmed, `${label} ${valeur}`.trimEnd());
-    }
+    xml = remplirChampDansXml(xml, label, valeur);
   }
 
   zip.file('word/document.xml', xml);
