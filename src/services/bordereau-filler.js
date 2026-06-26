@@ -6,8 +6,9 @@ const TEMPLATE_PATH = path.join(__dirname, '..', '..', 'documents', 'bordereau-t
 const N = ' '; // NBSP // espace insecable (U+00A0) dans le template Word
 const U = '_';
 
-async function remplirBordereau(champs) {
-  const templateBuf = fs.readFileSync(TEMPLATE_PATH);
+// buf optionnel — si absent, utilise le template T3E par défaut
+async function remplirBordereau(champs, buf) {
+  const templateBuf = buf || fs.readFileSync(TEMPLATE_PATH);
   const zip = await JSZip.loadAsync(templateBuf);
   let xml = await zip.file('word/document.xml').async('string');
 

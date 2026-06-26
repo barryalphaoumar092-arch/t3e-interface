@@ -8,6 +8,10 @@ const { remplirBordereau } = require('../services/bordereau-filler');
 
 const UPLOADS_DIR = path.join(__dirname, '..', '..', 'uploads');
 const upload = multer({ dest: UPLOADS_DIR, limits: { fileSize: 20 * 1024 * 1024 } });
+const uploadFields = upload.fields([
+  { name: 'devis', maxCount: 1 },
+  { name: 'bordereau', maxCount: 1 },
+]);
 
 // ──────────────────────────────────────────────
 //  Extraction des champs via OpenAI
@@ -76,26 +80,37 @@ router.get('/nouveau', (req, res) => {
   res.render('bordereau-nouveau');
 });
 
-// Génération complète : upload devis → IA → .docx rempli → téléchargement
-router.post('/generer', upload.single('devis'), async (req, res) => {
+// Génération complète : upload devis + bordereau → IA → .docx rempli → téléchargement
+router.post('/generer', uploadFields, async (req, res) => {
   const db = req.db;
   const { nom_projet } = req.body;
 
-  if (!req.file) return res.render('bordereau-nouveau', { erreur: 'Veuillez importer le devis PDF.' });
+  const devisFile = req.files && req.files.devis && req.files.devis[0];
+  const bordereauFile = req.files && req.files.bordereau && req.files.bordereau[0];
 
+  if (!devisFile) return res.render('bordereau-nouveau', { erreur: 'Veuillez importer le devis PDF.' });
+  if (!bordereauFile) return res.render('bordereau-nouveau', { erreur: 'Veuillez importer le bordereau .docx à remplir.' });
+
+  // Lire le devis
   let texteDevis = '';
   try {
-    const parsed = await parseDevis(req.file.path, req.file.originalname);
+    const parsed = await parseDevis(devisFile.path, devisFile.originalname);
     texteDevis = parsed.text || '';
   } catch (e) {
-    try { fs.unlinkSync(req.file.path); } catch (_) {}
+    try { fs.unlinkSync(devisFile.path); } catch (_) {}
+    try { fs.unlinkSync(bordereauFile.path); } catch (_) {}
     return res.render('bordereau-nouveau', { erreur: 'Impossible de lire le devis : ' + e.message });
   }
-  try { fs.unlinkSync(req.file.path); } catch (_) {}
+  try { fs.unlinkSync(devisFile.path); } catch (_) {}
 
   if (!texteDevis.trim()) {
+    try { fs.unlinkSync(bordereauFile.path); } catch (_) {}
     return res.render('bordereau-nouveau', { erreur: 'Le devis semble vide ou illisible.' });
   }
+
+  // Lire le buffer du bordereau uploadé
+  const bordereauBuffer = fs.readFileSync(bordereauFile.path);
+  try { fs.unlinkSync(bordereauFile.path); } catch (_) {}
 
   let champs;
   try {
@@ -104,12 +119,11 @@ router.post('/generer', upload.single('devis'), async (req, res) => {
     return res.render('bordereau-nouveau', { erreur: 'Erreur IA : ' + e.message });
   }
 
-  // Utiliser le nom fourni par l'utilisateur s'il a été saisi
   if (nom_projet && nom_projet.trim()) champs.NOM_DU_PROJET = nom_projet.trim();
 
   let docxBuffer;
   try {
-    docxBuffer = await remplirBordereau(champs);
+    docxBuffer = await remplirBordereau(champs, bordereauBuffer);
   } catch (e) {
     return res.render('bordereau-nouveau', { erreur: 'Erreur génération .docx : ' + e.message });
   }

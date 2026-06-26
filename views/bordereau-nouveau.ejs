@@ -11,7 +11,7 @@
   <div class="col-md-7">
     <div class="card shadow-sm">
       <div class="card-header bg-warning text-dark">
-        <h5 class="mb-0"><i class="bi bi-file-earmark-arrow-up"></i> Remplir un bordereau automatiquement</h5>
+        <h5 class="mb-0"><i class="bi bi-magic"></i> Remplir un bordereau automatiquement</h5>
       </div>
       <div class="card-body">
 
@@ -19,27 +19,41 @@
           <div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> <%= erreur %></div>
         <% } %>
 
-        <p class="text-muted mb-4">
-          Importez le devis PDF du projet — l'IA extrait les informations et remplit le bordereau T3E automatiquement.
-          Vous téléchargez directement le <strong>.docx prêt à imprimer</strong>.
-        </p>
-
         <form method="POST" action="/bordereaux/generer" enctype="multipart/form-data" id="formGenerer">
 
-          <div class="mb-3">
-            <label class="form-label fw-bold">Nom du projet <span class="text-muted fw-normal">(optionnel — l'IA le trouve dans le devis)</span></label>
-            <input type="text" name="nom_projet" class="form-control" placeholder="Ex: Réfection toiture Polytechnique Montréal">
+          <!-- 1. Devis PDF -->
+          <div class="mb-4">
+            <label class="form-label fw-bold">
+              <span class="badge bg-warning text-dark me-1">1</span>
+              Devis du projet <span class="text-danger">*</span>
+            </label>
+            <input type="file" name="devis" class="form-control" accept=".pdf" required>
+            <div class="form-text">Le devis du projet en PDF.</div>
           </div>
 
+          <!-- 2. Bordereau à remplir -->
           <div class="mb-4">
-            <label class="form-label fw-bold">Devis PDF <span class="text-danger">*</span></label>
-            <input type="file" name="devis" class="form-control" accept=".pdf,.xlsx,.xls" required>
-            <div class="form-text">Le devis du projet (PDF de préférence).</div>
+            <label class="form-label fw-bold">
+              <span class="badge bg-warning text-dark me-1">2</span>
+              Bordereau à remplir <span class="text-danger">*</span>
+            </label>
+            <input type="file" name="bordereau" class="form-control" accept=".docx" required>
+            <div class="form-text">Le bordereau vierge en format <strong>.docx</strong> (Word). Si votre bordereau est en <code>.doc</code>, ouvrez-le dans Word et sauvegardez-le en <code>.docx</code> d'abord.</div>
+          </div>
+
+          <!-- 3. Nom du projet (optionnel) -->
+          <div class="mb-4">
+            <label class="form-label fw-bold">
+              <span class="badge bg-secondary me-1">3</span>
+              Nom du projet <span class="text-muted fw-normal">(optionnel)</span>
+            </label>
+            <input type="text" name="nom_projet" class="form-control" placeholder="Ex: Réfection toiture Polytechnique Montréal">
+            <div class="form-text">Laissez vide pour que l'IA l'extraie du devis automatiquement.</div>
           </div>
 
           <div class="d-grid">
             <button type="submit" class="btn btn-warning btn-lg" id="btnGenerer">
-              <i class="bi bi-magic"></i> Générer le bordereau
+              <i class="bi bi-magic"></i> Générer le bordereau rempli
             </button>
           </div>
         </form>
@@ -51,9 +65,8 @@
       <div class="card-body py-2 px-3">
         <small class="text-muted">
           <i class="bi bi-info-circle"></i>
-          Le système utilise le template T3E officiel et remplit automatiquement :
-          nom du projet, section, matériaux, fournisseur, fabricant, délai, remarques.
-          Les champs fixes (entrepreneur, spécialité, adresse) sont toujours pré-remplis.
+          L'IA lit le devis, extrait les informations du projet et remplit automatiquement tous les champs du bordereau.
+          Les champs fixes sont toujours pré-remplis : <strong>Toitures Trois Étoiles Inc.</strong>, <strong>Couvreur</strong>, adresse.
         </small>
       </div>
     </div>
@@ -64,7 +77,7 @@
 document.getElementById('formGenerer').addEventListener('submit', function() {
   var btn = document.getElementById('btnGenerer');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>L\'IA remplit le bordereau...';
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>L\'IA remplit le bordereau&hellip;';
 });
 </script>
 
