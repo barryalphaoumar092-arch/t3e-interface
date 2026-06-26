@@ -21,26 +21,40 @@ async function extraireChamps(texteDevis, nomProjet) {
   const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
   if (!OPENAI_API_KEY) throw new Error('OPENAI_API_KEY manquante sur Render.');
 
-  const prompt = `Tu remplis un bordereau de transmission de fiches techniques pour une entreprise de couverture commerciale au Québec.
+  const prompt = `Tu es un expert en couverture commerciale au Québec. Tu dois remplir TOUS les champs d'un bordereau de transmission de fiches techniques à partir d'un devis de construction.
 
-DEVIS :
-${texteDevis.substring(0, 5000)}
+DEVIS COMPLET :
+${texteDevis.substring(0, 8000)}
 
-NOM DU PROJET FOURNI PAR L'UTILISATEUR : ${nomProjet || 'À extraire du devis'}
+NOM DU PROJET (si fourni par l'utilisateur) : ${nomProjet || '— à extraire du devis —'}
 
-Extrais et retourne UNIQUEMENT ce JSON (sans texte autour) :
+INSTRUCTIONS PAR CHAMP — sois précis et complet, comme le ferait un chargé de projet expérimenté :
+
+- NOM_DU_PROJET : Nom officiel et complet du projet tel qu'il apparaît dans le devis (ex: "Réfection de toiture — Polytechnique Montréal — Bâtiment Principal")
+- NUMERO_DU_PROJET : Numéro de section CSC ou numéro de devis (ex: "07 52 21", "07 52 00", "07520")
+- TITRE : "Fiches techniques — [nom du système de toiture] — Section [numéro]" (ex: "Fiches techniques — Membrane bitumineuse SBS — Section 07 52 21")
+- NUMERO_DESSINS : "FT-[SECTION SANS ESPACES]-001" (ex: "FT-075221-001")
+- DESCRIPTION : Description détaillée du système de toiture complet — type de membrane, isolant, pare-vapeur, méthode de pose, nombre de plis. Minimum 2 phrases. (ex: "Système de toiture en membrane de bitume modifié SBS bicouche, posée à chaud sur isolant polyisocyanurate de 2 po. Pare-vapeur en bitume modifié SBS soudé à la flamme.")
+- FOURNISSEUR : Nom complet du fournisseur ou distributeur mentionné dans le devis (ex: "Soprema Inc.", "IKO Industries", "BP Canada")
+- FABRICANT : Nom du fabricant du produit principal (souvent identique au fournisseur pour les toitures : "Soprema", "IKO", "BP")
+- SECTION : Numéro de section CSC exact tel qu'écrit dans le devis (ex: "07 52 21", "07 52 00")
+- ARTICLE : Type de produit principal avec spécifications (ex: "Membrane de bitume modifié SBS — Sopralène Flam 180", "Membrane d'asphalte modifié APP — IKO Torchflex")
+- DELAI : Délai de livraison habituel pour ce type de matériau (ex: "3 à 4 semaines", "4 à 6 semaines" pour produits spéciaux)
+- REMARQUE : Liste complète des matériaux requis avec fabricant et normes si disponibles. Inclure : membrane de base, membrane de surface, isolant, fixations, mastics, renforts. Mentionner l'architecte/ingénieur si nommé dans le devis. Format : "Matériaux requis : [liste]. Architecte : [nom si disponible]."
+
+Retourne UNIQUEMENT ce JSON valide (aucun texte avant ou après) :
 {
-  "NOM_DU_PROJET": "Nom complet du projet",
-  "NUMERO_DU_PROJET": "Numéro de projet ou section",
-  "TITRE": "Fiches techniques - [système] - Section [numéro]",
-  "NUMERO_DESSINS": "FT-[SECTION]-001",
-  "DESCRIPTION": "Description courte du système de toiture (membrane, isolant, méthode de pose)",
-  "FOURNISSEUR": "Nom du fournisseur (ex: Soprema Inc.)",
-  "FABRICANT": "Nom du fabricant (ex: Soprema)",
-  "SECTION": "Numéro de section du devis (ex: 07 52 21)",
-  "ARTICLE": "Type de produit principal (ex: Membrane de bitume modifié SBS)",
-  "DELAI": "3 à 4 semaines",
-  "REMARQUE": "Liste des matériaux principaux avec fabricant. Architecte si mentionné."
+  "NOM_DU_PROJET": "...",
+  "NUMERO_DU_PROJET": "...",
+  "TITRE": "...",
+  "NUMERO_DESSINS": "...",
+  "DESCRIPTION": "...",
+  "FOURNISSEUR": "...",
+  "FABRICANT": "...",
+  "SECTION": "...",
+  "ARTICLE": "...",
+  "DELAI": "...",
+  "REMARQUE": "..."
 }`;
 
   const resp = await fetch('https://api.openai.com/v1/chat/completions', {

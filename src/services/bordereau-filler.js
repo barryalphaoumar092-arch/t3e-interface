@@ -15,9 +15,9 @@ async function remplirBordereau(champs, buf) {
   const remplacements = [
     [`NOM DU PROJET${N}:`,           `NOM DU PROJET${N}: ${champs.NOM_DU_PROJET || ''}`],
     [`NUMÉRO DU PROJET${N}:`,   `NUMÉRO DU PROJET${N}: ${champs.NUMERO_DU_PROJET || ''}`],
-    [`NOM${N}: ${U.repeat(42)}`,     `NOM${N}: Toitures Trois Étoiles Inc.`],
-    [`SPÉCIALITÉ${N}: ${U.repeat(36)}`, `SPÉCIALITÉ${N}: Couvreur`],
-    [`ADRESSE${N}: ${U.repeat(90)}`, `ADRESSE${N}: 2215, rue Michelin, Laval (Québec) H7L 5B7`],
+    [`NOM${N}: ${U.repeat(42)}`,     `NOM${N}: ${champs.NOM || 'Toitures Trois Étoiles Inc.'}`],
+    [`SPÉCIALITÉ${N}: ${U.repeat(36)}`, `SPÉCIALITÉ${N}: ${champs.SPECIALITE || 'Couvreur'}`],
+    [`ADRESSE${N}: ${U.repeat(90)}`, `ADRESSE${N}: ${champs.ADRESSE || '2215, rue Michelin, Laval (Québec) H7L 5B7'}`],
     [`Titre${N}:`,                   `Titre${N}: ${champs.TITRE || ''}`],
     [`Numéro de dessins${N}:`,  `Numéro de dessins${N}: ${champs.NUMERO_DESSINS || 'FT-001'}`],
     [`Nombre feuilles${N}:`,         `Nombre feuilles${N}: 1`],
