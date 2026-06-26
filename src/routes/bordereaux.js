@@ -266,7 +266,8 @@ router.post('/generer/:id', async (req, res) => {
   const devisTexte = row.devis_texte || '';
   const templateTexte = row.template_texte || '';
   const projet = contenu.projet || {};
-  const templateType = contenu.template_type || (row.template_data ? detectFileType(Buffer.from(row.template_data.substring(0, 20), 'base64')) : null);
+  // Détecter le type depuis les 9 premiers octets (12 chars base64 = multiple de 4)
+  const templateType = contenu.template_type || (row.template_data ? detectFileType(Buffer.from(row.template_data.substring(0, 12), 'base64')) : null);
 
   const allMats = await db.execute('SELECT nom, fabricant, type_produit FROM materiaux ORDER BY fabricant, nom LIMIT 150');
   const allFiches = await db.execute("SELECT id, titre, source FROM documents WHERE categorie_id = (SELECT id FROM categories WHERE nom = 'Fiches techniques') AND statut = 'actif' ORDER BY source, titre");
