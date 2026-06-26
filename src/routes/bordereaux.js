@@ -37,15 +37,15 @@ RÈGLES :
 - Message explicatif court : indique d'où vient l'info
 - Si l'utilisateur dit "OUI" → passe à l'étape suivante
 - Si l'utilisateur dit "AUTRE: [correction]" → applique la correction et re-propose
-- Après confirmation de l'étape 4 → génère le JSON final
+- Après confirmation de l'étape 4 → génère le JSON final qui DOIT contenir TOUS les champs confirmés aux étapes 1-4, relis la conversation pour les retrouver
 
 FORMAT DE RÉPONSE OBLIGATOIRE — JSON valide uniquement, aucun texte à l'extérieur :
 
 Proposition (étapes 1 à 4) :
-{"type":"proposition","etape":N,"titre":"...","message":"...","champs":{"CHAMP1":"valeur",...}}
+{"type":"proposition","etape":N,"titre":"Étape N/4 — ...","message":"...","champs":{"CHAMP1":"valeur",...}}
 
-Réponse finale (après confirmation étape 4) :
-{"type":"final","champs":{"NOM_DU_PROJET":"...","NUMERO_DU_PROJET":"...","TITRE":"...","NUMERO_DESSINS":"","DESCRIPTION":"","FOURNISSEUR":"...","FABRICANT":"...","SECTION":"...","ARTICLE":"...","DELAI":"","REMARQUE":"..."}}`;
+Réponse finale (OBLIGATOIRE après confirmation étape 4 — inclure TOUTES les valeurs confirmées) :
+{"type":"final","champs":{"NOM_DU_PROJET":"[valeur étape 1]","NUMERO_DU_PROJET":"[valeur étape 1]","TITRE":"[valeur étape 3]","NUMERO_DESSINS":"","DESCRIPTION":"","FOURNISSEUR":"[valeur étape 3]","FABRICANT":"[valeur étape 3]","SECTION":"[valeur étape 2]","ARTICLE":"[valeur étape 2]","DELAI":"","REMARQUE":"[valeur étape 4]"}}`;
 
 
 // ──────────────────────────────────────────────────────
