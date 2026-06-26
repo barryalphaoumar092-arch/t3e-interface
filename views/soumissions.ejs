@@ -111,8 +111,12 @@
             <span class="badge bg-<%= statutColors[s.statut] || 'secondary' %>"><%= s.statut %></span>
           </td>
           <td><%= s.updated_at ? new Date(s.updated_at).toLocaleDateString('fr-CA') : '' %></td>
-          <td>
-            <a href="/soumissions/<%= s.id %>" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i></a>
+          <td class="text-nowrap" onclick="event.stopPropagation()">
+            <a href="/soumissions/<%= s.id %>" class="btn btn-sm btn-outline-primary" title="Voir"><i class="bi bi-eye"></i></a>
+            <form method="POST" action="/soumissions/<%= s.id %>/supprimer" class="d-inline"
+              onsubmit="return confirm('Supprimer la soumission <%= s.numero %> — <%= s.client_nom %> ?\n\nCette action est irréversible.')">
+              <button type="submit" class="btn btn-sm btn-outline-danger" title="Supprimer"><i class="bi bi-trash"></i></button>
+            </form>
           </td>
         </tr>
         <% }) %>

@@ -1,4 +1,7 @@
 <%- include('partials/header', { title: 'Éditer bordereau', page: 'bordereaux' }) %>
+<script>
+document.body.dataset.chatContexte = "Édition bordereau #<%= bordereau.id %> — <%= (bordereau.titre||'').replace(/'/g,\"\") %> | Client: <%= ((bordereau.contenu.projet||{}).client||'').replace(/'/g,\"\") %> | Projet: <%= (bordereau.numero_projet||'').replace(/'/g,\"\") %>";
+</script>
 
 <style>
   .field-overlay {

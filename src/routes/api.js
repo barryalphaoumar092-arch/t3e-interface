@@ -58,4 +58,51 @@ router.get('/materiaux', async (req, res) => {
   })));
 });
 
+router.post('/chat', async (req, res) => {
+  const { message, contexte, historique } = req.body;
+  if (!message) return res.json({ reponse: '' });
+
+  const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
+  if (!OPENAI_API_KEY) {
+    return res.json({ reponse: "L'assistant IA n'est pas activé. Ajoutez OPENAI_API_KEY dans les variables d'environnement Render." });
+  }
+
+  const systemPrompt = `Tu es l'assistant IA intégré à l'interface T3E de Toitures Trois Étoiles Inc., une entreprise de couverture commerciale au Québec.
+Tu aides les estimateurs avec : soumissions (devis de prix), bordereaux techniques, choix de systèmes de toiture, matériaux, garanties.
+Tu connais les systèmes : BUR (asphalte et gravier), Soprasmart (panneau laminé), Soprafix (fixation mécanique), Colvent, EPDM/PVC, TPO/PVC Rhinobond, Toiture Inversée, Ancestral.
+Réponds toujours en français québécois, de façon concise et professionnelle. Maximum 4-5 phrases par réponse sauf si plus de détails sont demandés.
+${contexte ? '\nContexte de la page : ' + contexte : ''}`;
+
+  const messages = [];
+  if (Array.isArray(historique)) {
+    historique.slice(-8).forEach(function(h) {
+      if (h.role && h.content) messages.push({ role: h.role, content: h.content });
+    });
+  }
+  messages.push({ role: 'user', content: message });
+
+  const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + OPENAI_API_KEY,
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o',
+      max_tokens: 600,
+      messages: [{ role: 'system', content: systemPrompt }, ...messages],
+    }),
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text();
+    console.error('OpenAI chat error:', resp.status, errText);
+    return res.json({ reponse: 'Erreur de connexion à l\'IA (' + resp.status + ').' });
+  }
+
+  const data = await resp.json();
+  const reponse = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || 'Pas de réponse.';
+  res.json({ reponse });
+});
+
 module.exports = router;

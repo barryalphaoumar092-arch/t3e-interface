@@ -1,4 +1,7 @@
 <%- include('partials/header', { title: 'Soumission — Étape 2 Validation', page: 'soumissions' }) %>
+<script>
+document.body.dataset.chatContexte = "Étape 2 validation soumission | Client: <%= (soumission.client_nom||'').replace(/'/g,\"\") %> | Système: <%= soumission.systeme_toiture %> | Travaux: <%= soumission.type_travaux %> | Superficie: <%= soumission.superficie_pc||'?' %> pi²";
+</script>
 
 <div class="row justify-content-center">
   <div class="col-md-10">

@@ -1,0 +1,108 @@
+<!-- Widget Chat IA T3E — visible sur toutes les pages -->
+<div id="chatWidget" style="position:fixed;bottom:80px;right:20px;z-index:9999;width:350px;display:none;">
+  <div class="card shadow-lg" style="border:2px solid #0d6efd;">
+    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center py-2">
+      <span><i class="bi bi-robot"></i> <strong>Assistant T3E</strong> <small class="opacity-75">• IA</small></span>
+      <button type="button" class="btn-close btn-close-white btn-sm" id="chatClose" title="Fermer"></button>
+    </div>
+    <div class="card-body p-2" style="height:300px;overflow-y:auto;background:#f8f9fa;" id="chatMessages">
+      <div class="d-flex justify-content-start mb-2">
+        <span class="p-2 rounded border bg-white text-dark" style="font-size:0.82rem;max-width:92%;display:inline-block;">
+          Bonjour ! Je suis votre assistant T3E. Posez-moi une question sur vos soumissions, bordereaux, systèmes de toiture ou matériaux.
+        </span>
+      </div>
+    </div>
+    <div class="card-footer p-2 bg-white">
+      <div class="input-group input-group-sm">
+        <input type="text" id="chatInput" class="form-control" placeholder="Votre question..." maxlength="500">
+        <button class="btn btn-primary px-3" id="chatSend" title="Envoyer (Entrée)">
+          <i class="bi bi-send-fill"></i>
+        </button>
+      </div>
+      <div style="font-size:0.7rem;color:#aaa;margin-top:3px;text-align:right;">Propulsé par OpenAI gpt-4o</div>
+    </div>
+  </div>
+</div>
+
+<button id="chatToggle" title="Assistant T3E IA"
+  style="position:fixed;bottom:20px;right:20px;z-index:9999;width:56px;height:56px;border-radius:50%;border:none;box-shadow:0 4px 14px rgba(13,110,253,0.5);"
+  class="btn btn-primary">
+  <i class="bi bi-robot" style="font-size:1.5rem;" id="chatToggleIcon"></i>
+</button>
+
+<script>
+(function() {
+  var open = false;
+  var history = [];
+  var contexte = (document.body.dataset.chatContexte || '').substring(0, 300);
+
+  var widget = document.getElementById('chatWidget');
+  var msgs   = document.getElementById('chatMessages');
+  var input  = document.getElementById('chatInput');
+  var sendBtn = document.getElementById('chatSend');
+  var toggleIcon = document.getElementById('chatToggleIcon');
+
+  document.getElementById('chatToggle').addEventListener('click', function() {
+    open = !open;
+    widget.style.display = open ? 'block' : 'none';
+    toggleIcon.className = open ? 'bi bi-x-lg' : 'bi bi-robot';
+    if (open) { input.focus(); msgs.scrollTop = msgs.scrollHeight; }
+  });
+
+  document.getElementById('chatClose').addEventListener('click', function() {
+    open = false;
+    widget.style.display = 'none';
+    toggleIcon.className = 'bi bi-robot';
+  });
+
+  function appendMsg(role, text) {
+    var div = document.createElement('div');
+    div.className = 'd-flex mb-2 ' + (role === 'user' ? 'justify-content-end' : 'justify-content-start');
+    var span = document.createElement('span');
+    span.className = role === 'user'
+      ? 'p-2 rounded bg-primary text-white'
+      : 'p-2 rounded border bg-white text-dark';
+    span.style.cssText = 'font-size:0.82rem;max-width:92%;white-space:pre-wrap;display:inline-block;word-break:break-word;';
+    span.textContent = text;
+    div.appendChild(span);
+    msgs.appendChild(div);
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  function send() {
+    var msg = input.value.trim();
+    if (!msg) return;
+    input.value = '';
+    appendMsg('user', msg);
+    history.push({ role: 'user', content: msg });
+
+    sendBtn.disabled = true;
+    sendBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+    fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: msg, contexte: contexte, historique: history.slice(-8) }),
+      credentials: 'same-origin'
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      sendBtn.disabled = false;
+      sendBtn.innerHTML = '<i class="bi bi-send-fill"></i>';
+      var rep = data.reponse || 'Pas de réponse.';
+      appendMsg('assistant', rep);
+      history.push({ role: 'assistant', content: rep });
+    })
+    .catch(function(err) {
+      sendBtn.disabled = false;
+      sendBtn.innerHTML = '<i class="bi bi-send-fill"></i>';
+      appendMsg('assistant', 'Erreur de connexion. Réessayez.');
+    });
+  }
+
+  sendBtn.addEventListener('click', send);
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+  });
+})();
+</script>
