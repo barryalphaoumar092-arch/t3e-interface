@@ -16,32 +16,37 @@ const uploadFields = upload.fields([
 // ──────────────────────────────────────────────────────
 //  Prompt système — définit le comportement de l'IA
 // ──────────────────────────────────────────────────────
-const SYSTEM_PROMPT = `Tu es un chargé de projet expert en couverture commerciale au Québec. Tu remplis un bordereau de transmission de fiches techniques étape par étape, en proposant des valeurs et en demandant confirmation à l'utilisateur.
+const SYSTEM_PROMPT = `Tu es un chargé de projet expert en couverture commerciale au Québec. Tu remplis un bordereau de transmission de fiches techniques étape par étape.
 
-PROCESSUS EN 5 ÉTAPES :
-Étape 1 — Identification du projet : NOM_DU_PROJET, NUMERO_DU_PROJET, SECTION
-Étape 2 — Titre et numérotation : TITRE, NUMERO_DESSINS
-Étape 3 — Description du système : DESCRIPTION, ARTICLE
-Étape 4 — Fournisseurs : FOURNISSEUR, FABRICANT
-Étape 5 — Délai et remarques : DELAI, REMARQUE
+SOURCES D'INFORMATION — respecte strictement ces règles :
+1. Du DEVIS uniquement → NOM_DU_PROJET, NUMERO_DU_PROJET, SECTION, ARTICLE
+2. De la LISTE DES MATÉRIAUX fournie → TITRE, FOURNISSEUR, FABRICANT (cherche dans la liste le matériau mentionné dans le devis)
+3. Valeurs fixes entrepreneur → déjà dans le bordereau, ne pas toucher
+4. Toujours vide → NUMERO_DESSINS = "", DESCRIPTION = "", DELAI = ""
+5. Généré par l'IA → REMARQUE (professionnelle, en lien avec le projet)
+
+PROCESSUS EN 4 ÉTAPES :
+Étape 1 — Identification : NOM_DU_PROJET, NUMERO_DU_PROJET (source: devis)
+Étape 2 — Section et article : SECTION, ARTICLE (source: devis)
+Étape 3 — Fiche technique : TITRE, FOURNISSEUR, FABRICANT (source: liste des matériaux — trouve le match avec ce qui est dans le devis)
+Étape 4 — Remarque : REMARQUE générée par l'IA
 
 RÈGLES :
-- Pour chaque étape, propose des valeurs précises extraites du devis
-- Explique brièvement d'où viennent les informations
+- Extrais les valeurs exactement comme dans le devis/liste, sans inventer
+- Pour le match matériaux : si plusieurs correspondances, choisis la plus précise; si aucune, laisse vide
+- Message explicatif court : indique d'où vient l'info
 - Si l'utilisateur dit "OUI" → passe à l'étape suivante
-- Si l'utilisateur dit "NON" → annule tout
-- Si l'utilisateur dit "AUTRE: [correction]" → tiens compte de la correction et re-propose cette étape
-- À l'étape 5, après confirmation, génère le JSON final
+- Si l'utilisateur dit "AUTRE: [correction]" → applique la correction et re-propose
+- Après confirmation de l'étape 4 → génère le JSON final
 
-FORMAT DE RÉPONSE OBLIGATOIRE — toujours du JSON valide uniquement :
+FORMAT DE RÉPONSE OBLIGATOIRE — JSON valide uniquement, aucun texte à l'extérieur :
 
-Pour une proposition (étapes 1 à 5) :
-{"type":"proposition","etape":N,"titre":"...","message":"...","champs":{"CHAMP1":"valeur","CHAMP2":"valeur"}}
+Proposition (étapes 1 à 4) :
+{"type":"proposition","etape":N,"titre":"...","message":"...","champs":{"CHAMP1":"valeur",...}}
 
-Pour la réponse finale (après confirmation de l'étape 5) :
-{"type":"final","champs":{"NOM_DU_PROJET":"...","NUMERO_DU_PROJET":"...","TITRE":"...","NUMERO_DESSINS":"...","DESCRIPTION":"...","FOURNISSEUR":"...","FABRICANT":"...","SECTION":"...","ARTICLE":"...","DELAI":"...","REMARQUE":"..."}}
+Réponse finale (après confirmation étape 4) :
+{"type":"final","champs":{"NOM_DU_PROJET":"...","NUMERO_DU_PROJET":"...","TITRE":"...","NUMERO_DESSINS":"","DESCRIPTION":"","FOURNISSEUR":"...","FABRICANT":"...","SECTION":"...","ARTICLE":"...","DELAI":"","REMARQUE":"..."}}`;
 
-Ne mets AUCUN texte en dehors du JSON.`;
 
 // ──────────────────────────────────────────────────────
 //  Appel OpenAI
@@ -128,19 +133,32 @@ router.post('/demarrer', uploadFields, async (req, res) => {
 
   // Identification fournie par l'utilisateur
   const identification = {
-    NOM:       nom_entrepreneur?.trim() || 'Toitures Trois Étoiles Inc.',
-    SPECIALITE: specialite?.trim()      || 'Couvreur',
-    ADRESSE:   adresse?.trim()          || '2215, rue Michelin, Laval (Québec) H7L 5B7',
+    NOM:       nom_entrepreneur?.trim() || 'Toitures Trois Étoiles',
+    SPECIALITE: specialite?.trim()      || 'COUVREUR',
+    ADRESSE:   adresse?.trim()          || '7550 Rue Saint-Patrick, Montréal, QC H8N 1V1',
     EMIS_PAR:  emis_par?.trim()         || '',
   };
 
-  // Premier message vers l'IA : lire le devis et proposer étape 1
+  // Charger la liste des matériaux depuis la DB
+  let listeMateriaux = '';
+  try {
+    const matRows = (await db.execute(
+      `SELECT nom, fabricant, fournisseur, type_produit FROM materiaux ORDER BY fabricant, nom`
+    )).rows;
+    listeMateriaux = matRows
+      .map(m => [m.nom, m.fabricant && `Fabricant: ${m.fabricant}`, m.fournisseur && `Fournisseur: ${m.fournisseur}`, m.type_produit && `Type: ${m.type_produit}`].filter(Boolean).join(' | '))
+      .join('\n');
+  } catch (_) {}
+
+  // Premier message vers l'IA : devis + liste matériaux
   const premierMessage = `DEVIS À ANALYSER :
-${texteDevis.substring(0, 10000)}
+${texteDevis.substring(0, 8000)}
 
-${nom_projet ? `NOM DU PROJET fourni par l'utilisateur : ${nom_projet}` : ''}
+${nom_projet ? `NOM DU PROJET indiqué par l'utilisateur : ${nom_projet}\n` : ''}
+LISTE DES MATÉRIAUX T3E (source: Excel) :
+${listeMateriaux || '(aucun matériau disponible)'}
 
-Commence l'étape 1 : analyse le devis et propose l'identification du projet (NOM_DU_PROJET, NUMERO_DU_PROJET, SECTION). Explique ce que tu as trouvé dans le devis pour justifier tes choix.`;
+Commence l'étape 1 : extrais du devis le NOM_DU_PROJET et le NUMERO_DU_PROJET. Indique exactement où tu les as trouvés dans le texte.`;
 
   let iaResult;
   try {

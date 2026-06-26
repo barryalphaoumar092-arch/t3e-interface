@@ -47,15 +47,15 @@
                 <div class="row g-2">
                   <div class="col-md-6">
                     <label class="form-label form-label-sm fw-semibold">NOM</label>
-                    <input type="text" name="nom_entrepreneur" class="form-control form-control-sm" value="Toitures Trois Étoiles Inc.">
+                    <input type="text" name="nom_entrepreneur" class="form-control form-control-sm" value="Toitures Trois Étoiles">
                   </div>
                   <div class="col-md-6">
                     <label class="form-label form-label-sm fw-semibold">SPÉCIALITÉ</label>
-                    <input type="text" name="specialite" class="form-control form-control-sm" value="Couvreur">
+                    <input type="text" name="specialite" class="form-control form-control-sm" value="COUVREUR">
                   </div>
                   <div class="col-12">
                     <label class="form-label form-label-sm fw-semibold">ADRESSE</label>
-                    <input type="text" name="adresse" class="form-control form-control-sm" value="2215, rue Michelin, Laval (Québec) H7L 5B7">
+                    <input type="text" name="adresse" class="form-control form-control-sm" value="7550 Rue Saint-Patrick, Montréal, QC H8N 1V1">
                   </div>
                   <div class="col-md-6">
                     <label class="form-label form-label-sm fw-semibold">ÉMIS PAR</label>
@@ -198,7 +198,7 @@ function toggleTous(etat) {
 // ──── Afficher une proposition dans la modale ────
 function afficherProposition(data) {
   document.getElementById('modalEtapeTitre').textContent = data.titre || 'Proposition IA';
-  document.getElementById('modalEtapeBadge').textContent = data.etape ? 'Étape ' + data.etape + '/5' : '';
+  document.getElementById('modalEtapeBadge').textContent = data.etape ? 'Étape ' + data.etape + '/4' : '';
   document.getElementById('modalMessage').textContent = data.message || '';
   document.getElementById('zoneAutre').classList.add('d-none');
   document.getElementById('textCorrection').value = '';
