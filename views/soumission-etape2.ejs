@@ -133,21 +133,62 @@
                 </div>
                 <div class="col-3">
                   <label class="form-label">Drains</label>
-                  <input type="number" name="nb_drains" class="form-control" value="<%= soumission.nb_drains || '' %>" min="0">
+                  <input type="text" name="nb_drains" class="form-control" value="<%= soumission.nb_drains || '' %>" placeholder="ex: 11 ou les">
                 </div>
                 <div class="col-3">
                   <label class="form-label">Manchons év.</label>
-                  <input type="number" name="nb_manchons_events" class="form-control" value="<%= soumission.nb_manchons_events || '' %>" min="0">
+                  <input type="text" name="nb_manchons_events" class="form-control" value="<%= soumission.nb_manchons_events || '' %>" placeholder="ex: 8 ou les">
                 </div>
                 <div class="col-3">
                   <label class="form-label">Manchons ét.</label>
-                  <input type="number" name="nb_manchons_etancheite" class="form-control" value="<%= soumission.nb_manchons_etancheite || '' %>" min="0">
+                  <input type="text" name="nb_manchons_etancheite" class="form-control" value="<%= soumission.nb_manchons_etancheite || '' %>" placeholder="ex: 6 ou les">
                 </div>
                 <div class="col-3">
                   <label class="form-label">Cols cygne</label>
-                  <input type="number" name="nb_cols_cygne" class="form-control" value="<%= soumission.nb_cols_cygne || '' %>" min="0">
+                  <input type="text" name="nb_cols_cygne" class="form-control" value="<%= soumission.nb_cols_cygne || '' %>" placeholder="ex: 4 ou les">
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Détails techniques (extraits par l'IA) -->
+      <div class="card mb-3">
+        <div class="card-header bg-info text-dark"><h6 class="mb-0"><i class="bi bi-robot"></i> Détails techniques (extraits par l'IA)</h6></div>
+        <div class="card-body">
+          <div class="row g-2">
+            <div class="col-md-4">
+              <label class="form-label">Type d'isolant</label>
+              <input type="text" name="type_isolant" class="form-control form-control-sm" value="<%= soumission.type_isolant || '' %>" placeholder="ex: polyisocyanurate">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Pente isolant</label>
+              <input type="text" name="pente_isolant" class="form-control form-control-sm" value="<%= soumission.pente_isolant || '' %>" placeholder="ex: 2%">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Type relevés</label>
+              <input type="text" name="type_releves" class="form-control form-control-sm" value="<%= soumission.type_releves || '' %>" placeholder="ex: contreplaqué ½''">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Bassins concernés</label>
+              <input type="text" name="bassins" class="form-control form-control-sm" value="<%= soumission.bassins || '' %>" placeholder="ex: G-4 à G-12, F-1, E-3">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Sections devis</label>
+              <input type="text" name="sections_devis" class="form-control form-control-sm" value="<%= soumission.sections_devis || '' %>" placeholder="ex: 07 52 21, 07 62 00">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Documents reçus</label>
+              <input type="text" name="documents_recus" class="form-control form-control-sm" value="<%= soumission.documents_recus || '' %>">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Ventilateur Max.</label>
+              <input type="text" name="ventilateur_max" class="form-control form-control-sm" value="<%= soumission.ventilateur_max || '' %>">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Coût remp. isolant</label>
+              <input type="text" name="cout_remplacement_isolant" class="form-control form-control-sm" value="<%= soumission.cout_remplacement_isolant || '' %>">
             </div>
           </div>
         </div>
@@ -159,8 +200,8 @@
         <div class="card-body">
           <div class="row g-3">
             <div class="col-md-3">
-              <label class="form-label fw-bold">Prix total ($) *</label>
-              <input type="number" name="prix_total" class="form-control" step="0.01" value="<%= soumission.prix_total || '' %>" required>
+              <label class="form-label fw-bold">Prix total ($)</label>
+              <input type="number" name="prix_total" class="form-control" step="0.01" value="<%= soumission.prix_total || '' %>" placeholder="Rempli par l'estimateur">
             </div>
             <div class="col-md-3">
               <label class="form-label">Garantie T3E</label>

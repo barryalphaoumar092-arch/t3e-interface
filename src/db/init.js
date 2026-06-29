@@ -70,7 +70,18 @@ async function initDb() {
       updated_at TEXT DEFAULT (datetime('now'))
     )`,
   ];
+
+  const alterMigrations = [
+    'ALTER TABLE soumissions ADD COLUMN type_isolant TEXT',
+    'ALTER TABLE soumissions ADD COLUMN type_releves TEXT',
+    'ALTER TABLE soumissions ADD COLUMN bassins TEXT',
+    'ALTER TABLE soumissions ADD COLUMN sections_devis TEXT',
+  ];
+
   for (const sql of migrations) {
+    try { await db.execute(sql); } catch (e) { /* table deja existante */ }
+  }
+  for (const sql of alterMigrations) {
     try { await db.execute(sql); } catch (e) { /* colonne deja existante */ }
   }
 }

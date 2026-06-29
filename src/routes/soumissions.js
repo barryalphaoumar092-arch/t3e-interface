@@ -229,30 +229,51 @@ router.post('/analyser', uploadDevis.single('devis'), async (req, res) => {
     }
   }
 
-  // Analyse IA (si configurée)
-  if (isConfigured() && (devisTexte || d.client_nom)) {
+  // Analyse IA EXHAUSTIVE (GPT-4o, prompt détaillé comme les 12 étapes manuelles)
+  if (isConfigured() && devisTexte) {
     try {
-      const iaResult = await analyserDevis(devisTexte, `Client: ${d.client_nom || ''}, Type: ${d.type_travaux || ''}`);
+      const { analyserDevisSoumission } = require('../services/claude-client');
+      // Envoyer un maximum de texte à l'IA (jusqu'à 30000 chars pour couvrir les sections techniques)
+      const texteIA = devisTexte.substring(0, 30000);
+      console.log(`[IA Soumission] Envoi de ${texteIA.length} chars au modèle GPT-4o...`);
+      const iaResult = await analyserDevisSoumission(texteIA);
+      console.log(`[IA Soumission] Résultat:`, JSON.stringify(iaResult).substring(0, 500));
+
       if (iaResult && !iaResult.error) {
-        if (!d.client_nom && iaResult.client_nom) d.client_nom = iaResult.client_nom;
-        if (!d.client_adresse && iaResult.client_adresse) d.client_adresse = iaResult.client_adresse;
-        if (!d.client_ville && iaResult.client_ville) d.client_ville = iaResult.client_ville;
-        if (!d.client_contact && iaResult.client_contact) d.client_contact = iaResult.client_contact;
-        if (!d.client_telephone && iaResult.client_telephone) d.client_telephone = iaResult.client_telephone;
-        if (!d.client_courriel && iaResult.client_courriel) d.client_courriel = iaResult.client_courriel;
-        if (!d.projet_nom && iaResult.projet_nom) d.projet_nom = iaResult.projet_nom;
-        if (!d.superficie_pc && iaResult.superficie_pc) d.superficie_pc = iaResult.superficie_pc;
-        if (!d.pontage && iaResult.pontage) d.pontage = iaResult.pontage;
-        if (!d.epaisseur_isolant && iaResult.epaisseur_isolant) d.epaisseur_isolant = iaResult.epaisseur_isolant;
-        if (!d.nb_drains && iaResult.nb_drains) d.nb_drains = iaResult.nb_drains;
-        if (!d.nb_manchons_events && iaResult.nb_manchons_events) d.nb_manchons_events = iaResult.nb_manchons_events;
-        if (!d.nb_manchons_etancheite && iaResult.nb_manchons_etancheite) d.nb_manchons_etancheite = iaResult.nb_manchons_etancheite;
-        if (!d.nb_cols_cygne && iaResult.nb_cols_cygne) d.nb_cols_cygne = iaResult.nb_cols_cygne;
-        if (iaResult.systeme_toiture_recommande) d.systeme_toiture = iaResult.systeme_toiture_recommande;
-        if (iaResult.type_travaux_recommande) d.type_travaux = iaResult.type_travaux_recommande;
+        // L'IA REMPLACE tout — elle est plus fiable que le regex
+        if (iaResult.client_nom) d.client_nom = iaResult.client_nom;
+        if (iaResult.client_adresse) d.client_adresse = iaResult.client_adresse;
+        if (iaResult.client_ville) d.client_ville = iaResult.client_ville;
+        if (iaResult.client_province) d.client_province = iaResult.client_province;
+        if (iaResult.client_code_postal) d.client_code_postal = iaResult.client_code_postal;
+        if (iaResult.client_contact) d.client_contact = iaResult.client_contact;
+        if (iaResult.client_telephone) d.client_telephone = iaResult.client_telephone;
+        if (iaResult.client_courriel) d.client_courriel = iaResult.client_courriel;
+        if (iaResult.projet_nom) d.projet_nom = iaResult.projet_nom;
+        if (iaResult.projet_adresse) d.projet_adresse = iaResult.projet_adresse;
+        if (iaResult.superficie_pc) d.superficie_pc = iaResult.superficie_pc;
+        if (iaResult.pontage) d.pontage = iaResult.pontage;
+        if (iaResult.epaisseur_isolant) d.epaisseur_isolant = iaResult.epaisseur_isolant;
+        if (iaResult.pente_isolant) d.pente_isolant = iaResult.pente_isolant;
+        if (iaResult.nb_drains) d.nb_drains = iaResult.nb_drains;
+        if (iaResult.nb_manchons_events) d.nb_manchons_events = iaResult.nb_manchons_events;
+        if (iaResult.nb_manchons_etancheite) d.nb_manchons_etancheite = iaResult.nb_manchons_etancheite;
+        if (iaResult.nb_cols_cygne) d.nb_cols_cygne = iaResult.nb_cols_cygne;
+        if (iaResult.systeme_toiture) d.systeme_toiture = iaResult.systeme_toiture;
+        if (iaResult.type_travaux) d.type_travaux = iaResult.type_travaux;
+        if (iaResult.garantie_t3e) d.garantie_t3e = iaResult.garantie_t3e;
+        if (iaResult.garantie_manufacturier) d.garantie_manufacturier = iaResult.garantie_manufacturier;
+        if (iaResult.cout_remplacement_cp) d.cout_remplacement_cp = iaResult.cout_remplacement_cp;
+        if (iaResult.documents_recus) d.documents_recus = iaResult.documents_recus;
+        if (iaResult.sections_devis) d.sections_devis = iaResult.sections_devis;
+        if (iaResult.bassins) d.bassins = iaResult.bassins;
+        // Champs techniques stockés en notes pour le générateur
+        if (iaResult.type_isolant) d.type_isolant = iaResult.type_isolant;
+        if (iaResult.type_releves) d.type_releves = iaResult.type_relevés || iaResult.type_releves;
+        if (iaResult.notes) d.notes = iaResult.notes;
       }
     } catch (err) {
-      console.error('Erreur IA analyse devis:', err.message);
+      console.error('Erreur IA analyse soumission:', err.message);
     }
   }
 
@@ -271,8 +292,9 @@ router.post('/analyser', uploadDevis.single('devis'), async (req, res) => {
       nb_drains, nb_manchons_events, nb_manchons_etancheite, nb_cols_cygne,
       ventilateur_max, cout_remplacement_cp, cout_remplacement_isolant,
       prix_total, garantie_t3e, garantie_manufacturier,
-      exclusions_specifiques, documents_recus, notes, template_utilise, cree_par
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      exclusions_specifiques, documents_recus, notes, template_utilise, cree_par,
+      type_isolant, type_releves, bassins, sections_devis
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `, [
     numero, clientNom, v(d.client_adresse), v(d.client_ville), v(d.client_province) || 'QC', v(d.client_code_postal),
     v(d.client_contact), v(d.client_telephone), v(d.client_courriel),
@@ -281,7 +303,8 @@ router.post('/analyser', uploadDevis.single('devis'), async (req, res) => {
     v(d.nb_drains), v(d.nb_manchons_events), v(d.nb_manchons_etancheite), v(d.nb_cols_cygne),
     v(d.ventilateur_max), v(d.cout_remplacement_cp), v(d.cout_remplacement_isolant),
     v(d.prix_total), v(d.garantie_t3e) || '5 ans', v(d.garantie_manufacturier) || '10 ans',
-    v(d.exclusions_specifiques), v(d.documents_recus || d._documents_recus), v(d.notes), v(templateKey), v(d.cree_par) || 'Estimateur'
+    v(d.exclusions_specifiques), v(d.documents_recus || d._documents_recus), v(d.notes), v(templateKey), v(d.cree_par) || 'Estimateur',
+    v(d.type_isolant), v(d.type_releves), v(d.bassins), v(d.sections_devis)
   ]);
 
   const created = await db.execute('SELECT id FROM soumissions WHERE numero = ?', [numero]);
@@ -323,6 +346,7 @@ router.post('/:id/confirmer', async (req, res) => {
       ventilateur_max=?, cout_remplacement_cp=?, cout_remplacement_isolant=?,
       prix_total=?, garantie_t3e=?, garantie_manufacturier=?,
       exclusions_specifiques=?, notes=?, template_utilise=?,
+      type_isolant=?, type_releves=?, bassins=?, sections_devis=?,
       updated_at=datetime('now')
     WHERE id=?
   `, [
@@ -334,6 +358,7 @@ router.post('/:id/confirmer', async (req, res) => {
     v(d.ventilateur_max), v(d.cout_remplacement_cp), v(d.cout_remplacement_isolant),
     v(d.prix_total), v(d.garantie_t3e) || '5 ans', v(d.garantie_manufacturier) || '10 ans',
     v(d.exclusions_specifiques), v(d.notes), v(templateKey),
+    v(d.type_isolant), v(d.type_releves), v(d.bassins), v(d.sections_devis),
     req.params.id
   ]);
 
@@ -389,6 +414,7 @@ router.post('/:id/modifier', async (req, res) => {
       ventilateur_max=?, cout_remplacement_cp=?, cout_remplacement_isolant=?,
       prix_total=?, garantie_t3e=?, garantie_manufacturier=?,
       exclusions_specifiques=?, documents_recus=?, notes=?, template_utilise=?,
+      type_isolant=?, type_releves=?, bassins=?, sections_devis=?,
       updated_at=datetime('now')
     WHERE id=?
   `, [
@@ -400,6 +426,7 @@ router.post('/:id/modifier', async (req, res) => {
     v(d.ventilateur_max), v(d.cout_remplacement_cp), v(d.cout_remplacement_isolant),
     v(d.prix_total), v(d.garantie_t3e) || '5 ans', v(d.garantie_manufacturier) || '10 ans',
     v(d.exclusions_specifiques), v(d.documents_recus), v(d.notes), v(templateKey),
+    v(d.type_isolant), v(d.type_releves), v(d.bassins), v(d.sections_devis),
     req.params.id
   ]);
 

@@ -202,7 +202,10 @@ function replaceBlankFields(xml, soumission) {
   const s = soumission;
   const BLANK = '______';
 
-  // Normaliser le XML pour fusionner les text runs fragmentés
+  // Normaliser le XML pour fusionner les text runs fragmentés (2 passes)
+  xml = normalizeXmlText(xml);
+  // Passe supplémentaire : supprimer les proofErr qui cassent les remplacements
+  xml = xml.replace(/<w:proofErr[^/]*\/>/g, '');
   xml = normalizeXmlText(xml);
 
   // Surface
@@ -220,32 +223,77 @@ function replaceBlankFields(xml, soumission) {
   xml = xml.replace(regex2, ep);
   xml = xml.replace(/_+(?=\s*Polyiso)/gi, ep);
 
-  // Pente isolant
+  // Pente isolant — résoudre le choix slash
   if (s.pente_isolant) {
     const pente = escapeXml(s.pente_isolant);
     xml = xml.replace(/pente 1% \/ 2%/g, `pente ${pente}`);
+    xml = xml.replace(/pente\s+\d+%\s*\/\s*\d+%/g, `pente ${pente}`);
     xml = xml.replace(/sloped 1% \/ 2%/g, `sloped ${pente}`);
   }
 
+  // === RÉSOLUTION DES CHOIX SLASH (comme l'étape 7 manuelle) ===
+
+  // Isolant type : polyisocyanurate/ polystyrène → choix unique
+  if (s.type_isolant) {
+    const isolType = escapeXml(s.type_isolant);
+    xml = xml.replace(/polyisocyanurate\s*\/\s*polystyr[èe]ne/gi, isolType);
+    xml = xml.replace(/polyisocyanurate\s*\/\s*polystyrene/gi, isolType);
+  }
+
+  // Relevés : contreplaqué ½'' / asphaltique ½'' → choix unique
+  if (s.type_releves) {
+    const rel = escapeXml(s.type_releves);
+    xml = xml.replace(new RegExp(`contreplaqué\\s+½${CURLY_APOS}${CURLY_APOS}\\s*/\\s*asphaltique\\s+½${CURLY_APOS}${CURLY_APOS}`, 'g'), rel);
+    xml = xml.replace(/contreplaqué\s+½['']{1,2}\s*\/\s*asphaltique\s+½['']{1,2}/gi, rel);
+    xml = xml.replace(/plywood\s+½['']{1,2}\s*\/\s*asphalt\s+½['']{1,2}/gi, rel);
+  }
+
+  // Pontage
+  if (s.pontage) {
+    const pontageMap = {
+      'bois': 'bois', 'acier': 'acier', 'béton': 'béton', 'beton': 'béton',
+      'siporex': 'siporex', 'wood': 'wood', 'steel': 'steel', 'concrete': 'concrete'
+    };
+    const selected = pontageMap[s.pontage.toLowerCase()] || s.pontage;
+    // Slash résolution : bois / acier / béton / siporex → valeur unique
+    xml = xml.replace(/bois\s*\/\s*acier\s*(?:\/\s*de\s+)?(?:et\s+de\s+)?béton\s*\/?\s*siporex?/gi, escapeXml(selected));
+    xml = xml.replace(/bois\s*\/\s*acier\s*\/\s*béton\s*\/?\s*siporex?/gi, escapeXml(selected));
+    xml = xml.replace(/bois\s*\/\s*acier\s*\/\s*béton/gi, escapeXml(selected));
+    xml = xml.replace(/wood\s*\/\s*steel\s*\/\s*concrete\s*\/?\s*syporex?/gi, escapeXml(selected));
+    xml = xml.replace(/wood\s*\/\s*steel\s*\/\s*concrete/gi, escapeXml(selected));
+    // Aussi dans “pontage d'acier et de béton” → ne pas toucher si c'est descriptif
+  }
+
+  // Coupe-vapeur / syporex / autre → choix selon pontage
+  if (s.pontage) {
+    const pontVal = s.pontage.toLowerCase();
+    if (pontVal === 'acier' || pontVal === 'steel') {
+      xml = xml.replace(/\/\s*syporex\s*\/\s*coupe-vapeur\s*existant/gi, '');
+    }
+  }
+
   // Drains — utiliser replaceInXml car le texte est splitté entre runs XML
-  const drains = s.nb_drains || BLANK;
+  const drains = s.nb_drains || 'les';
   xml = replaceInXml(xml, 'installer__________nouveaux drains', `installer ${drains} nouveaux drains`);
   xml = replaceInXml(xml, 'install__________new drains', `install ${drains} new drains`);
   xml = xml.replace(/_+(?=\s*nouveaux drains)/g, drains);
   xml = xml.replace(/_+(?=\s*new rigid copper)/g, drains);
 
   // Manchons évents — même problème de split XML
-  const events = s.nb_manchons_events || BLANK;
+  const events = s.nb_manchons_events || 'les';
   xml = replaceInXml(xml, `installer__________nouveaux manchons d${CURLY_APOS}évents`, `installer ${events} nouveaux manchons d${CURLY_APOS}évents`);
+  xml = replaceInXml(xml, `installer__________nouveaux manchons`, `installer ${events} nouveaux manchons`);
+  xml = xml.replace(/_+(?=\s*nouveaux manchons\s*d['’]évents)/g, events);
   xml = xml.replace(/_+(?=\s*new aluminum plumbing)/g, events);
 
   // Manchons étanchéité
-  const etanch = s.nb_manchons_etancheite || BLANK;
+  const etanch = s.nb_manchons_etancheite || 'les';
   xml = replaceInXml(xml, `installer__________nouveaux manchons d${CURLY_APOS}étanchéité`, `installer ${etanch} nouveaux manchons d${CURLY_APOS}étanchéité`);
+  xml = xml.replace(/_+(?=\s*nouveaux manchons\s*d['’]étanch)/g, etanch);
   xml = xml.replace(/_+(?=\s*new Chem-Curbs)/g, etanch);
 
   // Cols de cygne
-  const cols = s.nb_cols_cygne || BLANK;
+  const cols = s.nb_cols_cygne || 'les';
   xml = xml.replace(/_+(?=\s*cols de cygne)/g, cols);
   xml = xml.replace(/_+(?=\s*new gooseneck)/g, cols);
 
@@ -267,19 +315,6 @@ function replaceBlankFields(xml, soumission) {
     }
   });
 
-  // Pontage
-  if (s.pontage) {
-    const pontageMap = {
-      'bois': 'bois', 'acier': 'acier', 'béton': 'béton', 'beton': 'béton',
-      'siporex': 'siporex', 'wood': 'wood', 'steel': 'steel', 'concrete': 'concrete'
-    };
-    const selected = pontageMap[s.pontage.toLowerCase()] || s.pontage;
-    xml = xml.replace(/bois\s*\/\s*acier\s*\/\s*béton\s*\/?\s*siporex?/gi, escapeXml(selected));
-    xml = xml.replace(/bois\s*\/\s*acier\s*\/\s*béton/gi, escapeXml(selected));
-    xml = xml.replace(/wood\s*\/\s*steel\s*\/\s*concrete\s*\/?\s*syporex?/gi, escapeXml(selected));
-    xml = xml.replace(/wood\s*\/\s*steel\s*\/\s*concrete/gi, escapeXml(selected));
-  }
-
   // Documents reçus: “le ______ pour soumission”
   xml = xml.replace(/_+(?=\s*pour soumission)/g, s.documents_recus ? escapeXml(s.documents_recus) : BLANK);
 
@@ -292,7 +327,13 @@ function replaceBlankFields(xml, soumission) {
   xml = xml.replace(/_+(?=”\s*de fibre)/g, ep);
   xml = xml.replace(/_+(?=\s*Roofboard)/gi, ep);
 
-  // Nettoyer les underscores restants (3+ consécutifs) qui n'ont pas été remplis
+  // === CORRECTION ENCODAGE (comme l'étape 8 manuelle) ===
+  xml = xml.replace(/mÉtalliques/g, 'métalliques');
+  xml = xml.replace(/prÉpeint/g, 'prépeint');
+  xml = xml.replace(/RÉfection/g, 'Réfection');
+  xml = xml.replace(/MontrÉal/g, 'Montréal');
+
+  // Nettoyer les underscores restants (3-14 chars) qui n'ont pas été remplis
   // Garder les underscores de signature (>15 chars) intacts
   xml = xml.replace(/>_{3,14}</g, `>${BLANK}<`);
 
@@ -332,11 +373,24 @@ async function generateSoumission(soumission) {
     let xml = await entry.async('string');
     let changed = false;
 
+    // Normaliser les runs XML pour tous les fichiers (headers inclus)
+    const beforeNorm = xml;
+    xml = normalizeXmlText(xml);
+    if (xml !== beforeNorm) changed = true;
+
     for (const { pattern, value } of replacements) {
       const before = xml;
       xml = replaceInXml(xml, pattern, value);
       if (xml !== before) changed = true;
     }
+
+    // Correction encodage dans TOUS les fichiers XML (headers + footers + document)
+    const beforeEnc = xml;
+    xml = xml.replace(/mÉtalliques/g, 'métalliques');
+    xml = xml.replace(/prÉpeint/g, 'prépeint');
+    xml = xml.replace(/RÉfection/g, 'Réfection');
+    xml = xml.replace(/MontrÉal/g, 'Montréal');
+    if (xml !== beforeEnc) changed = true;
 
     if (xmlFile === 'word/document.xml') {
       xml = replaceFirstInXml(xml, 'Adresse', soumission.client_adresse || '______');
