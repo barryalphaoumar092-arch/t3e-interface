@@ -69,7 +69,6 @@ app.use('/', require('./src/routes/index'));
 app.use('/connaissances', require('./src/routes/connaissances'));
 app.use('/bordereaux', require('./src/routes/bordereaux'));
 app.use('/soumissions', require('./src/routes/soumissions'));
-app.use('/approbation', require('./src/routes/approbation'));
 app.use('/recherche', require('./src/routes/recherche'));
 app.use('/api', require('./src/routes/api'));
 
