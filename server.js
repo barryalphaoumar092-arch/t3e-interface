@@ -68,7 +68,7 @@ app.use((req, res, next) => {
 app.use('/', require('./src/routes/index'));
 app.use('/connaissances', require('./src/routes/connaissances'));
 app.use('/bordereaux', require('./src/routes/bordereaux'));
-app.use('/soumissions', require('./src/routes/soumissions'));
+
 app.use('/recherche', require('./src/routes/recherche'));
 app.use('/api', require('./src/routes/api'));
 
@@ -81,7 +81,7 @@ app.use((err, req, res, next) => {
 async function start() {
   try {
     const fs = require('fs');
-    const dirs = ['uploads', 'uploads/soumissions', 'data'];
+    const dirs = ['uploads', 'data'];
     for (const d of dirs) {
       const p = path.join(__dirname, d);
       if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });

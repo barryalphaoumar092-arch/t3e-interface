@@ -1,4 +1,4 @@
-<%- include('partials/header', { title: 'Réviser le bordereau', page: 'bordereaux' }) %>
+<%- include('partials/header', { title: 'Réviser les bordereaux', page: 'bordereaux' }) %>
 
 <nav aria-label="breadcrumb">
   <ol class="breadcrumb">
@@ -8,7 +8,7 @@
 </nav>
 
 <div class="row justify-content-center">
-  <div class="col-md-10">
+  <div class="col-md-11">
 
     <div class="d-flex gap-2 mb-3">
       <span class="badge bg-success fs-6"><i class="bi bi-check"></i> 1. Upload</span>
@@ -19,133 +19,102 @@
     <% if (iaErreur) { %>
     <div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> L'IA n'a pas pu analyser le devis (<%= iaErreur %>). Remplissez les champs manuellement.</div>
     <% } else { %>
-    <div class="alert alert-info mb-3"><i class="bi bi-robot"></i> L'IA a extrait les informations du devis. Vérifiez et corrigez si nécessaire, puis cliquez sur <strong>Générer</strong>.</div>
+    <div class="alert alert-info mb-3">
+      <i class="bi bi-robot"></i> L'IA a détecté <strong><%= produits.length %></strong> produit<%= produits.length > 1 ? 's' : '' %>.
+      Vérifiez et corrigez si nécessaire, puis cliquez sur <strong>Générer</strong>.
+    </div>
     <% } %>
 
     <form method="POST" action="/bordereaux/generer/<%= bordereau.id %>" id="formGenerer">
 
-      <!-- Identification T3E (fixe) -->
+      <!-- Identification commune -->
       <div class="card mb-3">
-        <div class="card-header bg-dark text-white py-2"><h6 class="mb-0"><i class="bi bi-building"></i> Identification entrepreneur (fixe)</h6></div>
+        <div class="card-header bg-dark text-white py-2">
+          <h6 class="mb-0"><i class="bi bi-building"></i> Projet & Identification</h6>
+        </div>
         <div class="card-body">
           <div class="row g-2">
-            <div class="col-md-4">
-              <label class="form-label fw-bold">NOM</label>
-              <input type="text" name="NOM" class="form-control" value="<%= champs.NOM || 'Toitures Trois Étoiles' %>">
+            <div class="col-md-6">
+              <label class="form-label fw-bold">NOM DU PROJET</label>
+              <input type="text" name="NOM_DU_PROJET" class="form-control" value="<%= nomProjet %>">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-bold">NUMÉRO DU PROJET</label>
+              <input type="text" name="NUMERO_DU_PROJET" class="form-control" value="<%= numProjet %>">
             </div>
             <div class="col-md-3">
               <label class="form-label fw-bold">SPÉCIALITÉ</label>
-              <input type="text" name="SPECIALITE" class="form-control" value="<%= champs.SPECIALITE || 'COUVREUR' %>">
-            </div>
-            <div class="col-md-5">
-              <label class="form-label fw-bold">ADRESSE</label>
-              <input type="text" name="ADRESSE" class="form-control" value="<%= champs.ADRESSE || '7550 Rue Saint-Patrick, Montréal, QC H8N 1V1' %>">
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Projet (extrait du devis par IA) -->
-      <div class="card mb-3">
-        <div class="card-header bg-warning text-dark py-2"><h6 class="mb-0"><i class="bi bi-robot"></i> Projet (extrait du devis par l'IA)</h6></div>
-        <div class="card-body">
-          <div class="row g-2">
-            <div class="col-md-8">
-              <label class="form-label fw-bold">NOM DU PROJET</label>
-              <input type="text" name="NOM_DU_PROJET" class="form-control" value="<%= champs.NOM_DU_PROJET || '' %>">
+              <input type="text" name="SPECIALITE" class="form-control" value="<%= identification.SPECIALITE || 'COUVREUR' %>">
             </div>
             <div class="col-md-4">
-              <label class="form-label fw-bold">NUMÉRO DU PROJET</label>
-              <input type="text" name="NUMERO_DU_PROJET" class="form-control" value="<%= champs.NUMERO_DU_PROJET || '' %>">
+              <label class="form-label fw-bold">NOM</label>
+              <input type="text" name="NOM" class="form-control" value="<%= identification.NOM || 'Toitures Trois Étoiles' %>">
             </div>
-            <div class="col-md-6">
-              <label class="form-label fw-bold">SECTION</label>
-              <input type="text" name="SECTION" class="form-control" value="<%= champs.SECTION || '' %>">
-            </div>
-            <div class="col-md-6">
-              <label class="form-label fw-bold">ARTICLE</label>
-              <input type="text" name="ARTICLE" class="form-control" value="<%= champs.ARTICLE || '' %>">
+            <div class="col-md-8">
+              <label class="form-label fw-bold">ADRESSE</label>
+              <input type="text" name="ADRESSE" class="form-control" value="<%= identification.ADRESSE || '7550 Rue Saint-Patrick, Montréal, QC H8N 1V1' %>">
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Fiche technique (matché par IA avec la base de matériaux) -->
-      <div class="card mb-3">
-        <div class="card-header bg-info text-dark py-2"><h6 class="mb-0"><i class="bi bi-file-earmark-text"></i> Fiche technique (matché avec la base de matériaux)</h6></div>
-        <div class="card-body">
-          <div class="row g-2">
-            <div class="col-md-6">
-              <label class="form-label fw-bold">TITRE (produit)</label>
-              <input type="text" name="TITRE" class="form-control" value="<%= champs.TITRE || '' %>">
-            </div>
-            <div class="col-md-3">
-              <label class="form-label fw-bold">FABRICANT</label>
-              <input type="text" name="FABRICANT" class="form-control" value="<%= champs.FABRICANT || '' %>">
-            </div>
-            <div class="col-md-3">
-              <label class="form-label fw-bold">FOURNISSEUR</label>
-              <input type="text" name="FOURNISSEUR" class="form-control" value="<%= champs.FOURNISSEUR || '' %>">
+      <!-- Produits (1 carte par produit) -->
+      <div id="produitsContainer">
+        <% produits.forEach(function(p, idx) { %>
+        <div class="card mb-3 border-primary produit-card">
+          <div class="card-header bg-primary bg-opacity-10 py-2 d-flex justify-content-between align-items-center">
+            <h6 class="mb-0">
+              <i class="bi bi-box-seam"></i> Produit <%= idx + 1 %>
+              <% if (p.TITRE) { %><span class="text-muted ms-2">— <%= p.TITRE %></span><% } %>
+            </h6>
+            <button type="button" class="btn btn-outline-danger btn-sm" onclick="this.closest('.produit-card').remove(); renum();" title="Supprimer">
+              <i class="bi bi-trash"></i>
+            </button>
+          </div>
+          <div class="card-body py-2">
+            <div class="row g-2">
+              <div class="col-md-5">
+                <label class="form-label fw-bold">Titre (produit)</label>
+                <input type="text" name="TITRE" class="form-control form-control-sm" value="<%= p.TITRE || '' %>">
+              </div>
+              <div class="col-md-3">
+                <label class="form-label fw-bold">Fabricant</label>
+                <input type="text" name="FABRICANT" class="form-control form-control-sm" value="<%= p.FABRICANT || '' %>">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label fw-bold">Fournisseur</label>
+                <input type="text" name="FOURNISSEUR" class="form-control form-control-sm" value="<%= p.FOURNISSEUR || '' %>">
+              </div>
+              <div class="col-md-5">
+                <label class="form-label">Section</label>
+                <input type="text" name="SECTION" class="form-control form-control-sm" value="<%= p.SECTION || '' %>">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Article</label>
+                <input type="text" name="ARTICLE" class="form-control form-control-sm" value="<%= p.ARTICLE || '' %>">
+              </div>
+              <div class="col-md-3">
+                <% if (p.ft_noms && p.ft_noms.length > 0) { %>
+                <label class="form-label">FT détectée</label>
+                <div class="text-success small"><i class="bi bi-check-circle"></i> <%= p.ft_noms[0] %></div>
+                <% } else { %>
+                <label class="form-label">FT</label>
+                <div class="text-muted small"><i class="bi bi-dash-circle"></i> Non trouvée</div>
+                <% } %>
+              </div>
+              <div class="col-12">
+                <label class="form-label">Remarque</label>
+                <input type="text" name="REMARQUE" class="form-control form-control-sm" value="<%= p.REMARQUE || '' %>">
+              </div>
             </div>
           </div>
         </div>
+        <% }); %>
       </div>
-
-      <!-- Champs vides / optionnels -->
-      <div class="card mb-3">
-        <div class="card-header bg-light py-2"><h6 class="mb-0"><i class="bi bi-dash-circle"></i> Champs optionnels (laissés vides par défaut)</h6></div>
-        <div class="card-body">
-          <div class="row g-2">
-            <div class="col-md-3">
-              <label class="form-label">Numéro de dessins</label>
-              <input type="text" name="NUMERO_DESSINS" class="form-control form-control-sm" value="<%= champs.NUMERO_DESSINS || '' %>" placeholder="(vide)">
-            </div>
-            <div class="col-md-3">
-              <label class="form-label">Nombre feuilles</label>
-              <input type="text" name="NOMBRE_FEUILLES" class="form-control form-control-sm" value="<%= champs.NOMBRE_FEUILLES || '' %>" placeholder="(vide)">
-            </div>
-            <div class="col-md-3">
-              <label class="form-label">Révision</label>
-              <input type="text" name="REVISION" class="form-control form-control-sm" value="<%= champs.REVISION || '' %>" placeholder="(vide)">
-            </div>
-            <div class="col-md-3">
-              <label class="form-label">Délai</label>
-              <input type="text" name="DELAI" class="form-control form-control-sm" value="<%= champs.DELAI || '' %>" placeholder="(vide)">
-            </div>
-            <div class="col-12">
-              <label class="form-label">Description</label>
-              <input type="text" name="DESCRIPTION" class="form-control form-control-sm" value="<%= champs.DESCRIPTION || '' %>" placeholder="(vide)">
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Remarque IA -->
-      <div class="card mb-3">
-        <div class="card-header bg-success bg-opacity-25 py-2"><h6 class="mb-0"><i class="bi bi-chat-dots"></i> Remarque (générée par l'IA)</h6></div>
-        <div class="card-body">
-          <textarea name="REMARQUE" class="form-control" rows="2"><%= champs.REMARQUE || '' %></textarea>
-        </div>
-      </div>
-
-      <!-- FT auto-détectées -->
-      <% if (ftNoms.length > 0) { %>
-      <div class="card mb-3 border-success">
-        <div class="card-header bg-success text-white py-2">
-          <h6 class="mb-0"><i class="bi bi-paperclip"></i> Fiches techniques auto-détectées (<%= ftNoms.length %>)</h6>
-        </div>
-        <div class="card-body py-2">
-          <% ftNoms.forEach(function(nom) { %>
-          <div class="py-1"><i class="bi bi-file-pdf text-danger me-1"></i> <%= nom %></div>
-          <% }); %>
-          <small class="text-muted">Ces fiches seront jointes automatiquement dans le ZIP téléchargé.</small>
-        </div>
-      </div>
-      <% } %>
 
       <div class="d-flex gap-3 mb-4">
         <button type="submit" class="btn btn-success btn-lg" id="btnGenerer">
-          <i class="bi bi-file-earmark-zip"></i> Générer le bordereau + fiches techniques
+          <i class="bi bi-file-earmark-zip"></i> Générer <%= produits.length %> bordereau<%= produits.length > 1 ? 'x' : '' %> + fiches techniques
         </button>
         <a href="/bordereaux" class="btn btn-outline-secondary btn-lg">Annuler</a>
       </div>
@@ -155,6 +124,19 @@
 </div>
 
 <script>
+function renum() {
+  document.querySelectorAll('.produit-card').forEach(function(card, i) {
+    var h6 = card.querySelector('h6');
+    var icon = '<i class="bi bi-box-seam"></i> Produit ' + (i + 1);
+    var titre = card.querySelector('input[name="TITRE"]').value;
+    if (titre) icon += '<span class="text-muted ms-2">— ' + titre + '</span>';
+    h6.innerHTML = icon;
+  });
+  var n = document.querySelectorAll('.produit-card').length;
+  var btn = document.getElementById('btnGenerer');
+  btn.innerHTML = '<i class="bi bi-file-earmark-zip"></i> Générer ' + n + ' bordereau' + (n > 1 ? 'x' : '') + ' + fiches techniques';
+}
+
 document.getElementById('formGenerer').addEventListener('submit', function() {
   var btn = document.getElementById('btnGenerer');
   btn.disabled = true;
