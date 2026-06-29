@@ -340,7 +340,7 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
   // 5. Mettre à jour la DB
   const section = (champs.SECTION || champs.NUMERO_DU_PROJET || 'T3E').replace(/\s/g, '-').substring(0, 30);
   await db.execute({
-    sql: `UPDATE bordereaux SET statut = 'genere', session_actif = 0, numero_projet = ?, titre = ?, contenu = ?, template_data = ? WHERE id = ?`,
+    sql: `UPDATE bordereaux SET statut = 'approuve', session_actif = 0, numero_projet = ?, titre = ?, contenu = ?, template_data = ? WHERE id = ?`,
     args: [
       champs.NUMERO_DU_PROJET || '',
       champs.NOM_DU_PROJET || '',
