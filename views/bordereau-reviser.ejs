@@ -100,7 +100,7 @@
 
       <div class="d-flex gap-3 mb-4">
         <button type="submit" class="btn btn-success btn-lg" id="btnGenerer">
-          <i class="bi bi-file-earmark-pdf"></i> Générer <%= produits.length %> bordereau(x) en 1 PDF
+          <i class="bi bi-file-earmark-zip"></i> Générer <%= produits.length %> bordereau(x) + fiches techniques
         </button>
         <a href="/bordereaux" class="btn btn-outline-secondary btn-lg">Annuler</a>
       </div>
@@ -113,7 +113,7 @@
 document.getElementById('formGenerer').addEventListener('submit', function() {
   var btn = document.getElementById('btnGenerer');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Génération en cours (LibreOffice convertit chaque bordereau)...';
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Génération en cours...';
 });
 </script>
 

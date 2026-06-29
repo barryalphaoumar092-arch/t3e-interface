@@ -1,9 +1,10 @@
 services:
   - type: web
     name: t3e-interface
-    runtime: docker
+    runtime: node
     plan: free
-    dockerfilePath: ./Dockerfile
+    buildCommand: npm install
+    startCommand: node server.js
     envVars:
       - key: TURSO_DATABASE_URL
         sync: false

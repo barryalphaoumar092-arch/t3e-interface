@@ -438,9 +438,9 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
 
   console.log('[generer]', produits.length, 'produits à générer');
 
-  // 2. Pour chaque produit : remplir .docx → convertir en PDF → ajouter FT
-  const { convertirDocxEnPdf } = require('../services/docx-to-pdf');
-  const allPdfBuffers = [];
+  // 2. Pour chaque produit : remplir .docx + trouver FT
+  const zip = new JSZip();
+  const allFtChemins = [];
 
   for (let i = 0; i < produits.length; i++) {
     const prod = produits[i];
@@ -464,46 +464,32 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
     // 2a. Remplir le bordereau .docx
     try {
       const docxRempli = await remplirBordereau(champs, bordereauBuffer);
-
-      // 2b. Convertir .docx → PDF avec LibreOffice
-      const bordPdf = await convertirDocxEnPdf(docxRempli);
-      allPdfBuffers.push(bordPdf);
-      console.log('[generer] Bordereau PDF', i + 1, ':', bordPdf.length, 'octets');
+      const sectionClean = (prod.SECTION || 'produit-' + (i + 1)).replace(/[^a-zA-Z0-9_-]/g, '-').substring(0, 30);
+      zip.file(`Bordereau_${i + 1}_${sectionClean}.docx`, docxRempli);
+      console.log('[generer] Bordereau', i + 1, 'OK:', docxRempli.length, 'octets');
     } catch (e) {
       console.error('[generer] Erreur produit', i + 1, ':', e.message);
     }
 
-    // 2c. Trouver et ajouter les FT
+    // 2b. Trouver les FT pour ce produit
     try {
       const ftChemins = trouverFichesTechniques(prod.FABRICANT, prod.TITRE);
-      if (ftChemins.length > 0) {
-        const ftPdf = await fusionnerPDF(ftChemins);
-        if (ftPdf) {
-          allPdfBuffers.push(ftPdf);
-          console.log('[generer] FT', i + 1, ':', ftChemins.length, 'fichiers');
-        }
-      }
+      ftChemins.forEach(c => { if (!allFtChemins.includes(c)) allFtChemins.push(c); });
+      console.log('[generer] FT', i + 1, ':', ftChemins.length, 'fichiers');
     } catch (e) {
       console.error('[generer] Erreur FT', i + 1, ':', e.message);
     }
   }
 
-  if (allPdfBuffers.length === 0) {
-    return res.status(500).send('Aucun PDF généré. Vérifiez que LibreOffice est installé.');
-  }
-
-  // 3. Fusionner TOUS les PDF en 1 seul
-  const finalPdf = await PDFDocument.create();
-  for (const buf of allPdfBuffers) {
+  // 3. Fusionner TOUTES les FT en 1 seul PDF
+  if (allFtChemins.length > 0) {
     try {
-      const doc = await PDFDocument.load(buf, { ignoreEncryption: true });
-      const pages = await finalPdf.copyPages(doc, doc.getPageIndices());
-      pages.forEach(pg => finalPdf.addPage(pg));
+      const ftPdf = await fusionnerPDF(allFtChemins);
+      if (ftPdf) zip.file('Fiches_Techniques.pdf', ftPdf);
     } catch (e) {
-      console.error('[generer] Erreur fusion page:', e.message);
+      console.error('[generer] Erreur fusion FT:', e.message);
     }
   }
-  const finalBuffer = Buffer.from(await finalPdf.save());
 
   // 4. Mettre à jour la DB
   try {
@@ -515,11 +501,12 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
     console.error('[generer] Erreur DB:', e.message);
   }
 
-  // 5. Retourner 1 seul PDF
+  // 5. Retourner le ZIP
   const section = (champsCommuns.NUMERO_DU_PROJET || 'T3E').replace(/[^a-zA-Z0-9_-]/g, '-').substring(0, 30);
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="Bordereaux_${section}_${Date.now()}.pdf"`);
-  res.send(finalBuffer);
+  const zipBuffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="Bordereaux_${section}_${Date.now()}.zip"`);
+  res.send(zipBuffer);
 });
 
 // Re-télécharger un .docx déjà généré
