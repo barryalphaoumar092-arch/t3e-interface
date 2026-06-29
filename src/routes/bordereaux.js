@@ -114,31 +114,10 @@ Retourne ce JSON :
 //  AUTO-MATCH FICHES TECHNIQUES — scan documents/FT/{Fabricant}/
 // ══════════════════════════════════════════════════════════════
 function trouverFichesTechniques(fabricant, titre) {
-  if (!fs.existsSync(FT_DIR)) {
-    console.log('[FT] Dossier FT absent');
+  if (!fabricant || !fs.existsSync(FT_DIR)) {
+    console.log('[FT] Pas de fabricant ou dossier FT absent');
     return [];
   }
-
-  // Si pas de fabricant, chercher dans TOUS les dossiers FT par mots-clés du titre
-  if (!fabricant && titre) {
-    console.log('[FT] Pas de fabricant, recherche globale par titre:', titre);
-    const allDirs = fs.readdirSync(FT_DIR).filter(d => fs.statSync(path.join(FT_DIR, d)).isDirectory());
-    const keywords = titre.toLowerCase().replace(/[^a-zàâäéèêëîïôùûü0-9]+/g, ' ').split(/\s+/).filter(w => w.length > 2);
-    let bestFile = null, bestScore = 0, bestDir = '';
-    for (const dir of allDirs) {
-      const pdfs = fs.readdirSync(path.join(FT_DIR, dir)).filter(f => f.endsWith('.pdf'));
-      for (const f of pdfs) {
-        const score = keywords.filter(k => f.toLowerCase().includes(k)).length;
-        if (score > bestScore) { bestScore = score; bestFile = f; bestDir = dir; }
-      }
-    }
-    if (bestFile && bestScore >= 1) {
-      console.log('[FT] Match global:', bestDir + '/' + bestFile, '(score:', bestScore, ')');
-      return [path.join(FT_DIR, bestDir, bestFile)];
-    }
-    return [];
-  }
-  if (!fabricant) return [];
 
   let fabDir = path.join(FT_DIR, fabricant);
 
@@ -447,20 +426,8 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
   // 3. Auto-match FT (recalculer au cas où l'utilisateur a changé FABRICANT/TITRE)
   let ftChemins = [];
   try {
-    console.log('[generer] Recherche FT: FABRICANT="' + champs.FABRICANT + '", TITRE="' + champs.TITRE + '"');
     ftChemins = trouverFichesTechniques(champs.FABRICANT, champs.TITRE);
-    // Fallback si rien trouvé : essayer avec des fabricants connus
-    if (ftChemins.length === 0) {
-      const fabricantsConnus = ['Soprema','IKO','BP','Tremco','CGC','Murphco','Ventilation Maximum','Henry Bakor','Securpan'];
-      const texteRecherche = (champs.TITRE + ' ' + champs.FABRICANT + ' ' + champs.REMARQUE).toLowerCase();
-      for (const fab of fabricantsConnus) {
-        if (texteRecherche.includes(fab.toLowerCase().substring(0, 4))) {
-          ftChemins = trouverFichesTechniques(fab, champs.TITRE);
-          if (ftChemins.length > 0) { console.log('[generer] FT fallback via', fab); break; }
-        }
-      }
-    }
-    console.log('[generer] FT trouvees:', ftChemins.length);
+    console.log('[generer] FT trouvees:', ftChemins.length, ftChemins);
   } catch (e) {
     console.error('[generer] Erreur FT match:', e);
   }
@@ -490,37 +457,23 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
     console.error('[generer] Erreur DB update:', e);
   }
 
-  // 6. Créer le bordereau en PDF (pdfkit) + fusionner avec FT → 1 seul PDF
+  // 6. Retourner le résultat
   const ts = Date.now();
-  const { creerBordereauPdf } = require('../services/bordereau-pdf');
 
-  try {
-    const bordereauPdf = await creerBordereauPdf(champs);
-    const finalDoc = await PDFDocument.create();
-
-    // Ajouter le bordereau PDF
-    const bordDoc = await PDFDocument.load(bordereauPdf);
-    const bordPages = await finalDoc.copyPages(bordDoc, bordDoc.getPageIndices());
-    bordPages.forEach(p => finalDoc.addPage(p));
-
-    // Ajouter les FT à la suite
-    if (ftPdfBuffer) {
-      const ftDoc = await PDFDocument.load(ftPdfBuffer, { ignoreEncryption: true });
-      const ftPages = await finalDoc.copyPages(ftDoc, ftDoc.getPageIndices());
-      ftPages.forEach(p => finalDoc.addPage(p));
-    }
-
-    const finalBuffer = Buffer.from(await finalDoc.save());
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="Bordereau_FT_${section}_${ts}.pdf"`);
-    res.send(finalBuffer);
-  } catch (e) {
-    console.error('[generer] Erreur PDF final:', e);
-    // Fallback : retourner le .docx seul
+  if (!ftPdfBuffer) {
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     res.setHeader('Content-Disposition', `attachment; filename="Bordereau_${section}_${ts}.docx"`);
-    res.send(docxBuffer);
+    return res.send(docxBuffer);
   }
+
+  const zip = new JSZip();
+  zip.file(`Bordereau_${section}.docx`, docxBuffer);
+  zip.file(`Fiches_Techniques_${section}.pdf`, ftPdfBuffer);
+  const zipBuffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="Bordereau_${section}_${ts}.zip"`);
+  res.send(zipBuffer);
 });
 
 // Re-télécharger un .docx déjà généré
