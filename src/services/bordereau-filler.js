@@ -54,27 +54,32 @@ function remplirChampDansXml(xml, label, valeur) {
 }
 
 function cocherFicheTechnique(xml) {
-  // Trouver "Fiche technique" dans le XML, puis cocher la case à cocher la plus proche
   const ftIdx = xml.indexOf('Fiche technique');
   if (ftIdx === -1) return xml;
 
-  // Chercher le <w:checkBox> le plus proche APRÈS "Fiche technique"
-  let cbIdx = xml.indexOf('<w:checkBox>', ftIdx);
-  // Si pas trouvé après, chercher AVANT (la case peut être avant le texte)
-  if (cbIdx === -1 || cbIdx > ftIdx + 2000) {
-    cbIdx = xml.lastIndexOf('<w:checkBox>', ftIdx);
+  // 1. Ajouter <w:default w:val="1"/> dans le checkBox
+  const cbIdx = xml.indexOf('<w:checkBox>', ftIdx);
+  if (cbIdx !== -1) {
+    const cbEnd = xml.indexOf('</w:checkBox>', cbIdx);
+    if (cbEnd !== -1 && !xml.substring(cbIdx, cbEnd).includes('w:default')) {
+      xml = xml.substring(0, cbEnd) + '<w:default w:val="1"/>' + xml.substring(cbEnd);
+    }
   }
-  if (cbIdx === -1) return xml;
 
-  const cbEnd = xml.indexOf('</w:checkBox>', cbIdx);
-  if (cbEnd === -1) return xml;
+  // 2. Insérer le symbole coché ☒ dans le résultat du champ (entre separate et end)
+  const sepIdx = xml.indexOf('fldCharType="separate"', ftIdx);
+  if (sepIdx === -1) return xml;
+  const endIdx = xml.indexOf('fldCharType="end"', sepIdx);
+  if (endIdx === -1) return xml;
 
-  // Vérifier si déjà cochée
-  const cbContent = xml.substring(cbIdx, cbEnd);
-  if (cbContent.includes('w:default') || cbContent.includes('w:checked')) return xml;
+  // Trouver un <w:r> avec <w:rPr> mais SANS <w:t> entre separate et end → y insérer ☒
+  const between = xml.substring(sepIdx, endIdx);
+  const emptyRunMatch = between.match(/<\/w:rPr><\/w:r>/);
+  if (emptyRunMatch) {
+    const insertPos = sepIdx + emptyRunMatch.index + '</w:rPr>'.length;
+    xml = xml.substring(0, insertPos) + '<w:t>☒</w:t>' + xml.substring(insertPos);
+  }
 
-  // Insérer <w:default w:val="1"/> juste avant </w:checkBox>
-  xml = xml.substring(0, cbEnd) + '<w:default w:val="1"/>' + xml.substring(cbEnd);
   return xml;
 }
 
