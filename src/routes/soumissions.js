@@ -237,7 +237,8 @@ router.post('/analyser', uploadDevis.single('devis'), async (req, res) => {
       const texteIA = devisTexte.substring(0, 30000);
       console.log(`[IA Soumission] Envoi de ${texteIA.length} chars au modèle GPT-4o...`);
       const iaResult = await analyserDevisSoumission(texteIA);
-      console.log(`[IA Soumission] Résultat:`, JSON.stringify(iaResult).substring(0, 500));
+      console.log(`[IA Soumission] Résultat:`, JSON.stringify(iaResult).substring(0, 1000));
+      console.log(`[IA Soumission] Champs clés: systeme=${iaResult.systeme_toiture}, pontage=${iaResult.pontage}, adhesion=${iaResult.methode_adhesion}, isolant=${iaResult.epaisseur_isolant}, pente=${iaResult.pente_isolant}, pare_vapeur=${iaResult.type_pare_vapeur?.substring(0,40)}, gravier=${iaResult.type_gravier?.substring(0,40)}, solins=${iaResult.materiau_solins}`);
 
       if (iaResult && !iaResult.error) {
         // L'IA REMPLACE tout — elle est plus fiable que le regex

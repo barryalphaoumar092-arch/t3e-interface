@@ -198,14 +198,43 @@ function normalizeXmlText(xml) {
   return result;
 }
 
+function applyDefaults(soumission) {
+  const s = { ...soumission };
+  const sys = (s.systeme_toiture || '').toUpperCase();
+
+  if (!s.methode_adhesion) {
+    if (sys === 'BUR') s.methode_adhesion = 'asphalte';
+    else if (sys === 'SOPRASMART') s.methode_adhesion = 'adhésif';
+    else if (sys === 'SOPRAFIX') s.methode_adhesion = 'mécanique';
+  }
+  if (!s.type_isolant) s.type_isolant = 'polyisocyanurate';
+  if (!s.pente_isolant) s.pente_isolant = '2%';
+  if (!s.type_fibre && sys === 'BUR') s.type_fibre = 'fibre de bois';
+  if (!s.nb_plis && sys === 'BUR') s.nb_plis = '4';
+  if (!s.type_releves) {
+    if (sys === 'BUR') s.type_releves = 'deux (2) plis de membranes élastomères fini sablé adhérées à l\'asphalte chaud';
+    else s.type_releves = 'contreplaqué ½\'\'';
+  }
+  if (!s.materiau_solins) s.materiau_solins = 'acier prépeint';
+  if (!s.calibre_solins) s.calibre_solins = '24';
+  if (!s.cols_cygne_type) s.cols_cygne_type = 'existants';
+  if (!s.type_gravier && sys === 'BUR') s.type_gravier = 'gravier ¼\'\' standard environ 450 lbs. / 100 pieds carrés';
+  if (!s.type_pare_vapeur) {
+    if (sys === 'BUR') s.type_pare_vapeur = '2 plis de feutre #15 adhéré à l\'asphalte';
+    else s.type_pare_vapeur = 'un pare-vapeur thermosoudé SOPRALENE 180 SP 3,5 (Soprema) installé à l\'adhésif';
+  }
+
+  return s;
+}
+
 function replaceBlankFields(xml, soumission) {
-  const s = soumission;
+  const s = applyDefaults(soumission);
   const BLANK = '______';
 
-  // Normaliser le XML pour fusionner les text runs fragmentés (2 passes)
-  xml = normalizeXmlText(xml);
-  // Passe supplémentaire : supprimer les proofErr qui cassent les remplacements
+  // Normaliser le XML : supprimer proofErr + fusionner les runs (3 passes)
   xml = xml.replace(/<w:proofErr[^/]*\/>/g, '');
+  xml = normalizeXmlText(xml);
+  xml = normalizeXmlText(xml);
   xml = normalizeXmlText(xml);
 
   // Surface
@@ -433,9 +462,117 @@ function replaceBlankFields(xml, soumission) {
   xml = xml.replace(/RÉfection/g, 'Réfection');
   xml = xml.replace(/MontrÉal/g, 'Montréal');
 
-  // Nettoyer les underscores restants (3-14 chars) qui n'ont pas été remplis
-  // Garder les underscores de signature (>15 chars) intacts
-  xml = xml.replace(/>_{3,14}</g, `>${BLANK}<`);
+  // === REMPLACEMENT PAR NOEUD <w:t> (attrape ce que les regex globales ratent) ===
+  xml = xml.replace(/<w:t([^>]*)>([^<]+)<\/w:t>/g, (full, attrs, text) => {
+    let t = text;
+
+    // Underscores dans un noeud isolé → remplacer selon le contexte
+    if (/_____/.test(t)) {
+      // $______/ pied carré
+      t = t.replace(/\$_+\//g, s.cout_remplacement_cp ? `$${escapeXml(s.cout_remplacement_cp)}/` : `$${BLANK}/`);
+      t = t.replace(/\$_+/g, s.cout_remplacement_cp ? `$${escapeXml(s.cout_remplacement_cp)}` : `$${BLANK}`);
+      // ______'' d'isolant (curly quotes)
+      t = t.replace(new RegExp(`_+(?=[${CURLY_APOS}'"]+)`, 'g'), ep);
+      // ______" de fibre
+      t = t.replace(/_+(?=")/g, s.epaisseur_fibre_bois ? escapeXml(s.epaisseur_fibre_bois) : ep);
+      // #______
+      t = t.replace(/#_+/g, `#${vent}`);
+      // ______$ (prix)
+      t = t.replace(/_+(?=\s*\$)/g, BLANK);
+      // Génériques restants (3-14 chars, pas les lignes de signature)
+      if (t.length < 50) t = t.replace(/_{3,14}/g, BLANK);
+    }
+
+    // Résolution slash dans chaque noeud texte
+    // Pontage: / acier / béton → valeur unique
+    if (s.pontage && t.includes('/')) {
+      const p = escapeXml(s.pontage.toLowerCase() === 'béton' ? 'béton' : s.pontage.toLowerCase());
+      t = t.replace(/\/ pontage de \//gi, `pontage de ${p}`);
+      t = t.replace(/pontage de \/ acier \//gi, `pontage de ${p}`);
+      // " / acier /coupe vapeur" pattern
+      t = t.replace(/\/ acier \/coupe[- ]vapeur existant/gi, `${p}`);
+    }
+
+    // Adhésion slash
+    if (s.methode_adhesion && t.includes('/')) {
+      const meth = s.methode_adhesion.toLowerCase();
+      if (meth.includes('asphalte')) {
+        t = t.replace(/adhéré avec de l[''']asphalte\s*\/\s*fixé mécaniquement/gi, "adhéré avec de l'asphalte");
+        t = t.replace(/adhéré avec de l[''']asphalte chaud\s*\/\s*fixé mécaniquement/gi, "adhéré avec de l'asphalte chaud");
+        t = t.replace(/adhéré à l[''']adhésif\s*\/\s*fixé mécaniquement/gi, "adhéré à l'asphalte");
+      } else if (meth.includes('méca') || meth.includes('meca')) {
+        t = t.replace(/adhéré avec de l[''']asphalte(?:\s*chaud)?\s*\/\s*fixé mécaniquement/gi, 'fixé mécaniquement');
+      } else if (meth.includes('adhésif') || meth.includes('adhesif')) {
+        t = t.replace(/adhéré à l[''']adhésif\s*\/\s*fixé mécaniquement/gi, "adhéré à l'adhésif");
+      }
+    }
+
+    // Pare-vapeur slash (3 options)
+    if (s.type_pare_vapeur && t.includes('/') && t.includes('pare-vapeur')) {
+      const pv = escapeXml(s.type_pare_vapeur);
+      t = t.replace(/un pare-vapeur de papier kraft[^/]*\/[^/]*élastomère[^/]*\/[^;]*/gi, pv);
+      t = t.replace(/un pare-vapeur de papier kraft[^/]*\/\s*un pare-vapeur élastomère[^/]*/gi, pv);
+    }
+
+    // Fibre de bois / perlite
+    if (s.type_fibre && t.includes('/')) {
+      t = t.replace(/fibre de bois\s*\/\s*perlite/gi, escapeXml(s.type_fibre));
+    }
+
+    // Plis (4-5) → choix
+    if (s.nb_plis) {
+      t = t.replace(/\(4-5\)/g, `(${escapeXml(s.nb_plis)})`);
+      t = t.replace(/\(4 ?- ?5\)/g, `(${escapeXml(s.nb_plis)})`);
+    }
+
+    // Gravier standard OU blanc
+    if (s.type_gravier && t.includes('OU') && t.includes('gravier')) {
+      const grav = s.type_gravier.toLowerCase();
+      if (grav.includes('blanc') || grav.includes('réfléchiss') || grav.includes('650')) {
+        t = t.replace(/gravier ¼[''"]?\s*standard[^O]*OU\s*/gi, '');
+      } else {
+        t = t.replace(/\s*OU gravier ¼[''"]?\s*réfléchissantes[^;]*/gi, '');
+      }
+    }
+
+    // Pente 1% / 2%
+    if (s.pente_isolant && t.includes('/')) {
+      t = t.replace(/pente 1%\s*\/\s*2%/gi, `pente ${escapeXml(s.pente_isolant)}`);
+    }
+
+    // Solins acier prépeint/ acier galvanisé / cuivre
+    if (s.materiau_solins && t.includes('/')) {
+      const mat = escapeXml(s.materiau_solins);
+      t = t.replace(/acier prépeint\s*\/?\s*acier galvanisé/gi, mat);
+      if (!s.materiau_solins.toLowerCase().includes('cuivre')) {
+        t = t.replace(/\s*\/\s*cuivre 16\s*oz/gi, '');
+      }
+    }
+    if (s.calibre_solins && t.includes('/')) {
+      t = t.replace(/calibre 26 ou 24/gi, `calibre ${escapeXml(s.calibre_solins)}`);
+      t = t.replace(/calibre 26\s*\/\s*24/gi, `calibre ${escapeXml(s.calibre_solins)}`);
+    }
+
+    // Cols de cygne existant / Ventilateur Maximum
+    if (s.cols_cygne_type && t.includes('/') && t.toLowerCase().includes('cygne')) {
+      if (s.cols_cygne_type.toLowerCase().includes('existant')) {
+        t = t.replace(/tel qu[''']existant\s*\/\s*Ventilateur Maximum[^.]*/gi, "tel qu'existant");
+      }
+    }
+
+    // polyisocyanurate / polystyrène
+    if (s.type_isolant && t.includes('/')) {
+      t = t.replace(/polyisocyanurate\s*\/\s*polystyr[èe]ne/gi, escapeXml(s.type_isolant));
+    }
+
+    // Relevés BUR : papier feutre / élastomères
+    if (s.type_releves && t.includes('/') && (t.includes('feutre') || t.includes('élastomère'))) {
+      t = t.replace(/papier feutre # ?15,?\s*coton saturé[^/]*\/\s*deux \(2\) plis[^;]*/gi, escapeXml(s.type_releves));
+    }
+
+    if (t !== text) return `<w:t${attrs}>${t}</w:t>`;
+    return full;
+  });
 
   return xml;
 }
