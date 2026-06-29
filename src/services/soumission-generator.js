@@ -231,7 +231,7 @@ function replaceBlankFields(xml, soumission) {
     xml = xml.replace(/sloped 1% \/ 2%/g, `sloped ${pente}`);
   }
 
-  // === RÉSOLUTION DES CHOIX SLASH (comme l'étape 7 manuelle) ===
+  // === RÉSOLUTION DES CHOIX SLASH (comme les étapes manuelles) ===
 
   // Isolant type : polyisocyanurate/ polystyrène → choix unique
   if (s.type_isolant) {
@@ -240,12 +240,112 @@ function replaceBlankFields(xml, soumission) {
     xml = xml.replace(/polyisocyanurate\s*\/\s*polystyrene/gi, isolType);
   }
 
-  // Relevés : contreplaqué ½'' / asphaltique ½'' → choix unique
+  // Méthode d'adhésion : adhéré avec de l'asphalte / fixé mécaniquement → choix unique
+  if (s.methode_adhesion) {
+    const meth = s.methode_adhesion.toLowerCase();
+    if (meth.includes('asphalte') || meth.includes('asphalt')) {
+      xml = xml.replace(/adhéré avec de l'asphalte\s*\/\s*fixé mécaniquement/gi, "adhéré avec de l'asphalte");
+      xml = xml.replace(/adhéré avec de l'asphalte chaud\s*\/\s*fixé mécaniquement/gi, "adhéré avec de l'asphalte chaud");
+      xml = xml.replace(/adhéré à l'asphalte\s*\/\s*fixé mécaniquement/gi, "adhéré à l'asphalte");
+    } else if (meth.includes('méca') || meth.includes('meca')) {
+      xml = xml.replace(/adhéré avec de l'asphalte\s*\/\s*fixé mécaniquement/gi, 'fixé mécaniquement');
+      xml = xml.replace(/adhéré avec de l'asphalte chaud\s*\/\s*fixé mécaniquement/gi, 'fixé mécaniquement');
+      xml = xml.replace(/adhéré à l'asphalte\s*\/\s*fixé mécaniquement/gi, 'fixé mécaniquement');
+    } else if (meth.includes('adhésif') || meth.includes('adhesif')) {
+      xml = xml.replace(/adhéré à l'adhésif\s*\/\s*(?:un pare-vapeur|fixé|thermosoudé)[^;]*/gi, "adhéré à l'adhésif");
+    }
+  }
+
+  // Pare-vapeur : choix entre 3 options slash
+  if (s.type_pare_vapeur) {
+    const pv = escapeXml(s.type_pare_vapeur);
+    // FR: "un pare-vapeur de papier kraft adhéré à l'adhésif / un pare-vapeur élastomère thermosoudée... / 2 plis de feutre #15 adhéré à l'asphalte"
+    xml = xml.replace(/un pare-vapeur de papier kraft adhéré à l'adhésif\s*\/\s*un pare-vapeur élastomère thermosoudée[^/]*\/\s*2 plis de feutre #15 adhéré à l'asphalte/gi, pv);
+    // Variante plus courte
+    xml = xml.replace(/un pare-vapeur de papier kraft[^/]*\/[^/]*élastomère[^/]*\/[^;]*/gi, pv);
+  }
+
+  // Fibre de bois / perlite → choix unique (BUR)
+  if (s.type_fibre) {
+    const fibre = escapeXml(s.type_fibre);
+    xml = xml.replace(/fibre de bois\s*\/\s*perlite/gi, fibre);
+    xml = xml.replace(/wood fibre\s*\/\s*perlite/gi, fibre);
+  }
+
+  // Épaisseur fibre de bois (BUR)
+  if (s.epaisseur_fibre_bois) {
+    const efb = escapeXml(s.epaisseur_fibre_bois);
+    xml = xml.replace(/_+(?="\s*de fibre)/g, efb);
+    xml = xml.replace(/_+(?="\s*de perlite)/g, efb);
+    xml = xml.replace(/_+(?=\s*Roofboard)/gi, efb);
+  }
+
+  // Nombre de plis (BUR) : (4-5) → choix
+  if (s.nb_plis) {
+    const plis = escapeXml(s.nb_plis);
+    xml = xml.replace(/\(4-5\)/g, `(${plis})`);
+    xml = xml.replace(/\(4 - 5\)/g, `(${plis})`);
+  }
+
+  // Membrane finition BUR : 4-5 plis feutre... / deux (2) plis élastomères
+  if (s.type_membrane_finition) {
+    const memb = s.type_membrane_finition.toLowerCase();
+    if (memb.includes('feutre') || memb.includes('asphalte') || memb.includes('gravier')) {
+      // Garder la première option (BUR classique), supprimer la deuxième
+      xml = xml.replace(/plis de papier feutre # ?15[^/]*\/\s*deux \(2\) plis de membranes élastomères[^;]*/gi,
+        (match) => match.split('/')[0].trim());
+    } else if (memb.includes('élastomère') || memb.includes('elastomere')) {
+      xml = xml.replace(/\(4-5\) plis de papier feutre[^/]*\/\s*/gi, '');
+    }
+  }
+
+  // Gravier BUR : standard OU réfléchissant
+  if (s.type_gravier) {
+    const grav = s.type_gravier.toLowerCase();
+    if (grav.includes('blanc') || grav.includes('réfléchiss') || grav.includes('650')) {
+      xml = xml.replace(/gravier ¼[''"]?\s*standard[^/]*\/\s*100 pieds carrés\s*OU\s*/gi, '');
+    } else {
+      xml = xml.replace(/\s*OU gravier ¼[''"]?\s*réfléchissantes[^;]*/gi, '');
+    }
+  }
+
+  // Relevés BUR : papier feutre / élastomères
   if (s.type_releves) {
     const rel = escapeXml(s.type_releves);
+    // SOPRASMART: contreplaqué / asphaltique
     xml = xml.replace(new RegExp(`contreplaqué\\s+½${CURLY_APOS}${CURLY_APOS}\\s*/\\s*asphaltique\\s+½${CURLY_APOS}${CURLY_APOS}`, 'g'), rel);
     xml = xml.replace(/contreplaqué\s+½['']{1,2}\s*\/\s*asphaltique\s+½['']{1,2}/gi, rel);
     xml = xml.replace(/plywood\s+½['']{1,2}\s*\/\s*asphalt\s+½['']{1,2}/gi, rel);
+    // BUR: papier feutre / élastomères
+    xml = xml.replace(/papier feutre # ?15,?\s*coton saturé[^/]*\/\s*deux \(2\) plis de membranes élastomères[^;]*/gi, rel);
+  }
+
+  // Solins matériau : acier prépeint / acier galvanisé / cuivre 16oz
+  if (s.materiau_solins) {
+    const mat = escapeXml(s.materiau_solins);
+    xml = xml.replace(/acier prépeint\s*\/?\s*acier galvanisé/gi, mat);
+    xml = xml.replace(/acier pr[ée]peint\s*\/\s*acier galvanis[ée]/gi, mat);
+  }
+  if (s.calibre_solins) {
+    const cal = escapeXml(s.calibre_solins);
+    xml = xml.replace(/calibre 26 ou 24/gi, `calibre ${cal}`);
+    xml = xml.replace(/calibre 26\s*\/\s*24/gi, `calibre ${cal}`);
+  }
+  // cuivre 16oz option
+  if (s.materiau_solins && !s.materiau_solins.toLowerCase().includes('cuivre')) {
+    xml = xml.replace(/\s*\/\s*cuivre 16\s*oz/gi, '');
+  }
+
+  // Cols de cygne : existant / Ventilateur Maximum
+  if (s.cols_cygne_type) {
+    const cct = s.cols_cygne_type.toLowerCase();
+    if (cct.includes('existant')) {
+      xml = xml.replace(/cols de cygne tel qu'existant\s*\/\s*Ventilateur Maximum #[_]*/gi, 'cols de cygne tel qu\'existant');
+      xml = xml.replace(/cols de cygne tel qu[''']existant\s*\/\s*Ventilateur Maximum[^.]*/gi, "cols de cygne tel qu'existant");
+    } else if (cct.includes('ventilateur')) {
+      const ventNum = s.ventilateur_max ? escapeXml(s.ventilateur_max) : BLANK;
+      xml = xml.replace(/cols de cygne tel qu[''']existant\s*\/\s*/gi, '');
+    }
   }
 
   // Pontage

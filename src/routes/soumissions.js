@@ -267,9 +267,19 @@ router.post('/analyser', uploadDevis.single('devis'), async (req, res) => {
         if (iaResult.documents_recus) d.documents_recus = iaResult.documents_recus;
         if (iaResult.sections_devis) d.sections_devis = iaResult.sections_devis;
         if (iaResult.bassins) d.bassins = iaResult.bassins;
-        // Champs techniques stockés en notes pour le générateur
+        // Champs techniques pour le générateur (résolution des slashs)
         if (iaResult.type_isolant) d.type_isolant = iaResult.type_isolant;
-        if (iaResult.type_releves) d.type_releves = iaResult.type_relevés || iaResult.type_releves;
+        if (iaResult.type_releves || iaResult.type_relevés) d.type_releves = iaResult.type_releves || iaResult.type_relevés;
+        if (iaResult.methode_adhesion) d.methode_adhesion = iaResult.methode_adhesion;
+        if (iaResult.type_gravier) d.type_gravier = iaResult.type_gravier;
+        if (iaResult.nb_plis) d.nb_plis = iaResult.nb_plis;
+        if (iaResult.epaisseur_fibre_bois) d.epaisseur_fibre_bois = iaResult.epaisseur_fibre_bois;
+        if (iaResult.type_fibre) d.type_fibre = iaResult.type_fibre;
+        if (iaResult.materiau_solins) d.materiau_solins = iaResult.materiau_solins;
+        if (iaResult.cols_cygne_type) d.cols_cygne_type = iaResult.cols_cygne_type;
+        if (iaResult.ventilateur_max) d.ventilateur_max = iaResult.ventilateur_max;
+        if (iaResult.type_pare_vapeur) d.type_pare_vapeur = iaResult.type_pare_vapeur;
+        if (iaResult.cout_remplacement_isolant) d.cout_remplacement_isolant = iaResult.cout_remplacement_isolant;
         if (iaResult.notes) d.notes = iaResult.notes;
       }
     } catch (err) {
@@ -293,8 +303,9 @@ router.post('/analyser', uploadDevis.single('devis'), async (req, res) => {
       ventilateur_max, cout_remplacement_cp, cout_remplacement_isolant,
       prix_total, garantie_t3e, garantie_manufacturier,
       exclusions_specifiques, documents_recus, notes, template_utilise, cree_par,
-      type_isolant, type_releves, bassins, sections_devis
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      type_isolant, type_releves, bassins, sections_devis,
+      methode_adhesion, type_gravier, nb_plis, epaisseur_fibre_bois, type_fibre, materiau_solins, cols_cygne_type
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `, [
     numero, clientNom, v(d.client_adresse), v(d.client_ville), v(d.client_province) || 'QC', v(d.client_code_postal),
     v(d.client_contact), v(d.client_telephone), v(d.client_courriel),
@@ -304,7 +315,8 @@ router.post('/analyser', uploadDevis.single('devis'), async (req, res) => {
     v(d.ventilateur_max), v(d.cout_remplacement_cp), v(d.cout_remplacement_isolant),
     v(d.prix_total), v(d.garantie_t3e) || '5 ans', v(d.garantie_manufacturier) || '10 ans',
     v(d.exclusions_specifiques), v(d.documents_recus || d._documents_recus), v(d.notes), v(templateKey), v(d.cree_par) || 'Estimateur',
-    v(d.type_isolant), v(d.type_releves), v(d.bassins), v(d.sections_devis)
+    v(d.type_isolant), v(d.type_releves), v(d.bassins), v(d.sections_devis),
+    v(d.methode_adhesion), v(d.type_gravier), v(d.nb_plis), v(d.epaisseur_fibre_bois), v(d.type_fibre), v(d.materiau_solins), v(d.cols_cygne_type)
   ]);
 
   const created = await db.execute('SELECT id FROM soumissions WHERE numero = ?', [numero]);
@@ -347,6 +359,7 @@ router.post('/:id/confirmer', async (req, res) => {
       prix_total=?, garantie_t3e=?, garantie_manufacturier=?,
       exclusions_specifiques=?, notes=?, template_utilise=?,
       type_isolant=?, type_releves=?, bassins=?, sections_devis=?,
+      methode_adhesion=?, type_gravier=?, nb_plis=?, epaisseur_fibre_bois=?, type_fibre=?, materiau_solins=?, cols_cygne_type=?,
       updated_at=datetime('now')
     WHERE id=?
   `, [
@@ -359,6 +372,7 @@ router.post('/:id/confirmer', async (req, res) => {
     v(d.prix_total), v(d.garantie_t3e) || '5 ans', v(d.garantie_manufacturier) || '10 ans',
     v(d.exclusions_specifiques), v(d.notes), v(templateKey),
     v(d.type_isolant), v(d.type_releves), v(d.bassins), v(d.sections_devis),
+    v(d.methode_adhesion), v(d.type_gravier), v(d.nb_plis), v(d.epaisseur_fibre_bois), v(d.type_fibre), v(d.materiau_solins), v(d.cols_cygne_type),
     req.params.id
   ]);
 

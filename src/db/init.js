@@ -76,6 +76,13 @@ async function initDb() {
     'ALTER TABLE soumissions ADD COLUMN type_releves TEXT',
     'ALTER TABLE soumissions ADD COLUMN bassins TEXT',
     'ALTER TABLE soumissions ADD COLUMN sections_devis TEXT',
+    'ALTER TABLE soumissions ADD COLUMN methode_adhesion TEXT',
+    'ALTER TABLE soumissions ADD COLUMN type_gravier TEXT',
+    'ALTER TABLE soumissions ADD COLUMN nb_plis TEXT',
+    'ALTER TABLE soumissions ADD COLUMN epaisseur_fibre_bois TEXT',
+    'ALTER TABLE soumissions ADD COLUMN type_fibre TEXT',
+    'ALTER TABLE soumissions ADD COLUMN materiau_solins TEXT',
+    'ALTER TABLE soumissions ADD COLUMN cols_cygne_type TEXT',
   ];
 
   for (const sql of migrations) {

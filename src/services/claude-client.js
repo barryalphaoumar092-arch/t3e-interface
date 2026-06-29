@@ -137,12 +137,21 @@ const ANALYSE_SOUMISSION_SCHEMA = {
     garantie_t3e:                 { type: 'string' },
     garantie_manufacturier:       { type: 'string' },
     cout_remplacement_cp:         { type: 'string' },
+    cout_remplacement_isolant:    { type: 'string' },
     documents_recus:              { type: 'string' },
     date_documents:               { type: 'string' },
     sections_devis:               { type: 'string' },
     addenda:                      { type: 'string' },
     rsi_minimum:                  { type: 'string' },
-    type_relevés:                 { type: 'string' },
+    type_releves:                 { type: 'string' },
+    methode_adhesion:             { type: 'string' },
+    type_gravier:                 { type: 'string' },
+    nb_plis:                      { type: 'string' },
+    epaisseur_fibre_bois:         { type: 'string' },
+    type_fibre:                   { type: 'string' },
+    materiau_solins:              { type: 'string' },
+    ventilateur_max:              { type: 'string' },
+    cols_cygne_type:              { type: 'string' },
     notes:                        { type: 'string' },
     confiance:                    { type: 'string' },
   },
@@ -155,50 +164,93 @@ const ANALYSE_SOUMISSION_SCHEMA = {
     'type_panneau_support', 'nb_drains', 'nb_drains_urgence',
     'nb_manchons_events', 'nb_manchons_etancheite', 'nb_cols_cygne',
     'type_solins', 'calibre_solins', 'type_drain', 'bassins',
-    'garantie_t3e', 'garantie_manufacturier', 'cout_remplacement_cp',
+    'garantie_t3e', 'garantie_manufacturier', 'cout_remplacement_cp', 'cout_remplacement_isolant',
     'documents_recus', 'date_documents', 'sections_devis', 'addenda',
-    'rsi_minimum', 'type_relevés', 'notes', 'confiance',
+    'rsi_minimum', 'type_releves', 'methode_adhesion', 'type_gravier',
+    'nb_plis', 'epaisseur_fibre_bois', 'type_fibre', 'materiau_solins',
+    'ventilateur_max', 'cols_cygne_type', 'notes', 'confiance',
   ],
   additionalProperties: false,
 };
 
 async function analyserDevisSoumission(texteDevis) {
-  const systemPrompt = `Tu es un expert en toitures commerciales au Québec, spécialisé dans l'analyse de devis pour Toitures Trois Étoiles Inc. (T3E).
+  const systemPrompt = `Tu es un expert en toitures commerciales au Québec pour Toitures Trois Étoiles Inc. (T3E).
 Tu dois extraire TOUTES les informations du devis pour remplir une soumission T3E. Sois EXHAUSTIF et PRÉCIS.
+La soumission T3E contient des choix séparés par "/" — tu dois CHOISIR la bonne option pour CHAQUE choix.
 
-RÈGLES CRITIQUES :
+=== RÈGLES ABSOLUES ===
 1. Extrais les informations EXACTES du devis — ne les invente pas.
-2. Pour les quantités (drains, manchons, etc.) : si le devis dit "voir plans" ou ne donne pas de nombre explicite, retourne "les" (qui signifie "tous les").
-3. Pour les choix techniques avec slash (ex: "polyisocyanurate / polystyrène"), CHOISIS la bonne option selon le contexte du devis.
-4. Pour le système de toiture, retourne EXACTEMENT une de ces valeurs : BUR, SOPRASMART, SOPRAFIX, COLVENT, EPDM_PVC, TPO_PVC_RHINOBOND, INVERSE, ANCESTRAL
-5. Pour type_travaux : REFECTION ou PLEUMAGE
-6. Pour le pontage : bois, acier, béton, ou siporex
-7. Pour la garantie T3E : "5 ans", "10 ans", "15 ans" ou "20 ans"
-8. Pour la garantie manufacturier : "10 ans", "15 ans", "20 ans" ou "25 ans"
-9. Pour la superficie : donne-la en pieds carrés dans superficie_pc ET en m² dans superficie_m2
-10. Pour l'épaisseur d'isolant : convertis le RSI en pouces si nécessaire (RSI 5.46 ≈ 3½")
-11. Pour les bassins : liste tous les bassins concernés (ex: "G-4 à G-12, F-1 et E-3")
-12. Pour les documents reçus : note le type (plans, sections devis, addenda) avec dates
-13. Pour confiance : "haute", "moyenne", ou "basse"
-14. Si une info n'est pas trouvée, retourne une chaîne vide "".
+2. CHAQUE champ doit avoir une valeur si le devis contient l'information. NE LAISSE AUCUN CHAMP VIDE si l'info existe.
+3. Si le devis ne donne pas un nombre exact (dit "voir plans"), retourne "les" pour les quantités.
+4. Si une info n'est PAS dans le devis, retourne "".
+5. Pour confiance : "haute", "moyenne", ou "basse".
 
-CONNAISSANCES T3E :
-- Systèmes Soprema : SOPRASMART = panneau laminé adhésif, SOPRAFIX = fixation mécanique
-- Pare-vapeur typique : SOPRALENE 180 SP 3,5
-- Membrane finition : SOPRA STAR FLAM FR GR (granulée blanche)
-- Panneau support : SECUROCK / DENSDECK PRIME (gypse haute performance)
-- Drains : Ultra MEK cuivre 32 oz avec crépine Duo-Procast (Murphco)
-- Manchons d'évents : aluminium prémoulé
-- Manchons d'étanchéité : Chem-Curbs (Soprema) ou équivalent
-- Solins : acier prépeint Weather XL (Vicwest)
-- Isolant : polyisocyanurate (le plus courant dans les systèmes SBS)`;
+=== CHOIX TECHNIQUES À RÉSOUDRE (les templates T3E ont des "/" entre options) ===
 
-  const userContent = `Analyse ce devis de toiture et extrais TOUTES les informations pour remplir la soumission T3E.
+PONTAGE — Retourne UN SEUL parmi : "acier", "bois", "béton", "siporex"
+  Le devis dit généralement "pontage d'acier" ou "pontage de bois" etc.
 
-TEXTE DU DEVIS (premiers ${texteDevis.length} caractères) :
-${texteDevis}
+MÉTHODE D'ADHÉSION (methode_adhesion) — Retourne UN SEUL parmi :
+  "adhésif" | "asphalte" | "mécanique" | "thermosoudé"
+  Exemples dans le devis : "adhéré à l'adhésif", "adhéré avec de l'asphalte chaud", "fixé mécaniquement", "thermosoudé"
 
-Extrais chaque champ avec précision. Pour les choix multiples séparés par "/" dans le devis, choisis la bonne option selon le contexte technique.`;
+PARE-VAPEUR (type_pare_vapeur) — Retourne le texte EXACT du choix, ex :
+  "un pare-vapeur de papier kraft adhéré à l'adhésif" (BUR)
+  "un pare-vapeur élastomère thermosoudée sur surface préalablement apprêtée" (élastomère)
+  "2 plis de feutre #15 adhéré à l'asphalte" (BUR multicouche)
+  "un pare-vapeur thermosoudé SOPRALENE 180 SP 3,5 (Soprema) installé à l'adhésif" (SOPRASMART)
+
+ISOLANT — Retourne type et épaisseur :
+  type_isolant : "polyisocyanurate" | "polystyrène" | "fibre de bois" | "perlite"
+  epaisseur_isolant : en pouces, ex "3½" ou "2". Convertis RSI si nécessaire (RSI 5.46 ≈ 3½")
+  pente_isolant : "1%" ou "2%" (le devis spécifie la pente)
+
+FIBRE DE BOIS / PERLITE (pour BUR) :
+  type_fibre : "fibre de bois" | "perlite"
+  epaisseur_fibre_bois : épaisseur en pouces, ex "½" ou "¾"
+
+NOMBRE DE PLIS (nb_plis, pour BUR) : "4" ou "5"
+
+MEMBRANE FINITION :
+  BUR : "asphalte type 2 et du gravier" | "membranes élastomères"
+  SOPRASMART : "membrane de finition élastomère granulée de couleur réfléchissante blanche"
+
+GRAVIER (type_gravier, pour BUR) :
+  "gravier ¼'' standard environ 450 lbs. / 100 pieds carrés"
+  OU "gravier ¼'' réfléchissantes blanches environ 650 lbs. / 100 pieds carrés"
+
+RELEVÉS (type_releves) — Retourne le texte choisi :
+  BUR : "papier feutre #15, coton saturé et de l'asphalte chaud" | "deux (2) plis de membranes élastomères fini sablé adhérées à l'asphalte chaud"
+  SOPRASMART : "contreplaqué ½''" | "asphaltique ½''"
+
+SOLINS :
+  materiau_solins : "acier prépeint" | "acier galvanisé" | "cuivre 16oz"
+  calibre_solins : "26" | "24"
+  type_solins : description (ex "Weather XL (Vicwest)")
+
+COLS DE CYGNE :
+  cols_cygne_type : "existants" | "Ventilateur Maximum"
+  ventilateur_max : numéro de modèle si Ventilateur Maximum, sinon ""
+
+COÛTS REMPLACEMENT :
+  cout_remplacement_cp : prix $/pi² pour contreplaqué (ex "8.50"), si dans le devis
+  cout_remplacement_isolant : prix $/pi² pour isolant, si dans le devis
+
+GARANTIES :
+  garantie_t3e : "5 ans", "10 ans", "15 ans" ou "20 ans"
+  garantie_manufacturier : "10 ans", "15 ans", "20 ans" ou "25 ans"
+
+SYSTÈME DE TOITURE : EXACTEMENT une de ces valeurs :
+  BUR | SOPRASMART | SOPRAFIX | COLVENT | EPDM_PVC | TPO_PVC_RHINOBOND | INVERSE | ANCESTRAL
+
+TYPE TRAVAUX : REFECTION | PLEUMAGE`;
+
+  const userContent = `Analyse ce devis de toiture et extrais TOUTES les informations.
+IMPORTANT : Résous CHAQUE choix "/" en choisissant la bonne option selon le contexte du devis.
+Remplis TOUS les champs — ne laisse rien vide si l'information existe dans le devis.
+
+TEXTE DU DEVIS :
+${texteDevis}`;
 
   return callOpenAI(systemPrompt, userContent, ANALYSE_SOUMISSION_SCHEMA, true);
 }
