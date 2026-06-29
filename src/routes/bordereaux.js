@@ -426,8 +426,20 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
   // 3. Auto-match FT (recalculer au cas où l'utilisateur a changé FABRICANT/TITRE)
   let ftChemins = [];
   try {
+    console.log('[generer] Recherche FT: FABRICANT="' + champs.FABRICANT + '", TITRE="' + champs.TITRE + '"');
     ftChemins = trouverFichesTechniques(champs.FABRICANT, champs.TITRE);
-    console.log('[generer] FT trouvees:', ftChemins.length, ftChemins);
+    // Fallback si rien trouvé : essayer avec des fabricants connus
+    if (ftChemins.length === 0) {
+      const fabricantsConnus = ['Soprema','IKO','BP','Tremco','CGC','Murphco','Ventilation Maximum','Henry Bakor','Securpan'];
+      const texteRecherche = (champs.TITRE + ' ' + champs.FABRICANT + ' ' + champs.REMARQUE).toLowerCase();
+      for (const fab of fabricantsConnus) {
+        if (texteRecherche.includes(fab.toLowerCase().substring(0, 4))) {
+          ftChemins = trouverFichesTechniques(fab, champs.TITRE);
+          if (ftChemins.length > 0) { console.log('[generer] FT fallback via', fab); break; }
+        }
+      }
+    }
+    console.log('[generer] FT trouvees:', ftChemins.length);
   } catch (e) {
     console.error('[generer] Erreur FT match:', e);
   }
