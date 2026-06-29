@@ -233,8 +233,9 @@ router.post('/analyser', uploadDevis.single('devis'), async (req, res) => {
   if (isConfigured() && devisTexte) {
     try {
       const { analyserDevisSoumission } = require('../services/claude-client');
-      // Envoyer un maximum de texte à l'IA (jusqu'à 30000 chars pour couvrir les sections techniques)
-      const texteIA = devisTexte.substring(0, 30000);
+      // Envoyer un MAXIMUM de texte à l'IA (GPT-4o supporte 128K tokens ≈ 400K chars)
+      // On envoie jusqu'à 80K chars pour couvrir toutes les sections techniques
+      const texteIA = devisTexte.substring(0, 80000);
       console.log(`[IA Soumission] Envoi de ${texteIA.length} chars au modèle GPT-4o...`);
       const iaResult = await analyserDevisSoumission(texteIA);
       console.log(`[IA Soumission] Résultat:`, JSON.stringify(iaResult).substring(0, 1000));
