@@ -54,20 +54,27 @@ function remplirChampDansXml(xml, label, valeur) {
 }
 
 function cocherFicheTechnique(xml) {
-  // CaseACocher3 = "Fiche technique" — ajouter <w:default w:val="1"/> dans <w:checkBox>
-  const marker = 'CaseACocher3';
-  const idx = xml.indexOf(marker);
-  if (idx === -1) return xml;
+  // Trouver "Fiche technique" dans le XML, puis cocher la case à cocher la plus proche
+  const ftIdx = xml.indexOf('Fiche technique');
+  if (ftIdx === -1) return xml;
 
-  const cbStart = xml.indexOf('<w:checkBox>', idx);
-  const cbEnd = xml.indexOf('</w:checkBox>', idx);
-  if (cbStart === -1 || cbEnd === -1) return xml;
+  // Chercher le <w:checkBox> le plus proche APRÈS "Fiche technique"
+  let cbIdx = xml.indexOf('<w:checkBox>', ftIdx);
+  // Si pas trouvé après, chercher AVANT (la case peut être avant le texte)
+  if (cbIdx === -1 || cbIdx > ftIdx + 2000) {
+    cbIdx = xml.lastIndexOf('<w:checkBox>', ftIdx);
+  }
+  if (cbIdx === -1) return xml;
 
-  const sizeAutoEnd = xml.indexOf('</w:sizeAuto>', cbStart);
-  if (sizeAutoEnd === -1 || sizeAutoEnd > cbEnd) return xml;
+  const cbEnd = xml.indexOf('</w:checkBox>', cbIdx);
+  if (cbEnd === -1) return xml;
 
-  const insertPos = sizeAutoEnd + '</w:sizeAuto>'.length;
-  xml = xml.substring(0, insertPos) + '<w:default w:val="1"/>' + xml.substring(insertPos);
+  // Vérifier si déjà cochée
+  const cbContent = xml.substring(cbIdx, cbEnd);
+  if (cbContent.includes('w:default') || cbContent.includes('w:checked')) return xml;
+
+  // Insérer <w:default w:val="1"/> juste avant </w:checkBox>
+  xml = xml.substring(0, cbEnd) + '<w:default w:val="1"/>' + xml.substring(cbEnd);
   return xml;
 }
 
