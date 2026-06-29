@@ -410,33 +410,33 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
 
   console.log('[generer]', produits.length, 'produit(s) à générer');
 
-  // 3. Pour CHAQUE produit : remplir .docx + trouver FT
+  // 3. Pour CHAQUE produit : remplir .docx + FT à la suite
   const zip = new JSZip();
-  const allFtChemins = [];
 
   for (let i = 0; i < produits.length; i++) {
     const p = produits[i];
+    const label = (p.TITRE || 'produit-' + (i + 1)).replace(/[^a-zA-Z0-9àâäéèêëîïôùûü _-]/g, '').substring(0, 40);
     const champs = { ...champsCommuns, TITRE: p.TITRE || '', FABRICANT: p.FABRICANT || '', FOURNISSEUR: p.FOURNISSEUR || '', SECTION: p.SECTION || '', ARTICLE: p.ARTICLE || '', REMARQUE: p.REMARQUE || '', NUMERO_DESSINS: '', NOMBRE_FEUILLES: '', REVISION: '', DESCRIPTION: '', DELAI: '' };
 
     try {
       const docx = await remplirBordereau(champs, bordereauBuffer);
-      const label = (p.TITRE || 'produit-' + (i + 1)).replace(/[^a-zA-Z0-9àâäéèêëîïôùûü _-]/g, '').substring(0, 40);
-      zip.file(`Bordereau_${i + 1}_${label}.docx`, docx);
+      zip.file(`${i + 1}_Bordereau_${label}.docx`, docx);
       console.log('[generer] Bordereau', i + 1, ':', label);
     } catch (e) {
       console.error('[generer] Erreur produit', i + 1, ':', e.message);
     }
 
-    const ft = trouverFichesTechniques(p.FABRICANT || '', p.TITRE || '');
-    ft.forEach(f => { if (!allFtChemins.includes(f)) allFtChemins.push(f); });
-  }
-
-  // 4. Fusionner TOUTES les FT en 1 PDF
-  if (allFtChemins.length > 0) {
+    // FT de CE produit — juste après son bordereau
     try {
-      const ftPdf = await fusionnerPDF(allFtChemins);
-      if (ftPdf) zip.file('Fiches_Techniques.pdf', ftPdf);
-    } catch (e) { console.error('[generer] Erreur fusion FT:', e.message); }
+      const ft = trouverFichesTechniques(p.FABRICANT || '', p.TITRE || '');
+      if (ft.length > 0) {
+        const ftPdf = await fusionnerPDF(ft);
+        if (ftPdf) {
+          zip.file(`${i + 1}_FT_${label}.pdf`, ftPdf);
+          console.log('[generer] FT', i + 1, ':', ft.length, 'fichiers');
+        }
+      }
+    } catch (e) { console.error('[generer] Erreur FT', i + 1, ':', e.message); }
   }
 
   // 5. DB update
