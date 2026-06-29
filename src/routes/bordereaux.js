@@ -490,23 +490,37 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
     console.error('[generer] Erreur DB update:', e);
   }
 
-  // 6. Retourner le résultat
+  // 6. Créer le bordereau en PDF (pdfkit) + fusionner avec FT → 1 seul PDF
   const ts = Date.now();
+  const { creerBordereauPdf } = require('../services/bordereau-pdf');
 
-  if (!ftPdfBuffer) {
+  try {
+    const bordereauPdf = await creerBordereauPdf(champs);
+    const finalDoc = await PDFDocument.create();
+
+    // Ajouter le bordereau PDF
+    const bordDoc = await PDFDocument.load(bordereauPdf);
+    const bordPages = await finalDoc.copyPages(bordDoc, bordDoc.getPageIndices());
+    bordPages.forEach(p => finalDoc.addPage(p));
+
+    // Ajouter les FT à la suite
+    if (ftPdfBuffer) {
+      const ftDoc = await PDFDocument.load(ftPdfBuffer, { ignoreEncryption: true });
+      const ftPages = await finalDoc.copyPages(ftDoc, ftDoc.getPageIndices());
+      ftPages.forEach(p => finalDoc.addPage(p));
+    }
+
+    const finalBuffer = Buffer.from(await finalDoc.save());
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="Bordereau_FT_${section}_${ts}.pdf"`);
+    res.send(finalBuffer);
+  } catch (e) {
+    console.error('[generer] Erreur PDF final:', e);
+    // Fallback : retourner le .docx seul
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     res.setHeader('Content-Disposition', `attachment; filename="Bordereau_${section}_${ts}.docx"`);
-    return res.send(docxBuffer);
+    res.send(docxBuffer);
   }
-
-  const zip = new JSZip();
-  zip.file(`Bordereau_${section}.docx`, docxBuffer);
-  zip.file(`Fiches_Techniques_${section}.pdf`, ftPdfBuffer);
-  const zipBuffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
-
-  res.setHeader('Content-Type', 'application/zip');
-  res.setHeader('Content-Disposition', `attachment; filename="Bordereau_${section}_${ts}.zip"`);
-  res.send(zipBuffer);
 });
 
 // Re-télécharger un .docx déjà généré
