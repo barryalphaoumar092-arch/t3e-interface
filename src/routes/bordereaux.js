@@ -298,8 +298,10 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
   if (r.rows.length === 0) return res.status(404).send('Bordereau introuvable');
 
   const row = r.rows[0];
-  let data;
-  try { data = JSON.parse(row.contenu); } catch (_) { data = { champs: {}, ft_chemins: [] }; }
+
+  if (!row.template_data) {
+    return res.status(400).send('Le template .docx est manquant pour ce bordereau. Veuillez recommencer depuis le début.');
+  }
 
   // 1. Récupérer les champs du formulaire (l'utilisateur peut avoir modifié)
   const champs = {
@@ -321,46 +323,71 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
     REMARQUE: req.body.REMARQUE || '',
   };
 
+  console.log('[generer] Champs:', JSON.stringify(champs).substring(0, 300));
+  console.log('[generer] template_data length:', row.template_data.length);
+
   // 2. Remplir le .docx — suit les étapes exactes :
   //    normalizeXmlText → remplirChampDansXml (NBSP + indexOf + labels longs d'abord)
-  const bordereauBuffer = Buffer.from(row.template_data, 'base64');
+  let bordereauBuffer;
+  try {
+    bordereauBuffer = Buffer.from(row.template_data, 'base64');
+    console.log('[generer] Buffer .docx:', bordereauBuffer.length, 'octets');
+  } catch (e) {
+    return res.status(500).send('Erreur décodage template : ' + e.message);
+  }
+
   let docxBuffer;
   try {
     docxBuffer = await remplirBordereau(champs, bordereauBuffer);
+    console.log('[generer] .docx rempli:', docxBuffer.length, 'octets');
   } catch (e) {
+    console.error('[generer] Erreur remplissage:', e);
     return res.status(500).send('Erreur remplissage .docx : ' + e.message);
   }
 
   // 3. Auto-match FT (recalculer au cas où l'utilisateur a changé FABRICANT/TITRE)
-  const ftChemins = trouverFichesTechniques(champs.FABRICANT, champs.TITRE);
+  let ftChemins = [];
+  try {
+    ftChemins = trouverFichesTechniques(champs.FABRICANT, champs.TITRE);
+    console.log('[generer] FT trouvees:', ftChemins.length, ftChemins);
+  } catch (e) {
+    console.error('[generer] Erreur FT match:', e);
+  }
 
   // 4. Fusionner les FT en un seul PDF
-  const ftPdfBuffer = await fusionnerPDF(ftChemins);
+  let ftPdfBuffer = null;
+  try {
+    if (ftChemins.length > 0) ftPdfBuffer = await fusionnerPDF(ftChemins);
+    console.log('[generer] FT PDF:', ftPdfBuffer ? ftPdfBuffer.length + ' octets' : 'aucune');
+  } catch (e) {
+    console.error('[generer] Erreur fusion PDF:', e);
+  }
 
   // 5. Mettre à jour la DB
-  const section = (champs.SECTION || champs.NUMERO_DU_PROJET || 'T3E').replace(/\s/g, '-').substring(0, 30);
-  await db.execute({
-    sql: `UPDATE bordereaux SET statut = 'approuve', session_actif = 0, numero_projet = ?, titre = ?, contenu = ?, template_data = ? WHERE id = ?`,
-    args: [
-      champs.NUMERO_DU_PROJET || '',
-      champs.NOM_DU_PROJET || '',
-      JSON.stringify({ champs, ft_chemins: ftChemins }),
-      docxBuffer.toString('base64'),
-      id,
-    ],
-  });
+  const section = (champs.SECTION || champs.NUMERO_DU_PROJET || 'T3E').replace(/[^a-zA-Z0-9_-]/g, '-').substring(0, 30);
+  try {
+    await db.execute({
+      sql: `UPDATE bordereaux SET statut = 'approuve', session_actif = 0, numero_projet = ?, titre = ?, contenu = ? WHERE id = ?`,
+      args: [
+        champs.NUMERO_DU_PROJET || '',
+        champs.NOM_DU_PROJET || '',
+        JSON.stringify({ champs, ft_chemins: ftChemins }),
+        id,
+      ],
+    });
+  } catch (e) {
+    console.error('[generer] Erreur DB update:', e);
+  }
 
   // 6. Retourner le résultat
   const ts = Date.now();
 
   if (!ftPdfBuffer) {
-    // Pas de FT → .docx seul
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     res.setHeader('Content-Disposition', `attachment; filename="Bordereau_${section}_${ts}.docx"`);
     return res.send(docxBuffer);
   }
 
-  // Avec FT → ZIP contenant le .docx rempli + le PDF des fiches techniques combinées
   const zip = new JSZip();
   zip.file(`Bordereau_${section}.docx`, docxBuffer);
   zip.file(`Fiches_Techniques_${section}.pdf`, ftPdfBuffer);
