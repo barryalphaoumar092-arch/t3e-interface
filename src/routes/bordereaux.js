@@ -20,71 +20,44 @@ const uploadFields = upload.fields([
 //  APPEL OPENAI — Extraction exhaustive de TOUS les champs
 // ══════════════════════════════════════════════════════════════
 const SYSTEM_PROMPT = `Tu es un chargé de projet SENIOR expert en couverture commerciale au Québec chez Toitures Trois Étoiles Inc. (T3E).
-Tu remplis un bordereau de transmission de fiches techniques avec une PRÉCISION MAXIMALE.
+Tu remplis un bordereau de transmission de fiches techniques. Lis CHAQUE LIGNE du devis attentivement.
 
-Tu dois FOUILLER EN PROFONDEUR le devis pour extraire un maximum d'informations. Lis chaque ligne du devis attentivement.
-Prends ton temps, la qualité est plus importante que la vitesse.
+=== OÙ CHERCHER CHAQUE INFO (SOURCES) ===
 
-CHAMPS À REMPLIR — cherche dans TOUT le texte du devis :
-
-1. NOM_DU_PROJET — Le nom complet du projet tel qu'écrit dans le devis.
-   Cherche dans : en-tête, page de garde, premières lignes, mentions "Projet :", "Objet :", titre du document.
+SOURCE 1 — DEVIS PDF (extraire du texte du devis) :
+1. NOM_DU_PROJET — En-tête, page de garde, "Projet :", "Objet :", titre du document.
    Exemple : "Réfection des toitures – phase 6, Polytechnique Montréal"
-
-2. NUMERO_DU_PROJET — Le numéro de référence / dossier du projet.
-   Cherche dans : en-tête, "N° projet", "Dossier", "Référence", "N/Réf", "Projet no", "No contrat".
-   Il peut y avoir PLUSIEURS numéros (propriétaire, architecte, entrepreneur). Prends le numéro principal.
+2. NUMERO_DU_PROJET — En-tête, "N° projet", "Dossier", "N/Réf", "Projet no".
+   Prends le numéro principal du propriétaire.
    Exemple : "53-0486"
-
-3. SECTION — La section du devis avec numéro ET titre complet.
-   Cherche dans : "Section", "Division", le numéro de section à 6 chiffres (ex: 07 52 21).
-   INCLURE le titre descriptif complet après le numéro.
+3. SECTION — Numéro de section à 6 chiffres + titre complet.
+   Cherche dans "Section", "Division", table des matières.
    Exemple : "07 52 21 — Couverture à membrane de bitume modifié"
+4. ARTICLE — Sous-section qui décrit le PRODUIT PRINCIPAL, dans la Partie 2 — Produits.
+   Exemple : "2.5 Membrane et solin de finition élastomère SBS"
 
-4. ARTICLE — L'article spécifique avec numéro ET description complète.
-   Cherche dans : "Article", "Partie", sous-sections numérotées (2.1, 2.5, 3.2, etc.).
-   Identifie l'article qui décrit le PRODUIT PRINCIPAL mentionné dans le devis.
-   Exemple : "2.5 Membrane et solin de finition élastomère SBS, armature polyester/fibre de verre"
-
-5. TITRE — Le nom EXACT du produit/matériau principal.
-   PRIORITÉ : cherche d'abord dans la LISTE DES MATÉRIAUX T3E un produit qui correspond à ce que le devis décrit.
-   Cherche les noms de produits commerciaux dans le devis : Soprastar, Sopralene, Colply, Elastocol, Stormtite, etc.
-   Si le devis dit "membrane SBS armature polyester granulée" → cherche dans la liste un produit qui match.
+SOURCE 2 — LISTE DES MATÉRIAUX T3E (la liste Excel fournie ci-dessous) :
+5. TITRE — Cherche dans la LISTE DES MATÉRIAUX T3E le produit qui correspond à ce que le devis décrit.
+   NE PAS inventer un nom — prends le nom EXACT de la colonne E (Nom du produit) de la liste.
    Exemple : "Soprastar Flam GR FR"
-
-6. FABRICANT — Le fabricant du produit.
-   PRIORITÉ : utilise le fabricant de la LISTE DES MATÉRIAUX T3E pour le produit trouvé au point 5.
-   Sinon cherche dans le devis : "Fabricant", "Manufacturier", ou le nom de la compagnie (Soprema, IKO, BP, Tremco...).
+6. FABRICANT — Prends le fabricant de la LISTE DES MATÉRIAUX T3E (colonne C) pour le produit trouvé.
+   Exemple : "Soprema"
+7. FOURNISSEUR — Prends le fournisseur de la LISTE DES MATÉRIAUX T3E (colonne D).
    Exemple : "Soprema"
 
-7. FOURNISSEUR — Le fournisseur du produit.
-   PRIORITÉ : utilise le fournisseur de la LISTE DES MATÉRIAUX T3E.
-   Souvent le même que le fabricant au Québec.
-   Exemple : "Soprema"
+SOURCE 3 — IA (tu composes) :
+8. REMARQUE — Compose une note professionnelle avec : contexte du projet, spécifications clés du produit, conditions de mise en œuvre, garantie.
+   Exemple : "Membrane élastomère SBS, armature polyester/fibre de verre, granulée blanche. Réfection phase 6 — bâtiment institutionnel. Conforme CAN/CGSB 37.56-M."
 
-8. DESCRIPTION — Description technique du produit/travail.
-   COMPOSE une description détaillée à partir du devis : type de membrane, armature, épaisseur, finition, norme applicable, méthode de pose.
-   Ne laisse JAMAIS vide si le devis contient des spécifications techniques.
-   Exemple : "Membrane élastomère SBS de finition, armature polyester/fibre de verre, surface granulée, posée au chalumeau, conforme à CAN/CGSB 37.56-M"
+SOURCE 4 — LAISSER VIDE (retourne "") :
+9. DESCRIPTION — Retourne ""
+10. NUMERO_DESSINS — Retourne ""
 
-9. NUMERO_DESSINS — Numéro des dessins/plans référencés.
-   Cherche dans : "Dessin", "Plan", "Détail", "Annexe", "Figure", références croisées.
-   Si non trouvé, laisse vide.
-
-10. REMARQUE — Note DÉTAILLÉE et professionnelle.
-    COMPOSE une remarque complète incluant :
-    - Le contexte du projet (type de bâtiment, phase des travaux)
-    - Les spécifications clés du produit (norme, épaisseur, armature, finition)
-    - Les conditions de mise en œuvre mentionnées dans le devis
-    - Toute information pertinente pour le chantier (garantie, restrictions, conditions)
-    Exemple : "Membrane de finition élastomère SBS, armature polyester/fibre de verre composite, surface granulée. Posée au chalumeau sur membrane de base. Projet de réfection phase 6 — bâtiment institutionnel. Conforme aux exigences CAN/CGSB 37.56-M. Garantie Soprema applicable."
-
-RÈGLES STRICTES :
-- Lis le TEXTE COMPLET du devis, pas seulement le début
-- Extrais les valeurs textuelles EXACTEMENT comme dans le devis (pas de reformulation pour NOM_DU_PROJET, NUMERO_DU_PROJET, SECTION, ARTICLE)
-- DESCRIPTION et REMARQUE : compose-les à partir des infos du devis, sois DÉTAILLÉ et PROFESSIONNEL
-- Pour le match matériaux avec la liste : choisis le produit LE PLUS SPÉCIFIQUE. Si le devis dit "membrane élastomère SBS granulée" et que la liste a "Soprastar Flam GR" et "Soprastar GR", choisis "Soprastar Flam GR" (flam = posée au chalumeau)
-- NE LAISSE JAMAIS un champ vide si l'information existe quelque part dans le devis
+=== RÈGLES ===
+- TITRE, FABRICANT, FOURNISSEUR viennent de la LISTE MATÉRIAUX, PAS du devis
+- Si la liste matériaux est vide ou ne contient pas le produit, cherche le nom commercial dans le devis (Soprastar, Sopralene, etc.)
+- NOM_DU_PROJET, NUMERO_DU_PROJET, SECTION, ARTICLE : extrais EXACTEMENT comme écrit dans le devis
+- DESCRIPTION et NUMERO_DESSINS : toujours vides ("")
 - Retourne UNIQUEMENT du JSON valide`;
 
 async function appelIA(texteDevis, listeMateriaux) {
@@ -99,18 +72,18 @@ ${texteDevis.substring(0, 12000)}
 LISTE DES MATÉRIAUX T3E (cherche ici le produit qui correspond au devis) :
 ${listeMateriaux || '(aucun matériau disponible)'}
 
-Analyse le devis en profondeur et retourne ce JSON avec TOUS les champs remplis au maximum :
+Retourne ce JSON :
 {
-  "NOM_DU_PROJET": "nom complet du projet",
-  "NUMERO_DU_PROJET": "numéro de référence",
-  "SECTION": "numéro + titre complet de la section",
-  "ARTICLE": "numéro + description complète de l'article",
-  "TITRE": "nom exact du produit (de la liste matériaux si possible)",
-  "FABRICANT": "nom du fabricant",
-  "FOURNISSEUR": "nom du fournisseur",
-  "DESCRIPTION": "description technique détaillée du produit/travail",
-  "NUMERO_DESSINS": "références des dessins/plans si trouvées",
-  "REMARQUE": "note professionnelle détaillée avec contexte, spécifications, conditions"
+  "NOM_DU_PROJET": "du DEVIS PDF — nom complet du projet",
+  "NUMERO_DU_PROJET": "du DEVIS PDF — numéro de référence propriétaire",
+  "SECTION": "du DEVIS PDF — numéro de section + titre",
+  "ARTICLE": "du DEVIS PDF — numéro d'article dans PARTIE 2",
+  "TITRE": "de la LISTE MATÉRIAUX T3E — nom exact du produit (colonne E)",
+  "FABRICANT": "de la LISTE MATÉRIAUX T3E — fabricant (colonne C)",
+  "FOURNISSEUR": "de la LISTE MATÉRIAUX T3E — fournisseur (colonne D)",
+  "DESCRIPTION": "",
+  "NUMERO_DESSINS": "",
+  "REMARQUE": "IA — résumé technique du produit avec contexte projet"
 }`;
 
   const resp = await fetch('https://api.openai.com/v1/chat/completions', {
