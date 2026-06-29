@@ -249,9 +249,10 @@ router.post('/analyser', uploadFields, async (req, res) => {
     }).slice(0, 80);
 
     const liste = pertinents.length > 0 ? pertinents : matRows.slice(0, 80);
-    listeMateriaux = liste.map(m =>
-      [m.nom, m.fabricant && `Fabricant: ${m.fabricant}`, m.fournisseur && `Fournisseur: ${m.fournisseur}`].filter(Boolean).join(' | ')
-    ).join('\n');
+    listeMateriaux = 'FORMAT: Produit (colonne E) | Fabricant (colonne C) | Fournisseur (colonne D)\n' +
+      liste.map(m =>
+        [m.nom, m.fabricant || '', m.fournisseur || ''].join(' | ')
+      ).join('\n');
   } catch (_) {}
 
   // 4. Appel IA — extraction unique de TOUS les champs
@@ -278,10 +279,10 @@ router.post('/analyser', uploadFields, async (req, res) => {
     SPECIALITE: identification.SPECIALITE,
     ADRESSE: identification.ADRESSE,
     TITRE: champsIA.TITRE || '',
-    NUMERO_DESSINS: champsIA.NUMERO_DESSINS || '',
+    NUMERO_DESSINS: '',
     NOMBRE_FEUILLES: '',
     REVISION: '',
-    DESCRIPTION: champsIA.DESCRIPTION || '',
+    DESCRIPTION: '',
     FOURNISSEUR: champsIA.FOURNISSEUR || '',
     FABRICANT: champsIA.FABRICANT || '',
     SECTION: champsIA.SECTION || '',

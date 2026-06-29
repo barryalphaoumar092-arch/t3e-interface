@@ -1,4 +1,4 @@
-﻿const JSZip = require('jszip');
+const JSZip = require('jszip');
 const path = require('path');
 const fs = require('fs');
 
@@ -11,7 +11,6 @@ function escapeXml(str) {
     .replace(/>/g, '&gt;');
 }
 
-// Fusionne les <w:t> fragmentes sur plusieurs runs dans le meme paragraphe
 function normalizeXmlText(xml) {
   let result = xml;
   let changed = true;
@@ -28,24 +27,22 @@ function normalizeXmlText(xml) {
   return result;
 }
 
-// Genere 3 variantes du label : NBSP (U+00A0), espace normal (U+0020), sans espace
-// Toutes nos etiquettes finissent par ':', on gere les variantes du caractere juste avant ':'
 function labelVariants(label) {
-  const base = label.replace(/[  ]:$/, '');
+  const NBSP = ' ';
+  const base = label.replace(/[  ]:$/, '');
   return [
-    base + ' :',  // espace insecable — format Word standard
-    base + ' :',  // espace normal — fallback
-    base + ':',        // sans espace — fallback extreme
+    base + NBSP + ':',
+    base + ' :',
+    base + ':',
   ];
 }
 
-// Cherche le label dans le XML et remplace le contenu apres ':' jusqu'a '</w:t>'
 function remplirChampDansXml(xml, label, valeur) {
   for (const variant of labelVariants(label)) {
     const idx = xml.indexOf(variant);
     if (idx === -1) continue;
 
-    const colonIdx = idx + variant.length - 1; // ':' est le dernier char du variant
+    const colonIdx = idx + variant.length - 1;
     const closeIdx = xml.indexOf('</w:t>', colonIdx);
     if (closeIdx === -1) continue;
 
@@ -56,7 +53,24 @@ function remplirChampDansXml(xml, label, valeur) {
   return xml;
 }
 
-// buf optionnel — si absent, utilise le template T3E par defaut
+function cocherFicheTechnique(xml) {
+  // CaseACocher3 = "Fiche technique" — ajouter <w:default w:val="1"/> dans <w:checkBox>
+  const marker = 'CaseACocher3';
+  const idx = xml.indexOf(marker);
+  if (idx === -1) return xml;
+
+  const cbStart = xml.indexOf('<w:checkBox>', idx);
+  const cbEnd = xml.indexOf('</w:checkBox>', idx);
+  if (cbStart === -1 || cbEnd === -1) return xml;
+
+  const sizeAutoEnd = xml.indexOf('</w:sizeAuto>', cbStart);
+  if (sizeAutoEnd === -1 || sizeAutoEnd > cbEnd) return xml;
+
+  const insertPos = sizeAutoEnd + '</w:sizeAuto>'.length;
+  xml = xml.substring(0, insertPos) + '<w:default w:val="1"/>' + xml.substring(insertPos);
+  return xml;
+}
+
 async function remplirBordereau(champs, buf) {
   const templateBuf = buf || fs.readFileSync(TEMPLATE_PATH);
   const zip = await JSZip.loadAsync(templateBuf);
@@ -64,25 +78,28 @@ async function remplirBordereau(champs, buf) {
 
   xml = normalizeXmlText(xml);
 
+  // Cocher la case "Fiche technique" (toujours)
+  xml = cocherFicheTechnique(xml);
+
   // Labels plus longs EN PREMIER pour eviter correspondances partielles
-  // ex: "NOM DU PROJET" avant "NOM"
+  const NBSP = ' ';
   const remplacements = [
-    ['NOM DU PROJET :',      champs.NOM_DU_PROJET    || ''],
-    ['NUMÉRO DU PROJET :', champs.NUMERO_DU_PROJET || ''],
-    ['SPÉCIALITÉ :', champs.SPECIALITE     || 'COUVREUR'],
-    ['ADRESSE :',             champs.ADRESSE          || '7550 Rue Saint-Patrick, Montréal, QC H8N 1V1'],
-    ['NOM :',                 champs.NOM              || 'Toitures Trois Étoiles'],
-    ['Titre :',               champs.TITRE            || ''],
-    ['Numéro de dessins :', champs.NUMERO_DESSINS || ''],
-    ['Nombre feuilles :',     ''],
-    ['Révision :',       ''],
-    ['Description :',         champs.DESCRIPTION      || ''],
-    ['Fournisseur :',         champs.FOURNISSEUR      || ''],
-    ['Fabricant :',           champs.FABRICANT        || ''],
-    ['Section (item) :',      champs.SECTION          || ''],
-    ['Article :',             champs.ARTICLE          || ''],
-    ['Délai :',          champs.DELAI            || ''],
-    ['Remarque :',            champs.REMARQUE         || ''],
+    ['NOM DU PROJET' + NBSP + ':',      champs.NOM_DU_PROJET    || ''],
+    ['NUMÉRO DU PROJET' + NBSP + ':', champs.NUMERO_DU_PROJET || ''],
+    ['SPÉCIALITÉ' + NBSP + ':', champs.SPECIALITE     || 'COUVREUR'],
+    ['ADRESSE' + NBSP + ':',             champs.ADRESSE          || '7550 Rue Saint-Patrick, Montréal, QC H8N 1V1'],
+    ['NOM' + NBSP + ':',                 champs.NOM              || 'Toitures Trois Étoiles'],
+    ['Titre' + NBSP + ':',               champs.TITRE            || ''],
+    ['Numéro de dessins' + NBSP + ':', ''],
+    ['Nombre feuilles' + NBSP + ':',     ''],
+    ['Révision' + NBSP + ':',       ''],
+    ['Description' + NBSP + ':',         ''],
+    ['Fournisseur' + NBSP + ':',         champs.FOURNISSEUR      || ''],
+    ['Fabricant' + NBSP + ':',           champs.FABRICANT        || ''],
+    ['Section (item)' + NBSP + ':',      champs.SECTION          || ''],
+    ['Article' + NBSP + ':',             champs.ARTICLE          || ''],
+    ['Délai' + NBSP + ':',          ''],
+    ['Remarque' + NBSP + ':',            champs.REMARQUE         || ''],
   ];
 
   for (const [label, valeur] of remplacements) {
