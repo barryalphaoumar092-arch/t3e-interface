@@ -1,4 +1,4 @@
-<%- include('partials/header', { title: 'Réviser les bordereaux', page: 'bordereaux' }) %>
+<%- include('partials/header', { title: 'Réviser le bordereau', page: 'bordereaux' }) %>
 
 <nav aria-label="breadcrumb">
   <ol class="breadcrumb">
@@ -8,7 +8,7 @@
 </nav>
 
 <div class="row justify-content-center">
-  <div class="col-md-11">
+  <div class="col-md-10">
 
     <div class="d-flex gap-2 mb-3">
       <span class="badge bg-success fs-6"><i class="bi bi-check"></i> 1. Upload</span>
@@ -17,92 +17,140 @@
     </div>
 
     <% if (iaErreur) { %>
-    <div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> <%= iaErreur %></div>
+    <div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> L'IA n'a pas pu analyser le devis (<%= iaErreur %>). Remplissez les champs manuellement.</div>
     <% } else { %>
-    <div class="alert alert-info mb-3"><i class="bi bi-robot"></i> L'IA a trouvé <strong><%= produits.length %> produit(s)</strong>. Vérifiez et corrigez, puis cliquez sur <strong>Générer</strong>.</div>
+    <div class="alert alert-info mb-3"><i class="bi bi-robot"></i> L'IA a extrait les informations du devis. Vérifiez et corrigez si nécessaire, puis cliquez sur <strong>Générer</strong>.</div>
     <% } %>
 
     <form method="POST" action="/bordereaux/generer/<%= bordereau.id %>" id="formGenerer">
 
+      <!-- Identification T3E (fixe) -->
       <div class="card mb-3">
-        <div class="card-header bg-dark text-white py-2"><h6 class="mb-0"><i class="bi bi-building"></i> Identification (commun)</h6></div>
+        <div class="card-header bg-dark text-white py-2"><h6 class="mb-0"><i class="bi bi-building"></i> Identification entrepreneur (fixe)</h6></div>
         <div class="card-body">
           <div class="row g-2">
-            <div class="col-md-5">
-              <label class="form-label fw-bold">NOM DU PROJET</label>
-              <input type="text" name="NOM_DU_PROJET" class="form-control" value="<%= champsCommuns.NOM_DU_PROJET || '' %>">
-            </div>
-            <div class="col-md-3">
-              <label class="form-label fw-bold">NUMÉRO</label>
-              <input type="text" name="NUMERO_DU_PROJET" class="form-control" value="<%= champsCommuns.NUMERO_DU_PROJET || '' %>">
-            </div>
             <div class="col-md-4">
-              <label class="form-label">NOM</label>
-              <input type="text" name="NOM" class="form-control form-control-sm" value="<%= champsCommuns.NOM || 'Toitures Trois Étoiles' %>">
+              <label class="form-label fw-bold">NOM</label>
+              <input type="text" name="NOM" class="form-control" value="<%= champs.NOM || 'Toitures Trois Étoiles' %>">
             </div>
             <div class="col-md-3">
-              <label class="form-label">SPÉCIALITÉ</label>
-              <input type="text" name="SPECIALITE" class="form-control form-control-sm" value="<%= champsCommuns.SPECIALITE || 'COUVREUR' %>">
+              <label class="form-label fw-bold">SPÉCIALITÉ</label>
+              <input type="text" name="SPECIALITE" class="form-control" value="<%= champs.SPECIALITE || 'COUVREUR' %>">
             </div>
-            <div class="col-md-9">
-              <label class="form-label">ADRESSE</label>
-              <input type="text" name="ADRESSE" class="form-control form-control-sm" value="<%= champsCommuns.ADRESSE || '7550 Rue Saint-Patrick, Montréal, QC H8N 1V1' %>">
+            <div class="col-md-5">
+              <label class="form-label fw-bold">ADRESSE</label>
+              <input type="text" name="ADRESSE" class="form-control" value="<%= champs.ADRESSE || '7550 Rue Saint-Patrick, Montréal, QC H8N 1V1' %>">
             </div>
           </div>
         </div>
       </div>
 
-      <% produits.forEach(function(prod, i) { %>
-      <div class="card mb-3 border-warning">
-        <div class="card-header bg-warning text-dark py-2">
-          <h6 class="mb-0"><i class="bi bi-file-earmark-text"></i> Bordereau <%= i + 1 %><% if (prod.TITRE) { %> — <%= prod.TITRE %><% } %></h6>
+      <!-- Projet (extrait du devis par IA) -->
+      <div class="card mb-3">
+        <div class="card-header bg-warning text-dark py-2"><h6 class="mb-0"><i class="bi bi-robot"></i> Projet (extrait du devis par l'IA)</h6></div>
+        <div class="card-body">
+          <div class="row g-2">
+            <div class="col-md-8">
+              <label class="form-label fw-bold">NOM DU PROJET</label>
+              <input type="text" name="NOM_DU_PROJET" class="form-control" value="<%= champs.NOM_DU_PROJET || '' %>">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-bold">NUMÉRO DU PROJET</label>
+              <input type="text" name="NUMERO_DU_PROJET" class="form-control" value="<%= champs.NUMERO_DU_PROJET || '' %>">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-bold">SECTION</label>
+              <input type="text" name="SECTION" class="form-control" value="<%= champs.SECTION || '' %>">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-bold">ARTICLE</label>
+              <input type="text" name="ARTICLE" class="form-control" value="<%= champs.ARTICLE || '' %>">
+            </div>
+          </div>
         </div>
+      </div>
+
+      <!-- Fiche technique (matché par IA avec la base de matériaux) -->
+      <div class="card mb-3">
+        <div class="card-header bg-info text-dark py-2"><h6 class="mb-0"><i class="bi bi-file-earmark-text"></i> Fiche technique (matché avec la base de matériaux)</h6></div>
         <div class="card-body">
           <div class="row g-2">
             <div class="col-md-6">
-              <label class="form-label fw-bold">Titre (produit)</label>
-              <input type="text" name="produits[<%= i %>][TITRE]" class="form-control" value="<%= prod.TITRE || '' %>">
+              <label class="form-label fw-bold">TITRE (produit)</label>
+              <input type="text" name="TITRE" class="form-control" value="<%= champs.TITRE || '' %>">
             </div>
             <div class="col-md-3">
-              <label class="form-label fw-bold">Fabricant</label>
-              <input type="text" name="produits[<%= i %>][FABRICANT]" class="form-control" value="<%= prod.FABRICANT || '' %>">
+              <label class="form-label fw-bold">FABRICANT</label>
+              <input type="text" name="FABRICANT" class="form-control" value="<%= champs.FABRICANT || '' %>">
             </div>
             <div class="col-md-3">
-              <label class="form-label fw-bold">Fournisseur</label>
-              <input type="text" name="produits[<%= i %>][FOURNISSEUR]" class="form-control" value="<%= prod.FOURNISSEUR || '' %>">
-            </div>
-            <div class="col-md-6">
-              <label class="form-label">Section</label>
-              <input type="text" name="produits[<%= i %>][SECTION]" class="form-control form-control-sm" value="<%= prod.SECTION || '' %>">
-            </div>
-            <div class="col-md-6">
-              <label class="form-label">Article</label>
-              <input type="text" name="produits[<%= i %>][ARTICLE]" class="form-control form-control-sm" value="<%= prod.ARTICLE || '' %>">
-            </div>
-            <div class="col-12">
-              <label class="form-label">Remarque</label>
-              <textarea name="produits[<%= i %>][REMARQUE]" class="form-control form-control-sm" rows="2"><%= prod.REMARQUE || '' %></textarea>
+              <label class="form-label fw-bold">FOURNISSEUR</label>
+              <input type="text" name="FOURNISSEUR" class="form-control" value="<%= champs.FOURNISSEUR || '' %>">
             </div>
           </div>
-          <% if (ftParProduit[i] && ftParProduit[i].length > 0) { %>
-          <div class="mt-2 p-2 bg-success bg-opacity-10 rounded">
-            <small class="fw-bold text-success"><i class="bi bi-paperclip"></i> FT :</small>
-            <% ftParProduit[i].forEach(function(nom) { %>
-            <small class="d-block text-muted"><i class="bi bi-file-pdf text-danger"></i> <%= nom %></small>
-            <% }); %>
-          </div>
-          <% } %>
         </div>
       </div>
-      <% }); %>
+
+      <!-- Champs vides / optionnels -->
+      <div class="card mb-3">
+        <div class="card-header bg-light py-2"><h6 class="mb-0"><i class="bi bi-dash-circle"></i> Champs optionnels (laissés vides par défaut)</h6></div>
+        <div class="card-body">
+          <div class="row g-2">
+            <div class="col-md-3">
+              <label class="form-label">Numéro de dessins</label>
+              <input type="text" name="NUMERO_DESSINS" class="form-control form-control-sm" value="<%= champs.NUMERO_DESSINS || '' %>" placeholder="(vide)">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Nombre feuilles</label>
+              <input type="text" name="NOMBRE_FEUILLES" class="form-control form-control-sm" value="<%= champs.NOMBRE_FEUILLES || '' %>" placeholder="(vide)">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Révision</label>
+              <input type="text" name="REVISION" class="form-control form-control-sm" value="<%= champs.REVISION || '' %>" placeholder="(vide)">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Délai</label>
+              <input type="text" name="DELAI" class="form-control form-control-sm" value="<%= champs.DELAI || '' %>" placeholder="(vide)">
+            </div>
+            <div class="col-12">
+              <label class="form-label">Description</label>
+              <input type="text" name="DESCRIPTION" class="form-control form-control-sm" value="<%= champs.DESCRIPTION || '' %>" placeholder="(vide)">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Remarque IA -->
+      <div class="card mb-3">
+        <div class="card-header bg-success bg-opacity-25 py-2"><h6 class="mb-0"><i class="bi bi-chat-dots"></i> Remarque (générée par l'IA)</h6></div>
+        <div class="card-body">
+          <textarea name="REMARQUE" class="form-control" rows="2"><%= champs.REMARQUE || '' %></textarea>
+        </div>
+      </div>
+
+      <!-- FT auto-détectées -->
+      <% if (ftNoms.length > 0) { %>
+      <div class="card mb-3 border-success">
+        <div class="card-header bg-success text-white py-2">
+          <h6 class="mb-0"><i class="bi bi-paperclip"></i> Fiches techniques auto-détectées (<%= ftNoms.length %>)</h6>
+        </div>
+        <div class="card-body py-2">
+          <% ftNoms.forEach(function(nom) { %>
+          <div class="py-1"><i class="bi bi-file-pdf text-danger me-1"></i> <%= nom %></div>
+          <% }); %>
+          <small class="text-muted">Ces fiches seront jointes automatiquement dans le ZIP téléchargé.</small>
+        </div>
+      </div>
+      <% } %>
 
       <div class="d-flex gap-3 mb-4">
         <button type="submit" class="btn btn-success btn-lg" id="btnGenerer">
-          <i class="bi bi-file-earmark-zip"></i> Générer <%= produits.length %> bordereau(x) + FT
+          <i class="bi bi-file-earmark-zip"></i> Générer le bordereau + fiches techniques
         </button>
         <a href="/bordereaux" class="btn btn-outline-secondary btn-lg">Annuler</a>
       </div>
     </form>
+
   </div>
 </div>
 
@@ -110,7 +158,7 @@
 document.getElementById('formGenerer').addEventListener('submit', function() {
   var btn = document.getElementById('btnGenerer');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Génération en cours...';
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Génération en cours…';
 });
 </script>
 

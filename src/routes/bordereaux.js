@@ -66,37 +66,32 @@ async function appelIA(texteDevis, listeMateriaux) {
 
   const userContent = `TEXTE COMPLET DU DEVIS (lis CHAQUE ligne attentivement) :
 ───────────────────────────────────────
-${texteDevis.substring(0, 40000)}
+${texteDevis.substring(0, 12000)}
 ───────────────────────────────────────
 
 LISTE DES MATÉRIAUX T3E (cherche ici le produit qui correspond au devis) :
 ${listeMateriaux || '(aucun matériau disponible)'}
 
-IMPORTANT: Le devis contient PLUSIEURS produits de référence. Retourne un JSON avec TOUS les produits trouvés.
-Cherche CHAQUE "Produit de référence :" ou matériau nommé dans PARTIE 2 — PRODUITS.
-
+Retourne ce JSON :
 {
-  "NOM_DU_PROJET": "nom du projet (DEVIS)",
-  "NUMERO_DU_PROJET": "numéro référence (DEVIS)",
-  "produits": [
-    {
-      "SECTION": "numéro section (DEVIS)",
-      "ARTICLE": "article dans PARTIE 2 (DEVIS)",
-      "TITRE": "nom produit (LISTE MATÉRIAUX T3E)",
-      "FABRICANT": "fabricant (LISTE MATÉRIAUX T3E)",
-      "FOURNISSEUR": "fournisseur (LISTE MATÉRIAUX T3E)",
-      "REMARQUE": "résumé technique (IA)"
-    }
-  ]
-}
-Mets AUTANT de produits que tu trouves (pare-vapeur, isolant, membrane, drain, solin, etc.)`;
+  "NOM_DU_PROJET": "du DEVIS PDF — nom complet du projet",
+  "NUMERO_DU_PROJET": "du DEVIS PDF — numéro de référence propriétaire",
+  "SECTION": "du DEVIS PDF — numéro de section + titre",
+  "ARTICLE": "du DEVIS PDF — numéro d'article dans PARTIE 2",
+  "TITRE": "de la LISTE MATÉRIAUX T3E — nom exact du produit (colonne E)",
+  "FABRICANT": "de la LISTE MATÉRIAUX T3E — fabricant (colonne C)",
+  "FOURNISSEUR": "de la LISTE MATÉRIAUX T3E — fournisseur (colonne D)",
+  "DESCRIPTION": "",
+  "NUMERO_DESSINS": "",
+  "REMARQUE": "IA — résumé technique du produit avec contexte projet"
+}`;
 
   const resp = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + OPENAI_API_KEY },
     body: JSON.stringify({
       model: 'gpt-4o',
-      max_tokens: 4096,
+      max_tokens: 2000,
       temperature: 0.1,
       response_format: { type: 'json_object' },
       messages: [
@@ -276,58 +271,69 @@ router.post('/analyser', uploadFields, async (req, res) => {
     ADRESSE: adresse?.trim() || '7550 Rue Saint-Patrick, Montréal, QC H8N 1V1',
   };
 
-  // 6. Extraire les produits — nouveau format (produits[]) ou ancien (champs unique)
-  const champsCommuns = {
+  // 6. Fusionner IA + identification + nom_projet utilisateur
+  const champs = {
     NOM_DU_PROJET: champsIA.NOM_DU_PROJET || nom_projet || '',
     NUMERO_DU_PROJET: champsIA.NUMERO_DU_PROJET || '',
     NOM: identification.NOM,
     SPECIALITE: identification.SPECIALITE,
     ADRESSE: identification.ADRESSE,
+    TITRE: champsIA.TITRE || '',
+    NUMERO_DESSINS: '',
+    NOMBRE_FEUILLES: '',
+    REVISION: '',
+    DESCRIPTION: '',
+    FOURNISSEUR: champsIA.FOURNISSEUR || '',
+    FABRICANT: champsIA.FABRICANT || '',
+    SECTION: champsIA.SECTION || '',
+    ARTICLE: champsIA.ARTICLE || '',
+    DELAI: '',
+    REMARQUE: champsIA.REMARQUE || '',
   };
 
-  let produits = [];
-  if (Array.isArray(champsIA.produits) && champsIA.produits.length > 0) {
-    produits = champsIA.produits;
-  } else {
-    produits = [{ SECTION: champsIA.SECTION || '', ARTICLE: champsIA.ARTICLE || '', TITRE: champsIA.TITRE || '', FABRICANT: champsIA.FABRICANT || '', FOURNISSEUR: champsIA.FOURNISSEUR || '', REMARQUE: champsIA.REMARQUE || '' }];
-  }
+  console.log('[analyser] IA champs extraits:', JSON.stringify(champsIA).substring(0, 500));
 
-  console.log('[analyser]', produits.length, 'produit(s) trouvés par IA');
+  // 6b. Si l'IA n'a pas trouvé Titre/Fabricant/Fournisseur, matcher DANS LE CODE avec la DB matériaux
+  if (!champs.TITRE || !champs.FABRICANT || !champs.FOURNISSEUR) {
+    try {
+      const matRows = (await db.execute('SELECT nom, fabricant, fournisseur FROM materiaux')).rows;
+      const devisLower = texteDevis.toLowerCase();
 
-  // 6b. Pour chaque produit sans Titre/Fabricant → matcher dans la DB
-  try {
-    const matRows = (await db.execute('SELECT nom, fabricant, fournisseur FROM materiaux')).rows;
-    const devisLower = texteDevis.toLowerCase();
-    for (const prod of produits) {
-      if (!prod.TITRE || !prod.FABRICANT) {
-        let best = null, bestScore = 0;
-        for (const m of matRows) {
-          const mots = (m.nom || '').toLowerCase().replace(/[^a-zàâäéèêëîïôùûü0-9]+/g, ' ').split(/\s+/).filter(w => w.length > 2);
-          const score = mots.filter(mot => devisLower.includes(mot)).length;
-          if (score > bestScore) { bestScore = score; best = m; }
-        }
-        if (best && bestScore >= 2) {
-          if (!prod.TITRE) prod.TITRE = best.nom;
-          if (!prod.FABRICANT) prod.FABRICANT = best.fabricant || '';
-          if (!prod.FOURNISSEUR) prod.FOURNISSEUR = best.fournisseur || '';
+      let bestMatch = null;
+      let bestScore = 0;
+      for (const m of matRows) {
+        const mots = (m.nom || '').toLowerCase().replace(/[^a-zàâäéèêëîïôùûü0-9]+/g, ' ').split(/\s+/).filter(w => w.length > 2);
+        const score = mots.filter(mot => devisLower.includes(mot)).length;
+        if (score > bestScore) {
+          bestScore = score;
+          bestMatch = m;
         }
       }
+
+      if (bestMatch && bestScore >= 2) {
+        console.log('[analyser] Match matériaux DB:', bestMatch.nom, '(score:', bestScore, ')');
+        if (!champs.TITRE) champs.TITRE = bestMatch.nom;
+        if (!champs.FABRICANT) champs.FABRICANT = bestMatch.fabricant || '';
+        if (!champs.FOURNISSEUR) champs.FOURNISSEUR = bestMatch.fournisseur || '';
+      }
+    } catch (e) {
+      console.log('[analyser] Erreur match matériaux:', e.message);
     }
-  } catch (e) { console.log('[analyser] Erreur match matériaux:', e.message); }
+  }
 
-  // 7. Auto-match FT pour chaque produit
-  const ftParProduit = produits.map(p => trouverFichesTechniques(p.FABRICANT || '', p.TITRE || ''));
+  console.log('[analyser] Champs finaux: TITRE=' + champs.TITRE + ', FABRICANT=' + champs.FABRICANT + ', FOURNISSEUR=' + champs.FOURNISSEUR);
 
-  console.log('[analyser] Produits:', produits.map(p => p.TITRE || '?').join(', '));
+  // 7. Auto-match des fiches techniques
+  const ftTrouvees = trouverFichesTechniques(champs.FABRICANT, champs.TITRE);
 
   // 8. Sauvegarder en DB
   const r = await db.execute({
     sql: `INSERT INTO bordereaux (numero_projet, titre, contenu, statut, session_actif, cree_par, devis_texte, template_data)
           VALUES (?, ?, ?, 'brouillon', 1, ?, ?, ?)`,
     args: [
-      champsCommuns.NUMERO_DU_PROJET || '',
-      champsCommuns.NOM_DU_PROJET || 'Bordereau en cours',
-      JSON.stringify({ champsCommuns, produits, ftParProduit, ia_erreur: iaErreur }),
+      champs.NUMERO_DU_PROJET || '',
+      champs.NOM_DU_PROJET || 'Bordereau en cours',
+      JSON.stringify({ champs, ft_chemins: ftTrouvees, ia_erreur: iaErreur }),
       identification.NOM,
       texteDevis.substring(0, 10000),
       bordereauBuffer.toString('base64'),
@@ -346,27 +352,19 @@ router.get('/reviser/:id', async (req, res) => {
 
   const row = r.rows[0];
   let data;
-  try { data = JSON.parse(row.contenu); } catch (_) { data = {}; }
+  try { data = JSON.parse(row.contenu); } catch (_) { data = { champs: {}, ft_chemins: [] }; }
 
-  // Compat ancien format (1 produit) et nouveau (N produits)
-  let champsCommuns, produits, ftParProduit;
-  if (data.produits) {
-    champsCommuns = data.champsCommuns || {};
-    produits = data.produits;
-    ftParProduit = (data.ftParProduit || []).map(arr => (arr || []).map(p => path.basename(p)));
-  } else {
-    const c = data.champs || {};
-    champsCommuns = { NOM_DU_PROJET: c.NOM_DU_PROJET, NUMERO_DU_PROJET: c.NUMERO_DU_PROJET, NOM: c.NOM, SPECIALITE: c.SPECIALITE, ADRESSE: c.ADRESSE };
-    produits = [{ SECTION: c.SECTION, ARTICLE: c.ARTICLE, TITRE: c.TITRE, FABRICANT: c.FABRICANT, FOURNISSEUR: c.FOURNISSEUR, REMARQUE: c.REMARQUE }];
-    ftParProduit = [(data.ft_chemins || []).map(p => path.basename(p))];
-  }
+  const champs = data.champs || {};
+  const ftChemins = data.ft_chemins || [];
+  const iaErreur = data.ia_erreur || '';
+
+  const ftNoms = ftChemins.map(p => path.basename(p));
 
   res.render('bordereau-reviser', {
     bordereau: row,
-    champsCommuns,
-    produits,
-    ftParProduit,
-    iaErreur: data.ia_erreur || '',
+    champs,
+    ftNoms,
+    iaErreur,
   });
 });
 
@@ -383,95 +381,99 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
     return res.status(400).send('Le template .docx est manquant pour ce bordereau. Veuillez recommencer depuis le début.');
   }
 
-  // 1. Champs communs
-  const champsCommuns = {
+  // 1. Récupérer les champs du formulaire (l'utilisateur peut avoir modifié)
+  const champs = {
     NOM_DU_PROJET: req.body.NOM_DU_PROJET || '',
     NUMERO_DU_PROJET: req.body.NUMERO_DU_PROJET || '',
     NOM: req.body.NOM || 'Toitures Trois Étoiles',
     SPECIALITE: req.body.SPECIALITE || 'COUVREUR',
     ADRESSE: req.body.ADRESSE || '7550 Rue Saint-Patrick, Montréal, QC H8N 1V1',
+    TITRE: req.body.TITRE || '',
+    NUMERO_DESSINS: req.body.NUMERO_DESSINS || '',
+    NOMBRE_FEUILLES: req.body.NOMBRE_FEUILLES || '',
+    REVISION: req.body.REVISION || '',
+    DESCRIPTION: req.body.DESCRIPTION || '',
+    FOURNISSEUR: req.body.FOURNISSEUR || '',
+    FABRICANT: req.body.FABRICANT || '',
+    SECTION: req.body.SECTION || '',
+    ARTICLE: req.body.ARTICLE || '',
+    DELAI: req.body.DELAI || '',
+    REMARQUE: req.body.REMARQUE || '',
   };
 
-  // 2. Récupérer les produits (nouveau format tableau OU ancien format simple)
-  let produits = [];
-  if (req.body.produits && Array.isArray(req.body.produits)) {
-    produits = req.body.produits;
-  } else if (req.body.TITRE) {
-    produits = [{ SECTION: req.body.SECTION, ARTICLE: req.body.ARTICLE, TITRE: req.body.TITRE, FABRICANT: req.body.FABRICANT, FOURNISSEUR: req.body.FOURNISSEUR, REMARQUE: req.body.REMARQUE }];
-  }
-  if (produits.length === 0) return res.status(400).send('Aucun produit.');
+  console.log('[generer] Champs:', JSON.stringify(champs).substring(0, 300));
+  console.log('[generer] template_data length:', row.template_data.length);
 
+  // 2. Remplir le .docx — suit les étapes exactes :
+  //    normalizeXmlText → remplirChampDansXml (NBSP + indexOf + labels longs d'abord)
   let bordereauBuffer;
   try {
     bordereauBuffer = Buffer.from(row.template_data, 'base64');
+    console.log('[generer] Buffer .docx:', bordereauBuffer.length, 'octets');
   } catch (e) {
     return res.status(500).send('Erreur décodage template : ' + e.message);
   }
 
-  console.log('[generer]', produits.length, 'produit(s) à générer');
-
-  const { creerBordereauPdf } = require('../services/bordereau-pdf');
-
-  // 3. Pour CHAQUE produit : créer bordereau PDF + FT PDF → fusionner en 1 seul PDF
-  const allPdfBuffers = [];
-
-  for (let i = 0; i < produits.length; i++) {
-    const p = produits[i];
-    const champs = { ...champsCommuns, TITRE: p.TITRE || '', FABRICANT: p.FABRICANT || '', FOURNISSEUR: p.FOURNISSEUR || '', SECTION: p.SECTION || '', ARTICLE: p.ARTICLE || '', REMARQUE: p.REMARQUE || '' };
-
-    // 3a. Créer le bordereau en PDF
-    try {
-      const bordPdf = await creerBordereauPdf(champs);
-      allPdfBuffers.push(bordPdf);
-      console.log('[generer] Bordereau PDF', i + 1, ':', (p.TITRE || '?'));
-    } catch (e) {
-      console.error('[generer] Erreur bordereau PDF', i + 1, ':', e.message);
-    }
-
-    // 3b. Trouver et ajouter les FT de CE produit (à la suite du bordereau)
-    try {
-      console.log('[generer] Recherche FT: fabricant="' + (p.FABRICANT || '') + '", titre="' + (p.TITRE || '') + '"');
-      let ft = trouverFichesTechniques(p.FABRICANT || '', p.TITRE || '');
-      if (ft.length === 0 && p.TITRE) {
-        const fabricantsConnus = ['Soprema', 'IKO', 'BP', 'Tremco', 'CGC', 'Murphco', 'Ventilation Maximum', 'Henry Bakor', 'Securpan', 'Sico'];
-        for (const fab of fabricantsConnus) {
-          if (p.TITRE.toLowerCase().includes(fab.toLowerCase().substring(0, 4)) || (p.REMARQUE || '').toLowerCase().includes(fab.toLowerCase().substring(0, 4))) {
-            ft = trouverFichesTechniques(fab, p.TITRE);
-            if (ft.length > 0) { console.log('[generer] FT fallback via', fab); break; }
-          }
-        }
-      }
-      if (ft.length > 0) {
-        const ftPdf = await fusionnerPDF(ft);
-        if (ftPdf) {
-          allPdfBuffers.push(ftPdf);
-          console.log('[generer] FT', i + 1, ':', ft.length, 'fichiers, à la suite');
-        }
-      }
-    } catch (e) { console.error('[generer] Erreur FT', i + 1, ':', e.message); }
-  }
-
-  // 4. Fusionner TOUT en 1 seul PDF : Bord1 + FT1 + Bord2 + FT2 + ...
-  const finalPdf = await PDFDocument.create();
-  for (const buf of allPdfBuffers) {
-    try {
-      const doc = await PDFDocument.load(buf, { ignoreEncryption: true });
-      const pages = await finalPdf.copyPages(doc, doc.getPageIndices());
-      pages.forEach(pg => finalPdf.addPage(pg));
-    } catch (e) { console.error('[generer] Erreur fusion page:', e.message); }
-  }
-  const finalBuffer = Buffer.from(await finalPdf.save());
-
-  // 5. DB update
+  let docxBuffer;
   try {
-    await db.execute({ sql: `UPDATE bordereaux SET statut = 'approuve', session_actif = 0, numero_projet = ?, titre = ? WHERE id = ?`, args: [champsCommuns.NUMERO_DU_PROJET || '', champsCommuns.NOM_DU_PROJET || '', id] });
-  } catch (e) { console.error('[generer] Erreur DB:', e.message); }
+    docxBuffer = await remplirBordereau(champs, bordereauBuffer);
+    console.log('[generer] .docx rempli:', docxBuffer.length, 'octets');
+  } catch (e) {
+    console.error('[generer] Erreur remplissage:', e);
+    return res.status(500).send('Erreur remplissage .docx : ' + e.message);
+  }
 
-  // 6. Retourner 1 SEUL PDF
-  const nom = (champsCommuns.NUMERO_DU_PROJET || 'T3E').replace(/[^a-zA-Z0-9_-]/g, '-').substring(0, 30);
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="Bordereaux_FT_${nom}_${Date.now()}.pdf"`);
-  res.send(finalBuffer);
+  // 3. Auto-match FT (recalculer au cas où l'utilisateur a changé FABRICANT/TITRE)
+  let ftChemins = [];
+  try {
+    ftChemins = trouverFichesTechniques(champs.FABRICANT, champs.TITRE);
+    console.log('[generer] FT trouvees:', ftChemins.length, ftChemins);
+  } catch (e) {
+    console.error('[generer] Erreur FT match:', e);
+  }
+
+  // 4. Fusionner les FT en un seul PDF
+  let ftPdfBuffer = null;
+  try {
+    if (ftChemins.length > 0) ftPdfBuffer = await fusionnerPDF(ftChemins);
+    console.log('[generer] FT PDF:', ftPdfBuffer ? ftPdfBuffer.length + ' octets' : 'aucune');
+  } catch (e) {
+    console.error('[generer] Erreur fusion PDF:', e);
+  }
+
+  // 5. Mettre à jour la DB
+  const section = (champs.SECTION || champs.NUMERO_DU_PROJET || 'T3E').replace(/[^a-zA-Z0-9_-]/g, '-').substring(0, 30);
+  try {
+    await db.execute({
+      sql: `UPDATE bordereaux SET statut = 'approuve', session_actif = 0, numero_projet = ?, titre = ?, contenu = ? WHERE id = ?`,
+      args: [
+        champs.NUMERO_DU_PROJET || '',
+        champs.NOM_DU_PROJET || '',
+        JSON.stringify({ champs, ft_chemins: ftChemins }),
+        id,
+      ],
+    });
+  } catch (e) {
+    console.error('[generer] Erreur DB update:', e);
+  }
+
+  // 6. Retourner le résultat
+  const ts = Date.now();
+
+  if (!ftPdfBuffer) {
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="Bordereau_${section}_${ts}.docx"`);
+    return res.send(docxBuffer);
+  }
+
+  const zip = new JSZip();
+  zip.file(`Bordereau_${section}.docx`, docxBuffer);
+  zip.file(`Fiches_Techniques_${section}.pdf`, ftPdfBuffer);
+  const zipBuffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="Bordereau_${section}_${ts}.zip"`);
+  res.send(zipBuffer);
 });
 
 // Re-télécharger un .docx déjà généré
