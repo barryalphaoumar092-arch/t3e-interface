@@ -66,7 +66,7 @@ async function appelIA(texteDevis, listeMateriaux) {
 
   const userContent = `TEXTE COMPLET DU DEVIS (lis CHAQUE ligne attentivement) :
 ───────────────────────────────────────
-${texteDevis.substring(0, 12000)}
+${texteDevis.substring(0, 40000)}
 ───────────────────────────────────────
 
 LISTE DES MATÉRIAUX T3E (cherche ici le produit qui correspond au devis) :
@@ -96,7 +96,7 @@ Mets AUTANT de produits que tu trouves (pare-vapeur, isolant, membrane, drain, s
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + OPENAI_API_KEY },
     body: JSON.stringify({
       model: 'gpt-4o',
-      max_tokens: 2000,
+      max_tokens: 4096,
       temperature: 0.1,
       response_format: { type: 'json_object' },
       messages: [
@@ -428,13 +428,26 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
 
     // FT de CE produit — juste après son bordereau
     try {
-      const ft = trouverFichesTechniques(p.FABRICANT || '', p.TITRE || '');
+      console.log('[generer] Recherche FT: fabricant="' + (p.FABRICANT || '') + '", titre="' + (p.TITRE || '') + '"');
+      let ft = trouverFichesTechniques(p.FABRICANT || '', p.TITRE || '');
+      // Fallback : si pas de FT et que le titre contient un nom de fabricant connu
+      if (ft.length === 0 && p.TITRE) {
+        const fabricantsConnus = ['Soprema', 'IKO', 'BP', 'Tremco', 'CGC', 'Murphco', 'Ventilation Maximum', 'Henry Bakor', 'Securpan', 'Sico'];
+        for (const fab of fabricantsConnus) {
+          if (p.TITRE.toLowerCase().includes(fab.toLowerCase().substring(0, 4)) || (p.REMARQUE || '').toLowerCase().includes(fab.toLowerCase().substring(0, 4))) {
+            ft = trouverFichesTechniques(fab, p.TITRE);
+            if (ft.length > 0) { console.log('[generer] FT fallback via', fab); break; }
+          }
+        }
+      }
       if (ft.length > 0) {
         const ftPdf = await fusionnerPDF(ft);
         if (ftPdf) {
           zip.file(`${i + 1}_FT_${label}.pdf`, ftPdf);
           console.log('[generer] FT', i + 1, ':', ft.length, 'fichiers');
         }
+      } else {
+        console.log('[generer] Aucune FT trouvée pour produit', i + 1);
       }
     } catch (e) { console.error('[generer] Erreur FT', i + 1, ':', e.message); }
   }
