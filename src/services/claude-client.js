@@ -61,7 +61,6 @@ Tu connais les systèmes de toiture : BUR (asphalte et gravier), Soprasmart (pan
 Tu connais les types de travaux : Réfection complète et Pleumage (réfection partielle).
 Réponds toujours en français québécois professionnel.`;
 
-// OpenAI strict mode exige que TOUS les champs soient dans "required"
 const ANALYSE_DEVIS_SCHEMA = {
   type: 'object',
   properties: {
@@ -119,143 +118,8 @@ Si une info n'est pas trouvée, retourne une chaîne vide "".`;
   return callOpenAI(SYSTEM_T3E, userContent, ANALYSE_DEVIS_SCHEMA, true);
 }
 
-// Pour les suggestions de bordereau, les clés sont dynamiques → json_object (non-strict)
-async function proposerContenuBordereau(champs, projet, texteDevis, materiauxDB) {
-  const champsListe = (champs || []).map(c => `- Clé: "${c.key}" | Label: "${c.label}"`).join('\n');
-
-  const userContent = `Tu dois remplir TOUS les champs d'un bordereau technique de transmission de matériaux pour Toitures Trois Étoiles Inc. (T3E), couvreur commercial au Québec.
-
-CHAMPS DU BORDEREAU (remplis CHACUN sans exception) :
-${champsListe || '- nom | NOM entrepreneur\n- sp_cialit | SPÉCIALITÉ\n- nom_du_projet | NOM DU PROJET\n- adresse | ADRESSE\n- titre | Titre\n- description | Description\n- fournisseur | Fournisseur\n- fabricant | Fabricant\n- d_lai | Délai\n- remarque | Remarque'}
-
-INFORMATIONS DU PROJET (déjà extraites) :
-${Object.entries(projet || {}).filter(([,v]) => v).map(([k,v]) => `- ${k}: ${v}`).join('\n') || 'Aucune information de projet enregistrée'}
-
-DEVIS DU PROJET (extrais : client, adresse, matériaux, type de travaux, description du projet) :
-${texteDevis ? texteDevis.substring(0, 3500) : 'Aucun devis fourni — utilise les informations disponibles'}
-
-MATÉRIAUX DISPONIBLES EN BASE :
-${(materiauxDB || []).slice(0, 40).map(m => `- ${m.nom} (${m.fabricant})`).join('\n')}
-
-RÈGLES OBLIGATOIRES — respecte-les sans exception :
-1. Champ "nom" → TOUJOURS "Toitures Trois Étoiles Inc."
-2. Champ "sp_cialit" → TOUJOURS "Couvreur"
-3. Champ "nombre_feuilles" → "1" si non précisé
-4. Champ "r_vision" → "A" si non précisé
-5. Champ "d_lai" → "3 à 4 semaines" si non précisé
-6. Remplis TOUS les champs — ne laisse RIEN vide
-7. Si le devis mentionne des matériaux spécifiques, utilise-les pour "fournisseur", "fabricant", "description"
-8. Pour "nom_du_projet" et "adresse", utilise les infos du projet ou du devis
-
-Retourne un JSON avec la clé "suggestions" : objet où chaque clé correspond EXACTEMENT à une clé de la liste ci-dessus, et la valeur est un tableau avec la meilleure valeur en premier élément.
-Format strict : { "suggestions": { "nom": ["Toitures Trois Étoiles Inc."], "sp_cialit": ["Couvreur"], "nom_du_projet": ["École ABC — Réfection toiture"], "fournisseur": ["Soprema"], ... } }`;
-
-  return callOpenAI(SYSTEM_T3E, userContent, {}, false);
-}
-
-// Remplissage complet du bordereau : champs + fiches recommandées — tout en une seule IA
-async function proposerContenuBordereauComplet(champs, projet, texteDevis, materiauxDB, fichesDispo) {
-  const champsListe = (champs || []).map(c => `- Clé: "${c.key}" | Label: "${c.label}"`).join('\n');
-  const fichesListe = (fichesDispo || []).slice(0, 80).map(f => `- ID ${f.id}: ${f.titre} (${f.source || ''})`).join('\n');
-
-  const userContent = `Tu remplis un bordereau technique de transmission de matériaux pour Toitures Trois Étoiles Inc. (T3E), couvreur commercial au Québec. Tu es expert en toiture — remplis comme si tu connaissais ce projet parfaitement.
-
-CHAMPS DU BORDEREAU À REMPLIR (tous obligatoires) :
-${champsListe || '- nom | NOM entrepreneur\n- sp_cialit | SPÉCIALITÉ\n- nom_du_projet | NOM DU PROJET\n- adresse | ADRESSE\n- titre | Titre\n- description | Description\n- fournisseur | Fournisseur\n- fabricant | Fabricant\n- d_lai | Délai\n- remarque | Remarque'}
-
-INFORMATIONS DU PROJET :
-${Object.entries(projet || {}).filter(([,v]) => v).map(([k,v]) => `- ${k}: ${v}`).join('\n') || 'À extraire du devis'}
-
-DEVIS DU PROJET (extrait matériaux, fabricants, spécifications, systèmes, quantités, notes) :
-${texteDevis ? texteDevis.substring(0, 4000) : 'Aucun devis — utilise tes connaissances pour un projet T3E typique'}
-
-MATÉRIAUX EN BASE DE CONNAISSANCES :
-${(materiauxDB || []).slice(0, 60).map(m => `- ${m.nom} (${m.fabricant}${m.type_produit ? ', ' + m.type_produit : ''})`).join('\n')}
-
-FICHES TECHNIQUES DISPONIBLES :
-${fichesListe || 'Aucune fiche disponible'}
-
-RÈGLES FIXES (ne jamais déroger) :
-1. "nom" → "Toitures Trois Étoiles Inc."
-2. "sp_cialit" → "Couvreur"
-3. "nombre_feuilles" → "1"
-4. "r_vision" → "A"
-5. "d_lai" → "3 à 4 semaines" si non précisé dans le devis
-6. Remplis TOUS les champs — jamais de chaîne vide
-7. "fiches_recommandees" → 2 à 6 IDs des fiches les plus pertinentes pour les matériaux de ce projet
-
-Retourne UNIQUEMENT ce JSON :
-{
-  "suggestions": { "nom": ["Toitures Trois Étoiles Inc."], "sp_cialit": ["Couvreur"], "nom_du_projet": ["..."], "fournisseur": ["..."], "fabricant": ["..."], "description": ["..."], ... },
-  "fiches_recommandees": [12, 45, 67]
-}`;
-
-  return callOpenAI(SYSTEM_T3E, userContent, {}, false);
-}
-
-// Remplit un bordereau depuis le texte du template + devis + base de connaissances
-// Retourne { champs: { NOM_DU_PROJET: "...", ... }, fiches_recommandees: [id1, ...] }
-async function remplirBordereauIA(texteTemplate, texteDevis, materiauxDB, fichesDispo, projet) {
-  const fichesListe = (fichesDispo || []).slice(0, 80).map(f => `- ID ${f.id}: ${f.titre} (${f.source || ''})`).join('\n');
-
-  const userContent = `Tu remplis un bordereau technique de transmission de matériaux pour Toitures Trois Étoiles Inc. (T3E), couvreur commercial au Québec.
-
-STRUCTURE DU BORDEREAU (extrait du template) :
-${texteTemplate ? texteTemplate.substring(0, 3000) : 'Champs standards : NOM DU PROJET, NUMÉRO DU PROJET, NOM entrepreneur, SPÉCIALITÉ, ADRESSE, Titre, N° Dessins, Nbr feuilles, Révision, Description, Fournisseur, Fabricant, Section, Article, Délai, Remarque'}
-
-INFORMATIONS DU PROJET :
-${Object.entries(projet || {}).filter(([,v]) => v).map(([k,v]) => `- ${k}: ${v}`).join('\n') || 'À extraire du devis'}
-
-DEVIS DU PROJET :
-${texteDevis ? texteDevis.substring(0, 4000) : 'Aucun devis fourni — utilise les informations disponibles'}
-
-MATÉRIAUX EN BASE DE CONNAISSANCES :
-${(materiauxDB || []).slice(0, 80).map(m => `- ${m.nom} (${m.fabricant}${m.type_produit ? ', ' + m.type_produit : ''})`).join('\n')}
-
-FICHES TECHNIQUES DISPONIBLES :
-${fichesListe || 'Aucune fiche disponible'}
-
-RÈGLES FIXES (ne jamais déroger) :
-1. NOM_ENTREPRENEUR → TOUJOURS "Toitures Trois Étoiles Inc."
-2. SPECIALITE → TOUJOURS "Couvreur"
-3. NOMBRE_FEUILLES → "1" si non précisé
-4. REVISION → "A" si non précisé
-5. DELAI → "3 à 4 semaines" si non précisé dans le devis
-6. Remplis TOUS les champs — jamais de chaîne vide
-7. Utilise les matériaux de la base de connaissances pour FOURNISSEUR, FABRICANT, DESCRIPTION
-8. fiches_recommandees → 2 à 6 IDs des fiches les plus pertinentes pour ce projet
-
-Retourne UNIQUEMENT ce JSON :
-{
-  "champs": {
-    "NOM_DU_PROJET": "...",
-    "NUMERO_DU_PROJET": "...",
-    "NOM_ENTREPRENEUR": "Toitures Trois Étoiles Inc.",
-    "SPECIALITE": "Couvreur",
-    "ADRESSE": "...",
-    "TITRE": "...",
-    "NUMERO_DESSINS": "D-001",
-    "NOMBRE_FEUILLES": "1",
-    "REVISION": "A",
-    "DESCRIPTION": "...",
-    "FOURNISSEUR": "...",
-    "FABRICANT": "...",
-    "SECTION_ARTICLE": "07 50 00",
-    "ARTICLE": "...",
-    "DELAI": "3 à 4 semaines",
-    "REMARQUE": "Voir fiches techniques ci-jointes"
-  },
-  "fiches_recommandees": []
-}`;
-
-  return callOpenAI(SYSTEM_T3E, userContent, {}, false);
-}
-
 function isConfigured() {
   return !!OPENAI_API_KEY;
 }
 
-// Alias pour compatibilité avec tout code qui importerait callClaude
-const callClaude = callOpenAI;
-
-module.exports = { analyserDevis, proposerContenuBordereau, proposerContenuBordereauComplet, remplirBordereauIA, isConfigured, callClaude };
+module.exports = { analyserDevis, isConfigured };

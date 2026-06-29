@@ -10,38 +10,42 @@
 <div class="row justify-content-center">
   <div class="col-md-8">
 
-    <!-- Formulaire initial -->
-    <div class="card shadow-sm" id="carteFormulaire">
+    <div class="d-flex gap-2 mb-3">
+      <span class="badge bg-primary fs-6">1. Upload</span>
+      <span class="badge bg-secondary fs-6">2. Révision</span>
+      <span class="badge bg-secondary fs-6">3. Téléchargement</span>
+    </div>
+
+    <div class="card shadow-sm">
       <div class="card-header bg-warning text-dark">
         <h5 class="mb-0"><i class="bi bi-magic"></i> Remplir un bordereau avec l'IA</h5>
       </div>
       <div class="card-body">
 
-        <div id="zoneErreur" class="alert alert-danger d-none"></div>
-
-        <form id="formDemarrer" enctype="multipart/form-data">
+        <form method="POST" action="/bordereaux/analyser" enctype="multipart/form-data" id="formUpload">
 
           <div class="mb-4">
             <label class="form-label fw-bold">
               <span class="badge bg-warning text-dark me-1">1</span>
               Devis du projet <span class="text-danger">*</span>
             </label>
-            <input type="file" name="devis" class="form-control" accept=".pdf" required>
+            <input type="file" name="devis" class="form-control" accept=".pdf,.docx,.doc,.xlsx,.xls" required>
+            <div class="form-text">L'IA va lire le devis et en extraire : nom du projet, numéro, section, article, matériaux.</div>
           </div>
 
           <div class="mb-4">
             <label class="form-label fw-bold">
               <span class="badge bg-warning text-dark me-1">2</span>
-              Bordereau à remplir <span class="text-danger">*</span>
+              Bordereau .docx à remplir <span class="text-danger">*</span>
             </label>
             <input type="file" name="bordereau" class="form-control" accept=".docx" required>
-            <div class="form-text">Format <strong>.docx</strong> (Word). Convertissez depuis .doc si nécessaire.</div>
+            <div class="form-text">Le template Word T3E. L'IA remplira les champs directement dedans.</div>
           </div>
 
           <div class="mb-4">
             <div class="card border-secondary">
               <div class="card-header bg-secondary bg-opacity-10 py-2">
-                <span class="fw-bold"><span class="badge bg-secondary me-1">3</span> Identification entrepreneur</span>
+                <span class="fw-bold"><span class="badge bg-secondary me-1">3</span> Identification entrepreneur (pré-rempli)</span>
               </div>
               <div class="card-body pb-2">
                 <div class="row g-2">
@@ -58,310 +62,33 @@
                     <input type="text" name="adresse" class="form-control form-control-sm" value="7550 Rue Saint-Patrick, Montréal, QC H8N 1V1">
                   </div>
                   <div class="col-md-6">
-                    <label class="form-label form-label-sm fw-semibold">ÉMIS PAR</label>
-                    <input type="text" name="emis_par" class="form-control form-control-sm" placeholder="Votre nom">
-                  </div>
-                  <div class="col-md-6">
-                    <label class="form-label form-label-sm fw-semibold">NOM DU PROJET <span class="text-muted fw-normal">(optionnel)</span></label>
-                    <input type="text" name="nom_projet" class="form-control form-control-sm" placeholder="L'IA l'extrait du devis">
+                    <label class="form-label form-label-sm fw-semibold">NOM DU PROJET <span class="text-muted fw-normal">(optionnel — l'IA l'extrait du devis)</span></label>
+                    <input type="text" name="nom_projet" class="form-control form-control-sm" placeholder="Laissez vide pour extraction auto">
                   </div>
                 </div>
               </div>
             </div>
           </div>
-
-          <% if (typeof fiches !== 'undefined' && fiches && fiches.length > 0) { %>
-          <div class="mb-4">
-            <div class="card border-info">
-              <div class="card-header bg-info bg-opacity-10 py-2 d-flex justify-content-between align-items-center">
-                <span class="fw-bold"><span class="badge bg-info text-dark me-1">4</span> Fiches techniques à joindre</span>
-                <small class="text-muted">— ajoutées dans le ZIP</small>
-              </div>
-              <div class="card-body p-0">
-                <div class="px-3 pt-3 pb-2">
-                  <input type="text" id="filtresFT" class="form-control form-control-sm" placeholder="Filtrer (ex: Soprema, IKO…)">
-                </div>
-                <div id="listeFT" style="max-height:220px; overflow-y:auto; border-top:1px solid #dee2e6">
-                  <% let derniereFournisseur = null; fiches.forEach(function(f) { const src = f.source || 'Autre'; if (src !== derniereFournisseur) { derniereFournisseur = src; %>
-                    <div class="px-3 pt-2 pb-0 fournisseur-header"><small class="text-uppercase text-muted fw-bold" style="font-size:0.68rem; letter-spacing:1px"><%= src %></small></div>
-                  <% } %>
-                    <div class="form-check px-4 py-1 fiche-item" data-label="<%= (f.titre + ' ' + (f.source||'')).toLowerCase() %>">
-                      <input class="form-check-input" type="checkbox" name="fiches" value="<%= f.id %>" id="ft<%= f.id %>">
-                      <label class="form-check-label" for="ft<%= f.id %>" style="font-size:0.85rem; cursor:pointer"><%= f.titre %></label>
-                    </div>
-                  <% }); %>
-                </div>
-                <div class="px-3 py-2 border-top bg-light d-flex gap-2">
-                  <button type="button" class="btn btn-outline-secondary btn-sm" onclick="toggleTous(true)">Tout sélectionner</button>
-                  <button type="button" class="btn btn-outline-secondary btn-sm" onclick="toggleTous(false)">Tout désélectionner</button>
-                  <span class="ms-auto text-muted small" id="compteFT">0 sélectionnée(s)</span>
-                </div>
-              </div>
-            </div>
-          </div>
-          <% } %>
 
           <div class="d-grid">
-            <button type="submit" class="btn btn-warning btn-lg" id="btnDemarrer">
-              <i class="bi bi-magic"></i> Démarrer avec l'IA
+            <button type="submit" class="btn btn-warning btn-lg" id="btnAnalyser">
+              <i class="bi bi-magic"></i> Analyser avec l'IA
             </button>
           </div>
         </form>
+
       </div>
     </div>
 
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════════════════════════ -->
-<!--  POPUP DE DIALOGUE IA  (apparaît étape par étape)            -->
-<!-- ══════════════════════════════════════════════════════════════ -->
-<div class="modal fade" id="modalIA" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
-  <div class="modal-dialog modal-lg modal-dialog-scrollable">
-    <div class="modal-content border-warning">
-
-      <div class="modal-header bg-warning text-dark py-2">
-        <div>
-          <span class="fw-bold" id="modalEtapeTitre">L'IA analyse…</span>
-          <span class="badge bg-dark ms-2" id="modalEtapeBadge"></span>
-        </div>
-        <div id="modalSpinner" class="spinner-border spinner-border-sm text-dark d-none ms-3"></div>
-      </div>
-
-      <div class="modal-body">
-        <!-- Message de l'IA -->
-        <div class="alert alert-light border mb-3" id="modalMessage" style="white-space:pre-wrap; font-size:0.93rem"></div>
-
-        <!-- Champs proposés -->
-        <div id="modalChamps" class="row g-2"></div>
-
-        <!-- Zone Autre -->
-        <div id="zoneAutre" class="mt-3 d-none">
-          <label class="form-label fw-semibold text-danger">Votre correction :</label>
-          <textarea id="textCorrection" class="form-control" rows="3" placeholder="Décrivez la correction à apporter (ex: le nom du projet est X, la section est Y)…"></textarea>
-        </div>
-      </div>
-
-      <div class="modal-footer d-flex gap-2">
-        <button type="button" class="btn btn-danger" id="btnNon">
-          <i class="bi bi-x-circle me-1"></i>Non — Annuler
-        </button>
-        <button type="button" class="btn btn-secondary" id="btnAutre">
-          <i class="bi bi-pencil me-1"></i>Autre — Corriger
-        </button>
-        <button type="button" class="btn btn-success ms-auto btn-lg" id="btnOui">
-          <i class="bi bi-check-circle me-1"></i>Oui — Continuer
-        </button>
-      </div>
-
-    </div>
   </div>
 </div>
 
 <script>
-var sessionId = null;
-var modal = null;
-
-// ──── Utilitaires fiches ────
-var filtreInput = document.getElementById('filtresFT');
-if (filtreInput) {
-  filtreInput.addEventListener('input', function() {
-    var q = this.value.toLowerCase().trim();
-    document.querySelectorAll('.fiche-item').forEach(function(el) {
-      el.style.display = !q || el.dataset.label.includes(q) ? '' : 'none';
-    });
-    document.querySelectorAll('.fournisseur-header').forEach(function(hdr) {
-      var nxt = hdr.nextElementSibling, vis = false;
-      while (nxt && nxt.classList.contains('fiche-item')) {
-        if (nxt.style.display !== 'none') { vis = true; break; }
-        nxt = nxt.nextElementSibling;
-        if (nxt && nxt.classList.contains('fournisseur-header')) break;
-      }
-      hdr.style.display = vis ? '' : 'none';
-    });
-  });
-}
-function majCompteur() {
-  var n = document.querySelectorAll('input[name="fiches"]:checked').length;
-  var el = document.getElementById('compteFT');
-  if (el) el.textContent = n + ' sélectionnée(s)';
-}
-document.querySelectorAll('input[name="fiches"]').forEach(function(cb) { cb.addEventListener('change', majCompteur); });
-majCompteur();
-function toggleTous(etat) {
-  document.querySelectorAll('.fiche-item').forEach(function(el) {
-    if (el.style.display !== 'none') el.querySelector('input').checked = etat;
-  });
-  majCompteur();
-}
-
-// ──── Afficher une proposition dans la modale ────
-function afficherProposition(data) {
-  document.getElementById('modalEtapeTitre').textContent = data.titre || 'Proposition IA';
-  document.getElementById('modalEtapeBadge').textContent = data.etape ? 'Étape ' + data.etape + '/4' : '';
-  document.getElementById('modalMessage').textContent = data.message || '';
-  document.getElementById('zoneAutre').classList.add('d-none');
-  document.getElementById('textCorrection').value = '';
-  document.getElementById('modalSpinner').classList.add('d-none');
-
-  // Afficher les champs proposés
-  var cont = document.getElementById('modalChamps');
-  cont.innerHTML = '';
-  var champs = data.champs || {};
-  Object.entries(champs).forEach(function(entry) {
-    var lbl = entry[0].replace(/_/g, ' ');
-    var val = entry[1] || '';
-    var col = document.createElement('div');
-    col.className = 'col-12';
-    col.innerHTML =
-      '<div class="p-2 rounded border bg-light">' +
-        '<span class="badge bg-warning text-dark me-2" style="font-size:0.7rem">' + lbl + '</span>' +
-        '<span style="font-size:0.9rem">' + escHTML(val) + '</span>' +
-      '</div>';
-    cont.appendChild(col);
-  });
-
-  document.getElementById('btnOui').disabled = false;
-  document.getElementById('btnNon').disabled = false;
-  document.getElementById('btnAutre').disabled = false;
-}
-
-function escHTML(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-function setChargement() {
-  document.getElementById('modalSpinner').classList.remove('d-none');
-  document.getElementById('btnOui').disabled = true;
-  document.getElementById('btnNon').disabled = true;
-  document.getElementById('btnAutre').disabled = true;
-  document.getElementById('modalMessage').textContent = 'L\'IA réfléchit…';
-  document.getElementById('modalChamps').innerHTML = '';
-  document.getElementById('zoneAutre').classList.add('d-none');
-}
-
-// ──── Soumettre une réponse à l'IA ────
-async function repondre(reponse, correction) {
-  setChargement();
-  try {
-    var body = { reponse };
-    if (correction) body.correction = correction;
-
-    var resp = await fetch('/bordereaux/repondre/' + sessionId, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-
-    // Réponse finale = fichier à télécharger
-    var ct = resp.headers.get('Content-Type') || '';
-    if (ct.includes('application/vnd') || ct.includes('application/zip')) {
-      var blob = await resp.blob();
-      var cd = resp.headers.get('Content-Disposition') || '';
-      var m = cd.match(/filename="([^"]+)"/);
-      var nom = m ? m[1] : 'Bordereau.docx';
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement('a'); a.href = url; a.download = nom; a.click();
-      URL.revokeObjectURL(url);
-      bootstrap.Modal.getInstance(document.getElementById('modalIA')).hide();
-      setTimeout(function() { window.location.href = '/bordereaux'; }, 800);
-      return;
-    }
-
-    var data = await resp.json();
-
-    if (!resp.ok) {
-      alert('Erreur : ' + (data.erreur || 'Inconnue'));
-      return;
-    }
-    if (data.type === 'annule') {
-      bootstrap.Modal.getInstance(document.getElementById('modalIA')).hide();
-      return;
-    }
-
-    afficherProposition(data);
-
-  } catch (err) {
-    alert('Erreur réseau : ' + err.message);
-    document.getElementById('modalSpinner').classList.add('d-none');
-  }
-}
-
-// ──── Démarrer la session ────
-document.getElementById('formDemarrer').addEventListener('submit', async function(e) {
-  e.preventDefault();
-  var btn = document.getElementById('btnDemarrer');
-  var errZone = document.getElementById('zoneErreur');
-  errZone.classList.add('d-none');
+document.getElementById('formUpload').addEventListener('submit', function() {
+  var btn = document.getElementById('btnAnalyser');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>L\'IA lit le devis…';
-
-  try {
-    var formData = new FormData(this);
-    var resp = await fetch('/bordereaux/demarrer', { method: 'POST', body: formData });
-    var data = await resp.json();
-
-    if (!resp.ok || data.erreur) {
-      errZone.textContent = data.erreur || 'Erreur inconnue.';
-      errZone.classList.remove('d-none');
-      return;
-    }
-
-    sessionId = data.sessionId;
-    modal = new bootstrap.Modal(document.getElementById('modalIA'));
-    afficherProposition(data);
-    modal.show();
-
-  } catch (err) {
-    errZone.textContent = 'Erreur réseau : ' + err.message;
-    errZone.classList.remove('d-none');
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = '<i class="bi bi-magic"></i> Démarrer avec l\'IA';
-  }
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>L\'IA analyse le devis…';
 });
-
-// ──── Boutons Oui / Non / Autre ────
-document.getElementById('btnOui').addEventListener('click', function() {
-  document.getElementById('zoneAutre').classList.add('d-none');
-  repondre('oui');
-});
-
-document.getElementById('btnNon').addEventListener('click', async function() {
-  if (sessionId) {
-    await fetch('/bordereaux/annuler/' + sessionId, { method: 'POST' }).catch(function(){});
-    sessionId = null;
-  }
-  bootstrap.Modal.getInstance(document.getElementById('modalIA')).hide();
-});
-
-document.getElementById('btnAutre').addEventListener('click', function() {
-  var zone = document.getElementById('zoneAutre');
-  if (zone.classList.contains('d-none')) {
-    zone.classList.remove('d-none');
-    document.getElementById('textCorrection').focus();
-    // Remplacer Autre par Envoyer correction
-    this.innerHTML = '<i class="bi bi-send me-1"></i>Envoyer correction';
-    this.onclick = function() {
-      var correction = document.getElementById('textCorrection').value.trim();
-      if (!correction) { alert('Décrivez la correction à apporter.'); return; }
-      // Remettre le bouton
-      document.getElementById('btnAutre').innerHTML = '<i class="bi bi-pencil me-1"></i>Autre — Corriger';
-      document.getElementById('btnAutre').onclick = null;
-      // Rebind original handler
-      bindBtnAutre();
-      repondre('autre', correction);
-    };
-  }
-});
-
-function bindBtnAutre() {
-  document.getElementById('btnAutre').onclick = function() {
-    var zone = document.getElementById('zoneAutre');
-    zone.classList.toggle('d-none');
-    if (!zone.classList.contains('d-none')) document.getElementById('textCorrection').focus();
-  };
-}
 </script>
 
 <%- include('partials/footer', { scripts: [] }) %>
