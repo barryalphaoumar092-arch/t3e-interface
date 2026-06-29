@@ -17,56 +17,109 @@ const uploadFields = upload.fields([
 ]);
 
 // ══════════════════════════════════════════════════════════════
-//  APPEL OPENAI — Extraction unique de TOUS les champs
+//  APPEL OPENAI — Extraction exhaustive de TOUS les champs
 // ══════════════════════════════════════════════════════════════
-const SYSTEM_PROMPT = `Tu es un chargé de projet expert en couverture commerciale au Québec chez Toitures Trois Étoiles Inc. (T3E).
-Tu remplis un bordereau de transmission de fiches techniques. Tu extrais TOUTES les informations en UNE SEULE réponse.
+const SYSTEM_PROMPT = `Tu es un chargé de projet SENIOR expert en couverture commerciale au Québec chez Toitures Trois Étoiles Inc. (T3E).
+Tu remplis un bordereau de transmission de fiches techniques avec une PRÉCISION MAXIMALE.
 
-SOURCES D'INFORMATION — respecte strictement :
-1. Du DEVIS → NOM_DU_PROJET, NUMERO_DU_PROJET, SECTION, ARTICLE
-2. De la LISTE DES MATÉRIAUX → TITRE (nom du produit), FOURNISSEUR, FABRICANT
-   Cherche dans la liste le matériau qui correspond le mieux à ce qui est décrit dans le devis.
-   Si le devis mentionne "membrane de bitume modifié SBS" et que la liste contient "Soprastar Flam GR", c'est un match.
-3. Généré par toi → REMARQUE (note professionnelle courte sur le produit et son usage)
+Tu dois FOUILLER EN PROFONDEUR le devis pour extraire un maximum d'informations. Lis chaque ligne du devis attentivement.
+Prends ton temps, la qualité est plus importante que la vitesse.
 
-TOUJOURS VIDE : NUMERO_DESSINS, DESCRIPTION, DELAI
+CHAMPS À REMPLIR — cherche dans TOUT le texte du devis :
 
-RÈGLES :
-- Extrais les valeurs EXACTEMENT comme dans le texte du devis (pas de reformulation)
-- Pour SECTION : inclure le numéro ET le titre (ex: "07 52 21 — Couverture à membrane de bitume modifié")
-- Pour ARTICLE : inclure le numéro ET la description (ex: "2.5 Membrane et solin de finition élastomère")
-- Pour le match matériaux : choisis le produit LE PLUS SPÉCIFIQUE qui correspond au devis
-- Si tu ne trouves pas une info → chaîne vide ""
-- Retourne UNIQUEMENT du JSON valide, AUCUN texte autour`;
+1. NOM_DU_PROJET — Le nom complet du projet tel qu'écrit dans le devis.
+   Cherche dans : en-tête, page de garde, premières lignes, mentions "Projet :", "Objet :", titre du document.
+   Exemple : "Réfection des toitures – phase 6, Polytechnique Montréal"
+
+2. NUMERO_DU_PROJET — Le numéro de référence / dossier du projet.
+   Cherche dans : en-tête, "N° projet", "Dossier", "Référence", "N/Réf", "Projet no", "No contrat".
+   Il peut y avoir PLUSIEURS numéros (propriétaire, architecte, entrepreneur). Prends le numéro principal.
+   Exemple : "53-0486"
+
+3. SECTION — La section du devis avec numéro ET titre complet.
+   Cherche dans : "Section", "Division", le numéro de section à 6 chiffres (ex: 07 52 21).
+   INCLURE le titre descriptif complet après le numéro.
+   Exemple : "07 52 21 — Couverture à membrane de bitume modifié"
+
+4. ARTICLE — L'article spécifique avec numéro ET description complète.
+   Cherche dans : "Article", "Partie", sous-sections numérotées (2.1, 2.5, 3.2, etc.).
+   Identifie l'article qui décrit le PRODUIT PRINCIPAL mentionné dans le devis.
+   Exemple : "2.5 Membrane et solin de finition élastomère SBS, armature polyester/fibre de verre"
+
+5. TITRE — Le nom EXACT du produit/matériau principal.
+   PRIORITÉ : cherche d'abord dans la LISTE DES MATÉRIAUX T3E un produit qui correspond à ce que le devis décrit.
+   Cherche les noms de produits commerciaux dans le devis : Soprastar, Sopralene, Colply, Elastocol, Stormtite, etc.
+   Si le devis dit "membrane SBS armature polyester granulée" → cherche dans la liste un produit qui match.
+   Exemple : "Soprastar Flam GR FR"
+
+6. FABRICANT — Le fabricant du produit.
+   PRIORITÉ : utilise le fabricant de la LISTE DES MATÉRIAUX T3E pour le produit trouvé au point 5.
+   Sinon cherche dans le devis : "Fabricant", "Manufacturier", ou le nom de la compagnie (Soprema, IKO, BP, Tremco...).
+   Exemple : "Soprema"
+
+7. FOURNISSEUR — Le fournisseur du produit.
+   PRIORITÉ : utilise le fournisseur de la LISTE DES MATÉRIAUX T3E.
+   Souvent le même que le fabricant au Québec.
+   Exemple : "Soprema"
+
+8. DESCRIPTION — Description technique du produit/travail.
+   COMPOSE une description détaillée à partir du devis : type de membrane, armature, épaisseur, finition, norme applicable, méthode de pose.
+   Ne laisse JAMAIS vide si le devis contient des spécifications techniques.
+   Exemple : "Membrane élastomère SBS de finition, armature polyester/fibre de verre, surface granulée, posée au chalumeau, conforme à CAN/CGSB 37.56-M"
+
+9. NUMERO_DESSINS — Numéro des dessins/plans référencés.
+   Cherche dans : "Dessin", "Plan", "Détail", "Annexe", "Figure", références croisées.
+   Si non trouvé, laisse vide.
+
+10. REMARQUE — Note DÉTAILLÉE et professionnelle.
+    COMPOSE une remarque complète incluant :
+    - Le contexte du projet (type de bâtiment, phase des travaux)
+    - Les spécifications clés du produit (norme, épaisseur, armature, finition)
+    - Les conditions de mise en œuvre mentionnées dans le devis
+    - Toute information pertinente pour le chantier (garantie, restrictions, conditions)
+    Exemple : "Membrane de finition élastomère SBS, armature polyester/fibre de verre composite, surface granulée. Posée au chalumeau sur membrane de base. Projet de réfection phase 6 — bâtiment institutionnel. Conforme aux exigences CAN/CGSB 37.56-M. Garantie Soprema applicable."
+
+RÈGLES STRICTES :
+- Lis le TEXTE COMPLET du devis, pas seulement le début
+- Extrais les valeurs textuelles EXACTEMENT comme dans le devis (pas de reformulation pour NOM_DU_PROJET, NUMERO_DU_PROJET, SECTION, ARTICLE)
+- DESCRIPTION et REMARQUE : compose-les à partir des infos du devis, sois DÉTAILLÉ et PROFESSIONNEL
+- Pour le match matériaux avec la liste : choisis le produit LE PLUS SPÉCIFIQUE. Si le devis dit "membrane élastomère SBS granulée" et que la liste a "Soprastar Flam GR" et "Soprastar GR", choisis "Soprastar Flam GR" (flam = posée au chalumeau)
+- NE LAISSE JAMAIS un champ vide si l'information existe quelque part dans le devis
+- Retourne UNIQUEMENT du JSON valide`;
 
 async function appelIA(texteDevis, listeMateriaux) {
   const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
   if (!OPENAI_API_KEY) throw new Error('OPENAI_API_KEY manquante. Ajoutez-la sur Render.');
 
-  const userContent = `TEXTE DU DEVIS :
-${texteDevis.substring(0, 6000)}
+  const userContent = `TEXTE COMPLET DU DEVIS (lis CHAQUE ligne attentivement) :
+───────────────────────────────────────
+${texteDevis.substring(0, 12000)}
+───────────────────────────────────────
 
-LISTE DES MATÉRIAUX T3E (Produit | Fabricant | Fournisseur) :
+LISTE DES MATÉRIAUX T3E (cherche ici le produit qui correspond au devis) :
 ${listeMateriaux || '(aucun matériau disponible)'}
 
-Retourne un JSON avec ces clés exactes :
+Analyse le devis en profondeur et retourne ce JSON avec TOUS les champs remplis au maximum :
 {
-  "NOM_DU_PROJET": "...",
-  "NUMERO_DU_PROJET": "...",
-  "SECTION": "...",
-  "ARTICLE": "...",
-  "TITRE": "...",
-  "FABRICANT": "...",
-  "FOURNISSEUR": "...",
-  "REMARQUE": "..."
+  "NOM_DU_PROJET": "nom complet du projet",
+  "NUMERO_DU_PROJET": "numéro de référence",
+  "SECTION": "numéro + titre complet de la section",
+  "ARTICLE": "numéro + description complète de l'article",
+  "TITRE": "nom exact du produit (de la liste matériaux si possible)",
+  "FABRICANT": "nom du fabricant",
+  "FOURNISSEUR": "nom du fournisseur",
+  "DESCRIPTION": "description technique détaillée du produit/travail",
+  "NUMERO_DESSINS": "références des dessins/plans si trouvées",
+  "REMARQUE": "note professionnelle détaillée avec contexte, spécifications, conditions"
 }`;
 
   const resp = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + OPENAI_API_KEY },
     body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      max_tokens: 1000,
+      model: 'gpt-4o',
+      max_tokens: 2000,
+      temperature: 0.1,
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
@@ -88,33 +141,47 @@ Retourne un JSON avec ces clés exactes :
 //  AUTO-MATCH FICHES TECHNIQUES — scan documents/FT/{Fabricant}/
 // ══════════════════════════════════════════════════════════════
 function trouverFichesTechniques(fabricant, titre) {
-  if (!fabricant || !fs.existsSync(FT_DIR)) return [];
+  if (!fabricant || !fs.existsSync(FT_DIR)) {
+    console.log('[FT] Pas de fabricant ou dossier FT absent');
+    return [];
+  }
 
   let fabDir = path.join(FT_DIR, fabricant);
 
   if (!fs.existsSync(fabDir)) {
-    const dirs = [];
+    const allDirs = [];
     try {
       for (const d of fs.readdirSync(FT_DIR)) {
         const full = path.join(FT_DIR, d);
-        if (fs.statSync(full).isDirectory() && d.toLowerCase().includes(fabricant.toLowerCase().substring(0, 4))) {
-          dirs.push(d);
-        }
+        if (fs.statSync(full).isDirectory()) allDirs.push(d);
       }
     } catch (_) {}
-    if (dirs.length === 0) return [];
-    fabDir = path.join(FT_DIR, dirs[0]);
+
+    const fabLower = fabricant.toLowerCase();
+    const match = allDirs.find(d => d.toLowerCase() === fabLower)
+      || allDirs.find(d => d.toLowerCase().includes(fabLower.substring(0, 4)))
+      || allDirs.find(d => fabLower.includes(d.toLowerCase().substring(0, 4)));
+
+    if (!match) {
+      console.log('[FT] Fabricant "' + fabricant + '" non trouvé parmi:', allDirs.join(', '));
+      return [];
+    }
+    fabDir = path.join(FT_DIR, match);
+    console.log('[FT] Fabricant matché: "' + fabricant + '" → "' + match + '"');
   }
 
   let pdfs;
   try { pdfs = fs.readdirSync(fabDir).filter(f => f.endsWith('.pdf')); } catch (_) { return []; }
+  console.log('[FT] PDFs disponibles dans ' + path.basename(fabDir) + ':', pdfs.length);
 
   if (!titre || pdfs.length === 0) return pdfs.slice(0, 3).map(f => path.join(fabDir, f));
 
   const keywords = titre.toLowerCase()
     .replace(/[^a-zàâäéèêëîïôùûü0-9]+/g, ' ')
     .split(/\s+/)
-    .filter(w => w.length > 2);
+    .filter(w => w.length > 2 && !['the','des','les','pour','avec','type'].includes(w));
+
+  console.log('[FT] Mots-clés de recherche:', keywords.join(', '));
 
   const scored = pdfs.map(f => {
     const fname = f.toLowerCase();
@@ -122,8 +189,13 @@ function trouverFichesTechniques(fabricant, titre) {
     return { file: f, score };
   }).filter(s => s.score > 0).sort((a, b) => b.score - a.score);
 
-  if (scored.length > 0) return [path.join(fabDir, scored[0].file)];
-  return [];
+  if (scored.length > 0) {
+    console.log('[FT] Meilleur match:', scored[0].file, '(score:', scored[0].score + ')');
+    return [path.join(fabDir, scored[0].file)];
+  }
+
+  console.log('[FT] Aucun match par titre, retourne les 2 premiers PDFs');
+  return pdfs.slice(0, 2).map(f => path.join(fabDir, f));
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -201,9 +273,9 @@ router.post('/analyser', uploadFields, async (req, res) => {
     const pertinents = matRows.filter(m => {
       const txt = `${m.nom} ${m.fabricant || ''} ${m.fournisseur || ''} ${m.type_produit || ''}`.toLowerCase();
       return keywords.some(k => txt.includes(k));
-    }).slice(0, 50);
+    }).slice(0, 80);
 
-    const liste = pertinents.length > 0 ? pertinents : matRows.slice(0, 50);
+    const liste = pertinents.length > 0 ? pertinents : matRows.slice(0, 80);
     listeMateriaux = liste.map(m =>
       [m.nom, m.fabricant && `Fabricant: ${m.fabricant}`, m.fournisseur && `Fournisseur: ${m.fournisseur}`].filter(Boolean).join(' | ')
     ).join('\n');
@@ -233,10 +305,10 @@ router.post('/analyser', uploadFields, async (req, res) => {
     SPECIALITE: identification.SPECIALITE,
     ADRESSE: identification.ADRESSE,
     TITRE: champsIA.TITRE || '',
-    NUMERO_DESSINS: '',
+    NUMERO_DESSINS: champsIA.NUMERO_DESSINS || '',
     NOMBRE_FEUILLES: '',
     REVISION: '',
-    DESCRIPTION: '',
+    DESCRIPTION: champsIA.DESCRIPTION || '',
     FOURNISSEUR: champsIA.FOURNISSEUR || '',
     FABRICANT: champsIA.FABRICANT || '',
     SECTION: champsIA.SECTION || '',
@@ -244,6 +316,8 @@ router.post('/analyser', uploadFields, async (req, res) => {
     DELAI: '',
     REMARQUE: champsIA.REMARQUE || '',
   };
+
+  console.log('[analyser] IA champs extraits:', JSON.stringify(champsIA).substring(0, 500));
 
   // 7. Auto-match des fiches techniques
   const ftTrouvees = trouverFichesTechniques(champs.FABRICANT, champs.TITRE);
