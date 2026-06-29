@@ -114,10 +114,31 @@ Retourne ce JSON :
 //  AUTO-MATCH FICHES TECHNIQUES — scan documents/FT/{Fabricant}/
 // ══════════════════════════════════════════════════════════════
 function trouverFichesTechniques(fabricant, titre) {
-  if (!fabricant || !fs.existsSync(FT_DIR)) {
-    console.log('[FT] Pas de fabricant ou dossier FT absent');
+  if (!fs.existsSync(FT_DIR)) {
+    console.log('[FT] Dossier FT absent');
     return [];
   }
+
+  // Si pas de fabricant, chercher dans TOUS les dossiers FT par mots-clés du titre
+  if (!fabricant && titre) {
+    console.log('[FT] Pas de fabricant, recherche globale par titre:', titre);
+    const allDirs = fs.readdirSync(FT_DIR).filter(d => fs.statSync(path.join(FT_DIR, d)).isDirectory());
+    const keywords = titre.toLowerCase().replace(/[^a-zàâäéèêëîïôùûü0-9]+/g, ' ').split(/\s+/).filter(w => w.length > 2);
+    let bestFile = null, bestScore = 0, bestDir = '';
+    for (const dir of allDirs) {
+      const pdfs = fs.readdirSync(path.join(FT_DIR, dir)).filter(f => f.endsWith('.pdf'));
+      for (const f of pdfs) {
+        const score = keywords.filter(k => f.toLowerCase().includes(k)).length;
+        if (score > bestScore) { bestScore = score; bestFile = f; bestDir = dir; }
+      }
+    }
+    if (bestFile && bestScore >= 1) {
+      console.log('[FT] Match global:', bestDir + '/' + bestFile, '(score:', bestScore, ')');
+      return [path.join(FT_DIR, bestDir, bestFile)];
+    }
+    return [];
+  }
+  if (!fabricant) return [];
 
   let fabDir = path.join(FT_DIR, fabricant);
 
