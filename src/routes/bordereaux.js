@@ -293,6 +293,36 @@ router.post('/analyser', uploadFields, async (req, res) => {
 
   console.log('[analyser] IA champs extraits:', JSON.stringify(champsIA).substring(0, 500));
 
+  // 6b. Si l'IA n'a pas trouvé Titre/Fabricant/Fournisseur, matcher DANS LE CODE avec la DB matériaux
+  if (!champs.TITRE || !champs.FABRICANT || !champs.FOURNISSEUR) {
+    try {
+      const matRows = (await db.execute('SELECT nom, fabricant, fournisseur FROM materiaux')).rows;
+      const devisLower = texteDevis.toLowerCase();
+
+      let bestMatch = null;
+      let bestScore = 0;
+      for (const m of matRows) {
+        const mots = (m.nom || '').toLowerCase().replace(/[^a-zàâäéèêëîïôùûü0-9]+/g, ' ').split(/\s+/).filter(w => w.length > 2);
+        const score = mots.filter(mot => devisLower.includes(mot)).length;
+        if (score > bestScore) {
+          bestScore = score;
+          bestMatch = m;
+        }
+      }
+
+      if (bestMatch && bestScore >= 2) {
+        console.log('[analyser] Match matériaux DB:', bestMatch.nom, '(score:', bestScore, ')');
+        if (!champs.TITRE) champs.TITRE = bestMatch.nom;
+        if (!champs.FABRICANT) champs.FABRICANT = bestMatch.fabricant || '';
+        if (!champs.FOURNISSEUR) champs.FOURNISSEUR = bestMatch.fournisseur || '';
+      }
+    } catch (e) {
+      console.log('[analyser] Erreur match matériaux:', e.message);
+    }
+  }
+
+  console.log('[analyser] Champs finaux: TITRE=' + champs.TITRE + ', FABRICANT=' + champs.FABRICANT + ', FOURNISSEUR=' + champs.FOURNISSEUR);
+
   // 7. Auto-match des fiches techniques
   const ftTrouvees = trouverFichesTechniques(champs.FABRICANT, champs.TITRE);
 
