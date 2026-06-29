@@ -410,27 +410,28 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
 
   console.log('[generer]', produits.length, 'produit(s) à générer');
 
-  // 3. Pour CHAQUE produit : remplir .docx + FT à la suite
-  const zip = new JSZip();
+  const { creerBordereauPdf } = require('../services/bordereau-pdf');
+
+  // 3. Pour CHAQUE produit : créer bordereau PDF + FT PDF → fusionner en 1 seul PDF
+  const allPdfBuffers = [];
 
   for (let i = 0; i < produits.length; i++) {
     const p = produits[i];
-    const label = (p.TITRE || 'produit-' + (i + 1)).replace(/[^a-zA-Z0-9àâäéèêëîïôùûü _-]/g, '').substring(0, 40);
-    const champs = { ...champsCommuns, TITRE: p.TITRE || '', FABRICANT: p.FABRICANT || '', FOURNISSEUR: p.FOURNISSEUR || '', SECTION: p.SECTION || '', ARTICLE: p.ARTICLE || '', REMARQUE: p.REMARQUE || '', NUMERO_DESSINS: '', NOMBRE_FEUILLES: '', REVISION: '', DESCRIPTION: '', DELAI: '' };
+    const champs = { ...champsCommuns, TITRE: p.TITRE || '', FABRICANT: p.FABRICANT || '', FOURNISSEUR: p.FOURNISSEUR || '', SECTION: p.SECTION || '', ARTICLE: p.ARTICLE || '', REMARQUE: p.REMARQUE || '' };
 
+    // 3a. Créer le bordereau en PDF
     try {
-      const docx = await remplirBordereau(champs, bordereauBuffer);
-      zip.file(`${i + 1}_Bordereau_${label}.docx`, docx);
-      console.log('[generer] Bordereau', i + 1, ':', label);
+      const bordPdf = await creerBordereauPdf(champs);
+      allPdfBuffers.push(bordPdf);
+      console.log('[generer] Bordereau PDF', i + 1, ':', (p.TITRE || '?'));
     } catch (e) {
-      console.error('[generer] Erreur produit', i + 1, ':', e.message);
+      console.error('[generer] Erreur bordereau PDF', i + 1, ':', e.message);
     }
 
-    // FT de CE produit — juste après son bordereau
+    // 3b. Trouver et ajouter les FT de CE produit (à la suite du bordereau)
     try {
       console.log('[generer] Recherche FT: fabricant="' + (p.FABRICANT || '') + '", titre="' + (p.TITRE || '') + '"');
       let ft = trouverFichesTechniques(p.FABRICANT || '', p.TITRE || '');
-      // Fallback : si pas de FT et que le titre contient un nom de fabricant connu
       if (ft.length === 0 && p.TITRE) {
         const fabricantsConnus = ['Soprema', 'IKO', 'BP', 'Tremco', 'CGC', 'Murphco', 'Ventilation Maximum', 'Henry Bakor', 'Securpan', 'Sico'];
         for (const fab of fabricantsConnus) {
@@ -443,26 +444,34 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
       if (ft.length > 0) {
         const ftPdf = await fusionnerPDF(ft);
         if (ftPdf) {
-          zip.file(`${i + 1}_FT_${label}.pdf`, ftPdf);
-          console.log('[generer] FT', i + 1, ':', ft.length, 'fichiers');
+          allPdfBuffers.push(ftPdf);
+          console.log('[generer] FT', i + 1, ':', ft.length, 'fichiers, à la suite');
         }
-      } else {
-        console.log('[generer] Aucune FT trouvée pour produit', i + 1);
       }
     } catch (e) { console.error('[generer] Erreur FT', i + 1, ':', e.message); }
   }
+
+  // 4. Fusionner TOUT en 1 seul PDF : Bord1 + FT1 + Bord2 + FT2 + ...
+  const finalPdf = await PDFDocument.create();
+  for (const buf of allPdfBuffers) {
+    try {
+      const doc = await PDFDocument.load(buf, { ignoreEncryption: true });
+      const pages = await finalPdf.copyPages(doc, doc.getPageIndices());
+      pages.forEach(pg => finalPdf.addPage(pg));
+    } catch (e) { console.error('[generer] Erreur fusion page:', e.message); }
+  }
+  const finalBuffer = Buffer.from(await finalPdf.save());
 
   // 5. DB update
   try {
     await db.execute({ sql: `UPDATE bordereaux SET statut = 'approuve', session_actif = 0, numero_projet = ?, titre = ? WHERE id = ?`, args: [champsCommuns.NUMERO_DU_PROJET || '', champsCommuns.NOM_DU_PROJET || '', id] });
   } catch (e) { console.error('[generer] Erreur DB:', e.message); }
 
-  // 6. Retourner le ZIP
+  // 6. Retourner 1 SEUL PDF
   const nom = (champsCommuns.NUMERO_DU_PROJET || 'T3E').replace(/[^a-zA-Z0-9_-]/g, '-').substring(0, 30);
-  const zipBuffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
-  res.setHeader('Content-Type', 'application/zip');
-  res.setHeader('Content-Disposition', `attachment; filename="Bordereaux_${nom}_${Date.now()}.zip"`);
-  res.send(zipBuffer);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="Bordereaux_FT_${nom}_${Date.now()}.pdf"`);
+  res.send(finalBuffer);
 });
 
 // Re-télécharger un .docx déjà généré
