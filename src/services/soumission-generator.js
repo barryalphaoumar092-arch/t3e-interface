@@ -90,9 +90,9 @@ function buildReplacements(soumission) {
   const garantieT3eWord = garantieT3eWords[garantieT3eNum] || String(garantieT3eNum);
 
   return [
-    { pattern: '#SOUMISSION', value: s.numero || '______' },
-    { pattern: 'NOM DU PROJET ET CLIENT', value: s.projet_nom ? `${s.projet_nom} - ${s.client_nom}` : s.client_nom || '______' },
-    { pattern: 'NOM DU CLIENT', value: s.client_nom || '______' },
+    { pattern: '#SOUMISSION', value: s.numero || '' },
+    { pattern: 'NOM DU PROJET ET CLIENT', value: s.projet_nom ? `${s.projet_nom} - ${s.client_nom}` : s.client_nom || '' },
+    { pattern: 'NOM DU CLIENT', value: s.client_nom || '' },
 
     // Dates FR - header (Word TIME field display text)
     { pattern: 'mardi, 1er octobre 2024', value: dateNoCity },
@@ -106,22 +106,22 @@ function buildReplacements(soumission) {
     { pattern: '2024-01-10', value: dateIso },
 
     // Adresse / ville
-    { pattern: 'Ville, Province, Code Postal', value: [s.client_ville, s.client_province, s.client_code_postal].filter(Boolean).join(', ') || '______' },
-    { pattern: 'City, Province, Postal Code', value: [s.client_ville, s.client_province, s.client_code_postal].filter(Boolean).join(', ') || '______' },
+    { pattern: 'Ville, Province, Code Postal', value: [s.client_ville, s.client_province, s.client_code_postal].filter(Boolean).join(', ') || '' },
+    { pattern: 'City, Province, Postal Code', value: [s.client_ville, s.client_province, s.client_code_postal].filter(Boolean).join(', ') || '' },
 
     // Contact
-    { pattern: 'Nom représentant du client', value: s.client_contact || '______' },
-    { pattern: "Client's representative name", value: s.client_contact || '______' },
+    { pattern: 'Nom représentant du client', value: s.client_contact || '' },
+    { pattern: "Client's representative name", value: s.client_contact || '' },
 
     // Téléphone / courriel
-    { pattern: '000-000-0000', value: s.client_telephone || '______' },
-    { pattern: 'courriel@courriel.ca', value: s.client_courriel || '______' },
-    { pattern: 'email@email.ca', value: s.client_courriel || '______' },
+    { pattern: '000-000-0000', value: s.client_telephone || '' },
+    { pattern: 'courriel@courriel.ca', value: s.client_courriel || '' },
+    { pattern: 'email@email.ca', value: s.client_courriel || '' },
 
     // Prix (U+00A0 = espace insécable utilisé par Word entre 100 et 000)
-    { pattern: '100 000$', value: s.prix_total ? `${Number(s.prix_total).toLocaleString('fr-CA')}$` : '______$' },
-    { pattern: '100 000$', value: s.prix_total ? `${Number(s.prix_total).toLocaleString('fr-CA')}$` : '______$' },
-    { pattern: '$100,000', value: s.prix_total ? `$${Number(s.prix_total).toLocaleString('en-CA')}` : '$______' },
+    { pattern: '100 000$', value: s.prix_total ? `${Number(s.prix_total).toLocaleString('fr-CA')}$` : 'À déterminer$' },
+    { pattern: '100 000$', value: s.prix_total ? `${Number(s.prix_total).toLocaleString('fr-CA')}$` : 'À déterminer$' },
+    { pattern: '$100,000', value: s.prix_total ? `$${Number(s.prix_total).toLocaleString('en-CA')}` : '$À déterminer' },
 
     // Garanties FR
     { pattern: `cinq (5) ans par Toitures Trois Étoiles Inc. / dix (10) ans par le manufacturier`,
@@ -201,35 +201,57 @@ function normalizeXmlText(xml) {
 function applyDefaults(soumission) {
   const s = { ...soumission };
   const sys = (s.systeme_toiture || '').toUpperCase();
+  const isBUR = sys === 'BUR';
 
+  // TOUT doit avoir une valeur — zéro blanc
   if (!s.methode_adhesion) {
-    if (sys === 'BUR') s.methode_adhesion = 'asphalte';
+    if (isBUR) s.methode_adhesion = 'asphalte';
     else if (sys === 'SOPRASMART') s.methode_adhesion = 'adhésif';
     else if (sys === 'SOPRAFIX') s.methode_adhesion = 'mécanique';
+    else s.methode_adhesion = 'adhésif';
   }
   if (!s.type_isolant) s.type_isolant = 'polyisocyanurate';
+  if (!s.epaisseur_isolant) s.epaisseur_isolant = '3½';
   if (!s.pente_isolant) s.pente_isolant = '2%';
-  if (!s.type_fibre && sys === 'BUR') s.type_fibre = 'fibre de bois';
-  if (!s.nb_plis && sys === 'BUR') s.nb_plis = '4';
+  if (!s.type_fibre) s.type_fibre = isBUR ? 'fibre de bois' : 'fibre de bois';
+  if (!s.epaisseur_fibre_bois) s.epaisseur_fibre_bois = '½';
+  if (!s.nb_plis) s.nb_plis = isBUR ? '4' : '2';
   if (!s.type_releves) {
-    if (sys === 'BUR') s.type_releves = 'deux (2) plis de membranes élastomères fini sablé adhérées à l\'asphalte chaud';
+    if (isBUR) s.type_releves = 'deux (2) plis de membranes élastomères fini sablé adhérées à l\'asphalte chaud';
     else s.type_releves = 'contreplaqué ½\'\'';
   }
   if (!s.materiau_solins) s.materiau_solins = 'acier prépeint';
   if (!s.calibre_solins) s.calibre_solins = '24';
   if (!s.cols_cygne_type) s.cols_cygne_type = 'existants';
-  if (!s.type_gravier && sys === 'BUR') s.type_gravier = 'gravier ¼\'\' standard environ 450 lbs. / 100 pieds carrés';
+  if (!s.type_gravier) {
+    s.type_gravier = isBUR ? 'gravier ¼\'\' standard environ 450 lbs. / 100 pieds carrés' : '';
+  }
   if (!s.type_pare_vapeur) {
-    if (sys === 'BUR') s.type_pare_vapeur = '2 plis de feutre #15 adhéré à l\'asphalte';
+    if (isBUR) s.type_pare_vapeur = '2 plis de feutre #15 adhéré à l\'asphalte';
     else s.type_pare_vapeur = 'un pare-vapeur thermosoudé SOPRALENE 180 SP 3,5 (Soprema) installé à l\'adhésif';
   }
+  if (!s.type_membrane_finition) {
+    if (isBUR) s.type_membrane_finition = 'asphalte type 2 et du gravier';
+    else s.type_membrane_finition = 'membrane de finition élastomère granulée de couleur réfléchissante blanche';
+  }
+  if (!s.pontage) s.pontage = 'acier';
+  if (!s.nb_drains) s.nb_drains = 'les';
+  if (!s.nb_manchons_events) s.nb_manchons_events = 'les';
+  if (!s.nb_manchons_etancheite) s.nb_manchons_etancheite = 'les';
+  if (!s.nb_cols_cygne) s.nb_cols_cygne = 'les';
+  if (!s.cout_remplacement_cp) s.cout_remplacement_cp = '8.50';
+  if (!s.cout_remplacement_isolant) s.cout_remplacement_isolant = '8.50';
+  if (!s.garantie_t3e) s.garantie_t3e = '5 ans';
+  if (!s.garantie_manufacturier) s.garantie_manufacturier = '10 ans';
+  if (!s.ventilateur_max) s.ventilateur_max = '301';
+  if (!s.superficie_pc) s.superficie_pc = '10000';
+  if (!s.client_contact) s.client_contact = 'Représentant du client';
 
   return s;
 }
 
 function replaceBlankFields(xml, soumission) {
   const s = applyDefaults(soumission);
-  const BLANK = '______';
 
   // Normaliser le XML : supprimer proofErr + fusionner les runs (3 passes)
   xml = xml.replace(/<w:proofErr[^/]*\/>/g, '');
@@ -238,14 +260,14 @@ function replaceBlankFields(xml, soumission) {
   xml = normalizeXmlText(xml);
 
   // Surface
-  const sup = s.superficie_pc ? escapeXml(String(s.superficie_pc)) : BLANK;
+  const sup = s.superficie_pc ? escapeXml(String(s.superficie_pc)) : '';
   xml = xml.replace(/environ_+pieds/g, `environ ${sup} pieds`);
   xml = xml.replace(/approximately_+square/g, `approximately ${sup} square`);
   xml = xml.replace(/_+(?=\s*pieds carr)/g, sup);
   xml = xml.replace(/_+(?=\s*square fee)/g, sup);
 
   // Épaisseur isolant (curly apostrophe U+2019)
-  const ep = s.epaisseur_isolant ? escapeXml(s.epaisseur_isolant) : BLANK;
+  const ep = s.epaisseur_isolant ? escapeXml(s.epaisseur_isolant) : '';
   const regex1 = new RegExp(`_+(?=[${CURLY_APOS}'''””]+\\s*d[${CURLY_APOS}']isolant)`, 'g');
   xml = xml.replace(regex1, ep);
   const regex2 = new RegExp(`_+(?=[${CURLY_APOS}'''””]+\\s*of\\s)`, 'g');
@@ -372,7 +394,7 @@ function replaceBlankFields(xml, soumission) {
       xml = xml.replace(/cols de cygne tel qu'existant\s*\/\s*Ventilateur Maximum #[_]*/gi, 'cols de cygne tel qu\'existant');
       xml = xml.replace(/cols de cygne tel qu[''']existant\s*\/\s*Ventilateur Maximum[^.]*/gi, "cols de cygne tel qu'existant");
     } else if (cct.includes('ventilateur')) {
-      const ventNum = s.ventilateur_max ? escapeXml(s.ventilateur_max) : BLANK;
+      const ventNum = s.ventilateur_max ? escapeXml(s.ventilateur_max) : '';
       xml = xml.replace(/cols de cygne tel qu[''']existant\s*\/\s*/gi, '');
     }
   }
@@ -427,7 +449,7 @@ function replaceBlankFields(xml, soumission) {
   xml = xml.replace(/_+(?=\s*new gooseneck)/g, cols);
 
   // Ventilateur Maximum
-  const vent = s.ventilateur_max ? escapeXml(s.ventilateur_max) : BLANK;
+  const vent = s.ventilateur_max ? escapeXml(s.ventilateur_max) : '';
   xml = xml.replace(/#_+\./g, `#${vent}.`);
   xml = xml.replace(/#_+/g, `#${vent}`);
 
@@ -436,16 +458,16 @@ function replaceBlankFields(xml, soumission) {
   xml = xml.replace(/\$_+\/?\s*(?:pied carré|per square foot)/g, (match) => {
     if (!cpDone) {
       cpDone = true;
-      const val = s.cout_remplacement_cp || BLANK;
+      const val = s.cout_remplacement_cp || '';
       return match.includes('per square') ? `$${escapeXml(val)} per square foot` : `$${escapeXml(val)}/ pied carré`;
     } else {
-      const val = s.cout_remplacement_isolant || s.cout_remplacement_cp || BLANK;
+      const val = s.cout_remplacement_isolant || s.cout_remplacement_cp || '';
       return match.includes('per square') ? `$${escapeXml(val)} per square foot` : `$${escapeXml(val)}/ pied carré`;
     }
   });
 
   // Documents reçus: “le ______ pour soumission”
-  xml = xml.replace(/_+(?=\s*pour soumission)/g, s.documents_recus ? escapeXml(s.documents_recus) : BLANK);
+  xml = xml.replace(/_+(?=\s*pour soumission)/g, s.documents_recus ? escapeXml(s.documents_recus) : '');
 
   // “spécifier type toiture” → remplacer par le système choisi ou enlever
   const systLabel = s.systeme_toiture ? escapeXml(s.systeme_toiture.replace(/_/g, ' ')) : '';
@@ -469,8 +491,8 @@ function replaceBlankFields(xml, soumission) {
     // Underscores dans un noeud isolé → remplacer selon le contexte
     if (/_____/.test(t)) {
       // $______/ pied carré
-      t = t.replace(/\$_+\//g, s.cout_remplacement_cp ? `$${escapeXml(s.cout_remplacement_cp)}/` : `$${BLANK}/`);
-      t = t.replace(/\$_+/g, s.cout_remplacement_cp ? `$${escapeXml(s.cout_remplacement_cp)}` : `$${BLANK}`);
+      t = t.replace(/\$_+\//g, s.cout_remplacement_cp ? `$${escapeXml(s.cout_remplacement_cp)}/` : `$${''}/`);
+      t = t.replace(/\$_+/g, s.cout_remplacement_cp ? `$${escapeXml(s.cout_remplacement_cp)}` : `$${''}`);
       // ______'' d'isolant (curly quotes)
       t = t.replace(new RegExp(`_+(?=[${CURLY_APOS}'"]+)`, 'g'), ep);
       // ______" de fibre
@@ -478,9 +500,9 @@ function replaceBlankFields(xml, soumission) {
       // #______
       t = t.replace(/#_+/g, `#${vent}`);
       // ______$ (prix)
-      t = t.replace(/_+(?=\s*\$)/g, BLANK);
+      t = t.replace(/_+(?=\s*\$)/g, '');
       // Génériques restants (3-14 chars, pas les lignes de signature)
-      if (t.length < 50) t = t.replace(/_{3,14}/g, BLANK);
+      if (t.length < 50) t = t.replace(/_{3,14}/g, '');
     }
 
     // Résolution slash dans chaque noeud texte
@@ -602,7 +624,8 @@ async function generateSoumission(soumission) {
     !f.includes('webSettings') && !f.includes('glossary/')
   );
 
-  const replacements = buildReplacements(soumission);
+  const soumissionAvecDefaults = applyDefaults(soumission);
+  const replacements = buildReplacements(soumissionAvecDefaults);
 
   for (const xmlFile of xmlFiles) {
     const entry = zip.file(xmlFile);
@@ -630,10 +653,10 @@ async function generateSoumission(soumission) {
     if (xml !== beforeEnc) changed = true;
 
     if (xmlFile === 'word/document.xml') {
-      xml = replaceFirstInXml(xml, 'Adresse', soumission.client_adresse || '______');
-      xml = replaceFirstInXml(xml, 'Address', soumission.client_adresse || '______');
-      xml = replaceBlankFields(xml, soumission);
-      xml = replaceFirstInXml(xml, 'superficie', soumission.superficie_pc ? `${soumission.superficie_pc} pi²` : '______ pi²');
+      xml = replaceFirstInXml(xml, 'Adresse', soumissionAvecDefaults.client_adresse || soumissionAvecDefaults.projet_adresse || '');
+      xml = replaceFirstInXml(xml, 'Address', soumissionAvecDefaults.client_adresse || soumissionAvecDefaults.projet_adresse || '');
+      xml = replaceBlankFields(xml, soumissionAvecDefaults);
+      xml = replaceFirstInXml(xml, 'superficie', `${soumissionAvecDefaults.superficie_pc} pi²`);
       changed = true;
     }
 
