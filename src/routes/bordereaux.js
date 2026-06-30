@@ -158,6 +158,87 @@ function trouverFichesTechniques(fabricant, titre) {
 }
 
 // ══════════════════════════════════════════════════════════════
+//  SOURCE AUTORITAIRE — base de matériaux T3E (lien_fiche_technique)
+// ══════════════════════════════════════════════════════════════
+async function obtenirMateriauMatch(db, titre, fabricant) {
+  if (!titre) return null;
+  try {
+    let r = await db.execute({
+      sql: 'SELECT nom, fabricant, fournisseur, lien_fiche_technique FROM materiaux WHERE nom = ? COLLATE NOCASE LIMIT 1',
+      args: [titre],
+    });
+    if (r.rows.length === 0 && fabricant) {
+      r = await db.execute({
+        sql: 'SELECT nom, fabricant, fournisseur, lien_fiche_technique FROM materiaux WHERE nom LIKE ? AND fabricant LIKE ? LIMIT 1',
+        args: ['%' + titre + '%', '%' + fabricant + '%'],
+      });
+    }
+    if (r.rows.length === 0) {
+      r = await db.execute({
+        sql: 'SELECT nom, fabricant, fournisseur, lien_fiche_technique FROM materiaux WHERE nom LIKE ? LIMIT 1',
+        args: ['%' + titre + '%'],
+      });
+    }
+    return r.rows.length > 0 ? r.rows[0] : null;
+  } catch (e) {
+    console.error('[materiaux] Erreur lookup:', e.message);
+    return null;
+  }
+}
+
+function nomFichierDepuisUrl(url) {
+  try {
+    const u = new URL(url);
+    const parts = u.pathname.split('/').filter(Boolean);
+    let last = decodeURIComponent(parts[parts.length - 1] || 'fiche-technique.pdf');
+    if (!last.toLowerCase().endsWith('.pdf')) last += '.pdf';
+    return last;
+  } catch (_) {
+    return 'fiche-technique.pdf';
+  }
+}
+
+// Télécharge la fiche technique depuis lien_fiche_technique (URL web de la DB matériaux)
+async function telechargerFT(url) {
+  if (!url) return null;
+  try {
+    const resp = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (!resp.ok) {
+      console.log('[FT-web] HTTP', resp.status, 'pour', url);
+      return null;
+    }
+    const buf = Buffer.from(await resp.arrayBuffer());
+    if (buf.length < 100 || buf.subarray(0, 4).toString('latin1') !== '%PDF') {
+      console.log('[FT-web] Réponse non-PDF pour', url);
+      return null;
+    }
+    return buf;
+  } catch (e) {
+    console.log('[FT-web] Erreur téléchargement', url, ':', e.message);
+    return null;
+  }
+}
+
+// Résout les FT d'un produit : 1) dossier local documents/FT/, 2) lien_fiche_technique (web)
+async function resoudreFichesTechniques(db, fabricant, titre) {
+  const buffers = [];
+
+  const cheminsLocaux = trouverFichesTechniques(fabricant, titre);
+  for (const p of cheminsLocaux) {
+    if (fs.existsSync(p)) buffers.push(fs.readFileSync(p));
+  }
+  if (buffers.length > 0) return buffers;
+
+  const match = await obtenirMateriauMatch(db, titre, fabricant);
+  if (match && match.lien_fiche_technique) {
+    const buf = await telechargerFT(match.lien_fiche_technique);
+    if (buf) buffers.push(buf);
+  }
+
+  return buffers;
+}
+
+// ══════════════════════════════════════════════════════════════
 //  ROUTES
 // ══════════════════════════════════════════════════════════════
 
@@ -251,8 +332,22 @@ router.post('/analyser', uploadFields, async (req, res) => {
   };
 
   for (const p of produits) {
+    // Source autoritaire : DB matériaux T3E (Excel importé) — écrase le devinage de l'IA
+    const match = await obtenirMateriauMatch(db, p.TITRE, p.FABRICANT);
+    if (match) {
+      p.TITRE = match.nom || p.TITRE;
+      p.FABRICANT = match.fabricant || p.FABRICANT;
+      p.FOURNISSEUR = match.fournisseur || p.FOURNISSEUR;
+      p.ft_url = match.lien_fiche_technique || '';
+    } else {
+      p.ft_url = '';
+    }
+
     p.ft_chemins = trouverFichesTechniques(p.FABRICANT, p.TITRE);
     p.ft_noms = p.ft_chemins.map(c => path.basename(c));
+    if (p.ft_noms.length === 0 && p.ft_url) {
+      p.ft_noms = [nomFichierDepuisUrl(p.ft_url) + ' (web)'];
+    }
   }
 
   console.log('[analyser] IA trouvé', produits.length, 'produits pour', nomProjet);
@@ -376,26 +471,30 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
       console.error(`[generer] ${num} Erreur .docx:`, e.message);
     }
 
-    // 2. Trouver et ajouter la FT
-    const ftChemins = trouverFichesTechniques(champs.FABRICANT, champs.TITRE);
-    if (ftChemins.length > 0) {
-      try {
+    // 2. Trouver et ajouter la FT — dossier local d'abord, puis lien_fiche_technique (DB matériaux) en fallback
+    try {
+      const ftBuffers = await resoudreFichesTechniques(db, champs.FABRICANT, champs.TITRE);
+      if (ftBuffers.length > 0) {
         const merged = await PDFDocument.create();
-        for (const ftPath of ftChemins) {
-          if (!fs.existsSync(ftPath)) continue;
-          const ftBuf = fs.readFileSync(ftPath);
-          const ftDoc = await PDFDocument.load(ftBuf, { ignoreEncryption: true });
-          const pages = await merged.copyPages(ftDoc, ftDoc.getPageIndices());
-          pages.forEach(pg => merged.addPage(pg));
+        for (const ftBuf of ftBuffers) {
+          try {
+            const ftDoc = await PDFDocument.load(ftBuf, { ignoreEncryption: true });
+            const pages = await merged.copyPages(ftDoc, ftDoc.getPageIndices());
+            pages.forEach(pg => merged.addPage(pg));
+          } catch (e) {
+            console.error(`[generer] ${num} Erreur chargement PDF FT:`, e.message);
+          }
         }
         if (merged.getPageCount() > 0) {
           const ftPdf = Buffer.from(await merged.save());
           zip.file(`${num}_${nomFichier}/FT_${nomFichier}.pdf`, ftPdf);
-          console.log(`[generer] ${num} FT OK: ${ftChemins.length} fichier(s), ${merged.getPageCount()} pages`);
+          console.log(`[generer] ${num} FT OK: ${ftBuffers.length} fichier(s), ${merged.getPageCount()} pages`);
         }
-      } catch (e) {
-        console.error(`[generer] ${num} Erreur FT:`, e.message);
+      } else {
+        console.log(`[generer] ${num} Aucune FT trouvee (ni locale ni web) pour`, champs.TITRE, '/', champs.FABRICANT);
       }
+    } catch (e) {
+      console.error(`[generer] ${num} Erreur FT:`, e.message);
     }
   }
 
