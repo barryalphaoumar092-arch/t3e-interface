@@ -17,81 +17,64 @@ const uploadFields = upload.fields([
 ]);
 
 // ══════════════════════════════════════════════════════════════
-//  APPEL OPENAI GPT-4o — Extraction de TOUS les produits
+//  APPEL OPENAI GPT-4o — Contexte (section/article/remarque) pour
+//  des produits DÉJÀ CHOISIS par l'utilisateur (plus de détection auto)
 // ══════════════════════════════════════════════════════════════
-const SYSTEM_PROMPT = `Tu es un chargé de projet SENIOR expert en couverture commerciale au Québec chez Toitures Trois Étoiles Inc. (T3E).
-Tu analyses un devis de toiture pour remplir des BORDEREAUX DE TRANSMISSION DE FICHES TECHNIQUES.
+const SYSTEM_PROMPT_CONTEXTE = `Tu es un chargé de projet SENIOR expert en couverture commerciale au Québec chez Toitures Trois Étoiles Inc. (T3E).
+On te donne un devis de toiture ET une liste de produits DÉJÀ CHOISIS par l'estimateur (nom exact, fabricant, fournisseur — ne les remets pas en question).
 
 === TA MISSION ===
-Tu dois trouver TOUS les "Produit de référence" mentionnés dans le devis.
-Chaque produit distinct = 1 bordereau séparé.
+Pour CHAQUE produit de la liste, dans l'ORDRE donné :
+1. Trouve dans le devis la SECTION (numéro 6 chiffres + titre, ex: "07 52 21 — Couverture à membrane de bitume modifié") où ce produit ou sa catégorie est traité
+2. Trouve l'ARTICLE (sous-section Partie 2, ex: "2.2 Pare-vapeur") qui correspond le mieux à ce produit. Si le produit exact n'est pas nommé, déduis l'article le plus probable selon sa fonction (pare-vapeur, isolant, membrane, sous-couche, adhésif, apprêt, drain, évent, etc.)
+3. Compose une REMARQUE technique courte (1-2 phrases) : fonction du produit + contexte pertinent du projet
 
-Exemples de produits à trouver : pare-vapeur, membrane de finition, sous-couche, isolant, panneau support, adhésif, apprêt, drain, évent, panneau de gypse, vis et plaques, solins, etc.
-
-=== OÙ CHERCHER CHAQUE INFO ===
-
-SOURCE 1 — DEVIS PDF :
+Aussi, extrais du devis :
 - NOM_DU_PROJET : page de garde, en-tête, "Projet :", "Objet :"
 - NUMERO_DU_PROJET : "N° projet", "Dossier", "N/Réf", "Projet no"
-- SECTION : numéro de section 6 chiffres + titre (ex: "07 52 21 — Couverture à membrane de bitume modifié")
-- ARTICLE : sous-section Partie 2 qui décrit CE produit spécifique (ex: "2.2 Pare-vapeur")
-
-SOURCE 2 — LISTE DES MATÉRIAUX T3E (fournie ci-dessous) :
-- TITRE : nom EXACT du produit dans la liste T3E (colonne E)
-- FABRICANT : fabricant de la liste T3E (colonne C)
-- FOURNISSEUR : fournisseur de la liste T3E (colonne D)
-Si le produit n'est pas dans la liste T3E, utilise le nom commercial du devis.
-
-SOURCE 3 — IA (tu composes) :
-- REMARQUE : note technique courte (1-2 phrases) décrivant le produit et sa fonction
 
 === RÈGLES ===
-- Cherche CHAQUE "Produit de référence :" dans le devis, section par section
-- Cherche aussi les produits mentionnés sans le label "Produit de référence" (drains, évents, adhésifs, apprêts, etc.)
-- NE retourne PAS de doublons (même produit mentionné 2 fois)
-- TITRE, FABRICANT, FOURNISSEUR viennent de la LISTE MATÉRIAUX T3E quand possible
+- Retourne EXACTEMENT un produit en sortie par produit en entrée, DANS LE MÊME ORDRE
+- Ne change JAMAIS le nom/fabricant/fournisseur du produit, ils sont déjà corrects
 - Retourne UNIQUEMENT du JSON valide`;
 
-async function appelIA(texteDevis, listeMateriaux) {
+async function appelIAContexte(texteDevis, produitsSelectionnes) {
   const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
   if (!OPENAI_API_KEY) throw new Error('OPENAI_API_KEY manquante. Ajoutez-la sur Render.');
 
+  const listeProduits = produitsSelectionnes.map((p, i) =>
+    `${i + 1}. ${p.nom} (Fabricant: ${p.fabricant || 'inconnu'}, Fournisseur: ${p.fournisseur || 'inconnu'})`
+  ).join('\n');
+
   const userContent = `TEXTE COMPLET DU DEVIS :
 ───────────────────────────────────────
-${texteDevis.substring(0, 30000)}
+${texteDevis.substring(0, 40000)}
 ───────────────────────────────────────
 
-LISTE DES MATÉRIAUX T3E :
-${listeMateriaux || '(aucun matériau disponible)'}
+PRODUITS DÉJÀ CHOISIS PAR L'ESTIMATEUR (dans cet ordre) :
+${listeProduits}
 
-Retourne ce JSON avec TOUS les produits trouvés :
+Retourne ce JSON :
 {
   "NOM_DU_PROJET": "nom complet du projet (du DEVIS)",
   "NUMERO_DU_PROJET": "numéro de référence (du DEVIS)",
   "produits": [
-    {
-      "SECTION": "07 52 21 — titre de la section",
-      "ARTICLE": "2.X — sous-article Partie 2",
-      "TITRE": "nom exact du produit (LISTE T3E ou devis)",
-      "FABRICANT": "fabricant (LISTE T3E)",
-      "FOURNISSEUR": "fournisseur (LISTE T3E)",
-      "REMARQUE": "note technique courte"
-    }
+    { "SECTION": "...", "ARTICLE": "...", "REMARQUE": "..." }
   ]
 }
 
-IMPORTANT : retourne un produit par entrée. Trouve-en le MAXIMUM.`;
+IMPORTANT : "produits" doit contenir EXACTEMENT ${produitsSelectionnes.length} entrée(s), dans le même ordre que la liste ci-dessus.`;
 
   const resp = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + OPENAI_API_KEY },
     body: JSON.stringify({
       model: 'gpt-4o',
-      max_tokens: 8000,
+      max_tokens: 6000,
       temperature: 0.1,
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'system', content: SYSTEM_PROMPT_CONTEXTE },
         { role: 'user', content: userContent },
       ],
     }),
@@ -355,7 +338,7 @@ router.get('/nouveau', (req, res) => {
   res.render('bordereau-nouveau');
 });
 
-// ── ANALYSER : upload devis + bordereau → IA extrait N produits → révision ──
+// ── ANALYSER : upload devis + bordereau + matériaux SÉLECTIONNÉS PAR L'UTILISATEUR → révision ──
 router.post('/analyser', uploadFields, async (req, res) => {
   const db = req.db;
   const { nom_entrepreneur, specialite, adresse, nom_projet } = req.body;
@@ -364,6 +347,16 @@ router.post('/analyser', uploadFields, async (req, res) => {
   const bordereauFile = req.files?.bordereau?.[0];
   if (!devisFile) return res.status(400).send('Veuillez importer le devis PDF.');
   if (!bordereauFile) return res.status(400).send('Veuillez importer le bordereau .docx.');
+
+  const materiauIds = [].concat(req.body.materiau_id || [])
+    .map(id => parseInt(id))
+    .filter(id => !isNaN(id));
+
+  if (materiauIds.length === 0) {
+    try { fs.unlinkSync(devisFile.path); } catch (_) {}
+    try { fs.unlinkSync(bordereauFile.path); } catch (_) {}
+    return res.status(400).send('Veuillez sélectionner au moins un matériau dans la barre de recherche.');
+  }
 
   let texteDevis = '';
   try {
@@ -383,77 +376,59 @@ router.post('/analyser', uploadFields, async (req, res) => {
   const bordereauBuffer = fs.readFileSync(bordereauFile.path);
   try { fs.unlinkSync(bordereauFile.path); } catch (_) {}
 
-  // Charger les matériaux pour l'IA
-  let listeMateriaux = '';
-  try {
-    const STOP = new Set(['pour', 'dans', 'avec', 'sont', 'cette', 'leur', 'plus', 'tout', 'bien', 'sous', 'même', 'autre', 'être', 'fait', 'donc', 'très', 'peut', 'sans', 'dont', 'sera', 'avoir', 'nous', 'vous', 'type', 'selon', 'voir', 'afin']);
-    const mots = texteDevis.toLowerCase().match(/[a-zàâäéèêëîïôùûü]{4,}/g) || [];
-    const keywords = [...new Set(mots)].filter(m => !STOP.has(m)).slice(0, 80);
+  // Charger les matériaux EXACTEMENT choisis par l'utilisateur (source 100% fiable,
+  // plus de devinage par l'IA pour TITRE/FABRICANT/FOURNISSEUR)
+  const placeholders = materiauIds.map(() => '?').join(',');
+  const matRows = (await db.execute({
+    sql: `SELECT id, nom, fabricant, fournisseur, lien_fiche_technique FROM materiaux WHERE id IN (${placeholders})`,
+    args: materiauIds,
+  })).rows;
 
-    const matRows = (await db.execute('SELECT nom, fabricant, fournisseur, type_produit FROM materiaux ORDER BY fabricant, nom')).rows;
-    const pertinents = matRows.filter(m => {
-      const txt = `${m.nom} ${m.fabricant || ''} ${m.fournisseur || ''} ${m.type_produit || ''}`.toLowerCase();
-      return keywords.some(k => txt.includes(k));
-    }).slice(0, 100);
+  // Conserver l'ordre de sélection de l'utilisateur
+  const produitsBase = materiauIds
+    .map(id => matRows.find(m => m.id === id))
+    .filter(Boolean);
 
-    const liste = pertinents.length > 0 ? pertinents : matRows.slice(0, 100);
-    listeMateriaux = 'FORMAT: Produit | Fabricant | Fournisseur\n' +
-      liste.map(m => [m.nom, m.fabricant || '', m.fournisseur || ''].join(' | ')).join('\n');
-  } catch (_) {}
-
-  // Appel IA GPT-4o — extraction de TOUS les produits
+  // Appel IA GPT-4o — uniquement pour situer chaque produit dans le devis (section/article/remarque)
   let iaResult = {};
   let iaErreur = '';
   try {
-    iaResult = await appelIA(texteDevis, listeMateriaux);
+    iaResult = await appelIAContexte(texteDevis, produitsBase);
   } catch (e) {
     iaErreur = e.message;
   }
 
   const nomProjet = iaResult.NOM_DU_PROJET || nom_projet || '';
   const numProjet = iaResult.NUMERO_DU_PROJET || '';
-  let produits = iaResult.produits || [];
+  const contexteProduits = iaResult.produits || [];
 
-  // Si l'IA retourne l'ancien format (1 seul produit, pas de tableau)
-  if (produits.length === 0 && iaResult.TITRE) {
-    produits = [{
-      SECTION: iaResult.SECTION || '',
-      ARTICLE: iaResult.ARTICLE || '',
-      TITRE: iaResult.TITRE || '',
-      FABRICANT: iaResult.FABRICANT || '',
-      FOURNISSEUR: iaResult.FOURNISSEUR || '',
-      REMARQUE: iaResult.REMARQUE || '',
-    }];
-  }
-
-  // Pour chaque produit, trouver la FT
   const identification = {
     NOM: nom_entrepreneur?.trim() || 'Toitures Trois Étoiles',
     SPECIALITE: specialite?.trim() || 'COUVREUR',
     ADRESSE: adresse?.trim() || '7550 Rue Saint-Patrick, Montréal, QC H8N 1V1',
   };
 
-  for (const p of produits) {
-    // Source autoritaire : DB matériaux T3E (Excel importé) — écrase le devinage de l'IA
-    const match = await obtenirMateriauMatch(db, p.TITRE, p.FABRICANT);
-    if (match) {
-      p.TITRE = match.nom || p.TITRE;
-      p.FABRICANT = match.fabricant || p.FABRICANT;
-      p.FOURNISSEUR = match.fournisseur || p.FOURNISSEUR;
-      p.ft_url = match.lien_fiche_technique || '';
-    } else {
-      p.ft_url = '';
-    }
-
+  const produits = produitsBase.map((mat, i) => {
+    const ctx = contexteProduits[i] || {};
+    const p = {
+      TITRE: mat.nom,
+      FABRICANT: mat.fabricant || '',
+      FOURNISSEUR: mat.fournisseur || '',
+      SECTION: ctx.SECTION || '',
+      ARTICLE: ctx.ARTICLE || '',
+      REMARQUE: ctx.REMARQUE || '',
+      ft_url: mat.lien_fiche_technique || '',
+    };
     p.ft_chemins = trouverFichesTechniques(p.FABRICANT, p.TITRE);
     p.ft_noms = p.ft_chemins.map(c => path.basename(c));
     if (p.ft_noms.length === 0 && p.ft_url) {
       p.ft_noms = [nomFichierDepuisUrl(p.ft_url) + ' (web)'];
     }
     p.ft_selection = p.ft_chemins.length > 0 ? cheminRelatifFT(p.ft_chemins[0]) : '__AUTO__';
-  }
+    return p;
+  });
 
-  console.log('[analyser] IA trouvé', produits.length, 'produits pour', nomProjet);
+  console.log('[analyser]', produits.length, 'produits sélectionnés par l\'utilisateur pour', nomProjet);
 
   // Sauvegarder en DB
   const contenu = JSON.stringify({

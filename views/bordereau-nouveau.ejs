@@ -43,9 +43,22 @@
           </div>
 
           <div class="mb-4">
+            <label class="form-label fw-bold">
+              <span class="badge bg-warning text-dark me-1">3</span>
+              Matériaux du bordereau <span class="text-danger">*</span>
+            </label>
+            <div class="position-relative">
+              <input type="text" id="rechercheMateriau" class="form-control" placeholder="Rechercher un matériau (nom, fabricant)…" autocomplete="off">
+              <div id="suggestionsMateriaux" class="list-group position-absolute w-100 shadow-sm" style="z-index: 1000; max-height: 320px; overflow-y: auto; display: none;"></div>
+            </div>
+            <div class="form-text">Recherchez et sélectionnez chaque matériau référencé dans ce devis. L'IA se chargera ensuite de trouver la section, l'article et la fiche technique de chacun.</div>
+            <div id="materiauxSelectionnes" class="mt-2 d-flex flex-column gap-1"></div>
+          </div>
+
+          <div class="mb-4">
             <div class="card border-secondary">
               <div class="card-header bg-secondary bg-opacity-10 py-2">
-                <span class="fw-bold"><span class="badge bg-secondary me-1">3</span> Identification entrepreneur (pré-rempli)</span>
+                <span class="fw-bold"><span class="badge bg-secondary me-1">4</span> Identification entrepreneur (pré-rempli)</span>
               </div>
               <div class="card-body pb-2">
                 <div class="row g-2">
@@ -71,8 +84,8 @@
           </div>
 
           <div class="d-grid">
-            <button type="submit" class="btn btn-warning btn-lg" id="btnAnalyser">
-              <i class="bi bi-magic"></i> Analyser avec l'IA
+            <button type="submit" class="btn btn-warning btn-lg" id="btnAnalyser" disabled>
+              <i class="bi bi-magic"></i> Sélectionnez au moins un matériau
             </button>
           </div>
         </form>
@@ -84,10 +97,105 @@
 </div>
 
 <script>
+var materiauxChoisis = [];
+var searchInput = document.getElementById('rechercheMateriau');
+var suggestionsBox = document.getElementById('suggestionsMateriaux');
+var selectedBox = document.getElementById('materiauxSelectionnes');
+var btnAnalyser = document.getElementById('btnAnalyser');
+var debounceTimer = null;
+
+function escapeHtml(s) {
+  var d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+
+searchInput.addEventListener('input', function() {
+  clearTimeout(debounceTimer);
+  var q = searchInput.value.trim();
+  if (q.length < 2) { suggestionsBox.style.display = 'none'; suggestionsBox.innerHTML = ''; return; }
+  debounceTimer = setTimeout(function() {
+    fetch('/api/materiaux?q=' + encodeURIComponent(q))
+      .then(function(r) { return r.json(); })
+      .then(function(items) { afficherSuggestions(items); })
+      .catch(function() { suggestionsBox.style.display = 'none'; });
+  }, 250);
+});
+
+function afficherSuggestions(items) {
+  if (!items || items.length === 0) {
+    suggestionsBox.innerHTML = '<div class="list-group-item text-muted small">Aucun résultat</div>';
+    suggestionsBox.style.display = 'block';
+    return;
+  }
+  suggestionsBox.innerHTML = '';
+  items.slice(0, 40).forEach(function(item) {
+    var dejaChoisi = materiauxChoisis.some(function(m) { return m.id === item.id; });
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'list-group-item list-group-item-action' + (dejaChoisi ? ' disabled text-muted' : '');
+    btn.innerHTML = '<strong>' + escapeHtml(item.nom) + '</strong>' +
+      (item.fabricant ? ' <span class="text-muted small">— ' + escapeHtml(item.fabricant) + (item.fournisseur ? ' / ' + escapeHtml(item.fournisseur) : '') + '</span>' : '') +
+      (dejaChoisi ? ' <i class="bi bi-check-circle text-success"></i>' : '');
+    if (!dejaChoisi) {
+      btn.addEventListener('click', function() { ajouterMateriau(item); });
+    }
+    suggestionsBox.appendChild(btn);
+  });
+  suggestionsBox.style.display = 'block';
+}
+
+function ajouterMateriau(item) {
+  materiauxChoisis.push(item);
+  rendreSelection();
+  searchInput.value = '';
+  suggestionsBox.style.display = 'none';
+  searchInput.focus();
+}
+
+function retirerMateriau(id) {
+  materiauxChoisis = materiauxChoisis.filter(function(m) { return m.id !== id; });
+  rendreSelection();
+}
+
+function rendreSelection() {
+  selectedBox.innerHTML = '';
+  materiauxChoisis.forEach(function(item) {
+    var row = document.createElement('div');
+    row.className = 'd-flex justify-content-between align-items-center border rounded px-2 py-1 bg-light';
+    row.innerHTML = '<span><i class="bi bi-box-seam text-primary me-1"></i><strong>' + escapeHtml(item.nom) + '</strong>' +
+      (item.fabricant ? ' <span class="text-muted small">— ' + escapeHtml(item.fabricant) + '</span>' : '') + '</span>';
+
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn-sm btn-outline-danger';
+    btn.innerHTML = '<i class="bi bi-x-lg"></i>';
+    btn.addEventListener('click', function() { retirerMateriau(item.id); });
+    row.appendChild(btn);
+    selectedBox.appendChild(row);
+
+    var hidden = document.createElement('input');
+    hidden.type = 'hidden';
+    hidden.name = 'materiau_id';
+    hidden.value = item.id;
+    selectedBox.appendChild(hidden);
+  });
+
+  btnAnalyser.disabled = materiauxChoisis.length === 0;
+  btnAnalyser.innerHTML = materiauxChoisis.length === 0
+    ? '<i class="bi bi-magic"></i> Sélectionnez au moins un matériau'
+    : '<i class="bi bi-magic"></i> Analyser avec l\'IA (' + materiauxChoisis.length + ' matériau' + (materiauxChoisis.length > 1 ? 'x' : '') + ')';
+}
+
+document.addEventListener('click', function(e) {
+  if (!suggestionsBox.contains(e.target) && e.target !== searchInput) {
+    suggestionsBox.style.display = 'none';
+  }
+});
+
 document.getElementById('formUpload').addEventListener('submit', function() {
-  var btn = document.getElementById('btnAnalyser');
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>L\'IA analyse le devis…';
+  btnAnalyser.disabled = true;
+  btnAnalyser.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>L\'IA analyse le devis…';
 });
 </script>
 
