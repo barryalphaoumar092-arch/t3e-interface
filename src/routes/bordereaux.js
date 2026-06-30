@@ -284,6 +284,62 @@ async function resoudreFichesTechniques(db, fabricant, titre) {
   return buffers;
 }
 
+// Comme resoudreFichesTechniques, mais respecte une sélection manuelle faite par
+// l'utilisateur sur la page de révision (valeur du <select> FT_FICHIER)
+async function resoudreFichesTechniquesAvecSelection(db, fabricant, titre, selection) {
+  if (selection === '__NONE__') return [];
+  if (selection && selection !== '__AUTO__') {
+    const fullPath = path.resolve(FT_DIR, selection);
+    if (fullPath.startsWith(path.resolve(FT_DIR)) && fs.existsSync(fullPath)) {
+      console.log('[FT] Sélection manuelle utilisée:', selection);
+      return [fs.readFileSync(fullPath)];
+    }
+    console.log('[FT] Sélection manuelle introuvable:', selection, '- fallback auto');
+  }
+  return resoudreFichesTechniques(db, fabricant, titre);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  LISTES POUR LES MENUS DÉROULANTS (fabricant / fournisseur / FT)
+// ══════════════════════════════════════════════════════════════
+function listerFTParFabricant() {
+  const result = {};
+  if (!fs.existsSync(FT_DIR)) return result;
+  let dirs;
+  try { dirs = fs.readdirSync(FT_DIR); } catch (_) { return result; }
+  for (const d of dirs) {
+    const full = path.join(FT_DIR, d);
+    try {
+      if (!fs.statSync(full).isDirectory()) continue;
+      const pdfs = fs.readdirSync(full).filter(f => f.toLowerCase().endsWith('.pdf')).sort((a, b) => a.localeCompare(b));
+      if (pdfs.length > 0) result[d] = pdfs;
+    } catch (_) {}
+  }
+  return result;
+}
+
+async function listerFabricantsEtFournisseurs(db) {
+  const matRows = await chargerTousMateriaux(db);
+  const fabSet = new Set();
+  const fourSet = new Set();
+  for (const m of matRows) {
+    if (m.fabricant) fabSet.add(m.fabricant.trim());
+    if (m.fournisseur) fourSet.add(m.fournisseur.trim());
+  }
+  const ftParFab = listerFTParFabricant();
+  for (const f of Object.keys(ftParFab)) fabSet.add(f);
+
+  return {
+    fabricants: [...fabSet].filter(Boolean).sort((a, b) => a.localeCompare(b)),
+    fournisseurs: [...fourSet].filter(Boolean).sort((a, b) => a.localeCompare(b)),
+  };
+}
+
+function cheminRelatifFT(absPath) {
+  if (!absPath) return '';
+  return path.relative(FT_DIR, absPath).split(path.sep).join('/');
+}
+
 // ══════════════════════════════════════════════════════════════
 //  ROUTES
 // ══════════════════════════════════════════════════════════════
@@ -394,6 +450,7 @@ router.post('/analyser', uploadFields, async (req, res) => {
     if (p.ft_noms.length === 0 && p.ft_url) {
       p.ft_noms = [nomFichierDepuisUrl(p.ft_url) + ' (web)'];
     }
+    p.ft_selection = p.ft_chemins.length > 0 ? cheminRelatifFT(p.ft_chemins[0]) : '__AUTO__';
   }
 
   console.log('[analyser] IA trouvé', produits.length, 'produits pour', nomProjet);
@@ -440,10 +497,19 @@ router.get('/reviser/:id', async (req, res) => {
         TITRE: c.TITRE || '', FABRICANT: c.FABRICANT || '',
         FOURNISSEUR: c.FOURNISSEUR || '', REMARQUE: c.REMARQUE || '',
         ft_noms: data.ft_chemins ? data.ft_chemins.map(p => path.basename(p)) : [],
+        ft_selection: data.ft_chemins && data.ft_chemins.length > 0 ? cheminRelatifFT(data.ft_chemins[0]) : '__AUTO__',
       }],
       ia_erreur: data.ia_erreur || '',
     };
   }
+
+  // S'assurer que chaque produit a une selection FT (anciens enregistrements)
+  for (const p of (data.produits || [])) {
+    if (!p.ft_selection) p.ft_selection = '__AUTO__';
+  }
+
+  const { fabricants, fournisseurs } = await listerFabricantsEtFournisseurs(req.db);
+  const ftParFabricant = listerFTParFabricant();
 
   res.render('bordereau-reviser', {
     bordereau: row,
@@ -452,6 +518,9 @@ router.get('/reviser/:id', async (req, res) => {
     identification: data.identification || {},
     produits: data.produits || [],
     iaErreur: data.ia_erreur || '',
+    fabricantsListe: fabricants,
+    fournisseursListe: fournisseurs,
+    ftParFabricant,
   });
 });
 
@@ -483,6 +552,7 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
   const sections = [].concat(req.body.SECTION || []);
   const articles = [].concat(req.body.ARTICLE || []);
   const remarques = [].concat(req.body.REMARQUE || []);
+  const ftSelections = [].concat(req.body.FT_FICHIER || []);
 
   const nbProduits = titres.length;
   console.log('[generer] Génération de', nbProduits, 'bordereaux pour', nomProjet);
@@ -526,9 +596,10 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
       console.error(`[generer] ${num} Erreur .docx:`, e.message);
     }
 
-    // 2. Trouver et ajouter la FT — dossier local d'abord, puis lien_fiche_technique (DB matériaux) en fallback
+    // 2. Trouver et ajouter la FT — respecte la sélection manuelle de l'utilisateur,
+    //    sinon dossier local, sinon lien_fiche_technique (DB matériaux) en fallback
     try {
-      const ftBuffers = await resoudreFichesTechniques(db, champs.FABRICANT, champs.TITRE);
+      const ftBuffers = await resoudreFichesTechniquesAvecSelection(db, champs.FABRICANT, champs.TITRE, ftSelections[i]);
       if (ftBuffers.length > 0) {
         const merged = await PDFDocument.create();
         for (const ftBuf of ftBuffers) {
