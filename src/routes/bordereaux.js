@@ -160,26 +160,72 @@ function trouverFichesTechniques(fabricant, titre) {
 // ══════════════════════════════════════════════════════════════
 //  SOURCE AUTORITAIRE — base de matériaux T3E (lien_fiche_technique)
 // ══════════════════════════════════════════════════════════════
+let _materiauxCache = null;
+let _materiauxCacheAt = 0;
+
+async function chargerTousMateriaux(db) {
+  const now = Date.now();
+  if (_materiauxCache && now - _materiauxCacheAt < 5 * 60 * 1000) return _materiauxCache;
+  const r = await db.execute('SELECT nom, fabricant, fournisseur, lien_fiche_technique FROM materiaux');
+  _materiauxCache = r.rows;
+  _materiauxCacheAt = now;
+  return _materiauxCache;
+}
+
+function normaliserTexte(s) {
+  return (s || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '') // enlever accents
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function motsSignificatifs(s) {
+  return normaliserTexte(s).split(' ').filter(w => w.length >= 4);
+}
+
+// Matching conservateur : exige soit un nom identique, soit 2+ mots specifiques
+// partages, soit 1 mot specifique + meme fabricant. Evite les faux positifs sur
+// des mots generiques (ex: "ultra") qui assigneraient le mauvais fabricant.
+function matcherMateriau(matRows, titre, fabricant) {
+  if (!titre || !matRows || matRows.length === 0) return null;
+
+  const titreNorm = normaliserTexte(titre);
+  if (!titreNorm) return null;
+
+  const exact = matRows.find(m => normaliserTexte(m.nom) === titreNorm);
+  if (exact) return exact;
+
+  const titreMots = motsSignificatifs(titre);
+  if (titreMots.length === 0) return null;
+  const fabNorm = normaliserTexte(fabricant);
+
+  let best = null;
+  let bestScore = 0;
+
+  for (const m of matRows) {
+    const nomMots = motsSignificatifs(m.nom);
+    const partages = titreMots.filter(w => nomMots.includes(w));
+    if (partages.length === 0) continue;
+    const fabMatch = !!(fabNorm && m.fabricant && normaliserTexte(m.fabricant) === fabNorm);
+    if (partages.length < 2 && !fabMatch) continue;
+    const score = partages.length + (fabMatch ? 1 : 0);
+    if (score > bestScore) {
+      bestScore = score;
+      best = m;
+    }
+  }
+
+  return best;
+}
+
 async function obtenirMateriauMatch(db, titre, fabricant) {
-  if (!titre) return null;
   try {
-    let r = await db.execute({
-      sql: 'SELECT nom, fabricant, fournisseur, lien_fiche_technique FROM materiaux WHERE nom = ? COLLATE NOCASE LIMIT 1',
-      args: [titre],
-    });
-    if (r.rows.length === 0 && fabricant) {
-      r = await db.execute({
-        sql: 'SELECT nom, fabricant, fournisseur, lien_fiche_technique FROM materiaux WHERE nom LIKE ? AND fabricant LIKE ? LIMIT 1',
-        args: ['%' + titre + '%', '%' + fabricant + '%'],
-      });
-    }
-    if (r.rows.length === 0) {
-      r = await db.execute({
-        sql: 'SELECT nom, fabricant, fournisseur, lien_fiche_technique FROM materiaux WHERE nom LIKE ? LIMIT 1',
-        args: ['%' + titre + '%'],
-      });
-    }
-    return r.rows.length > 0 ? r.rows[0] : null;
+    const matRows = await chargerTousMateriaux(db);
+    const match = matcherMateriau(matRows, titre, fabricant);
+    if (match) console.log('[materiaux] Match:', titre, '->', match.nom, '(' + match.fabricant + ')');
+    else console.log('[materiaux] Aucun match pour titre="' + titre + '" fabricant="' + fabricant + '"');
+    return match;
   } catch (e) {
     console.error('[materiaux] Erreur lookup:', e.message);
     return null;
@@ -458,6 +504,15 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
       ARTICLE: articles[i] || '',
       REMARQUE: remarques[i] || '',
     };
+
+    // Compléter FABRICANT/FOURNISSEUR si vides, via la DB matériaux (filet de sécurité)
+    if (champs.TITRE && (!champs.FABRICANT || !champs.FOURNISSEUR)) {
+      const match = await obtenirMateriauMatch(db, champs.TITRE, champs.FABRICANT);
+      if (match) {
+        champs.FABRICANT = champs.FABRICANT || match.fabricant || '';
+        champs.FOURNISSEUR = champs.FOURNISSEUR || match.fournisseur || '';
+      }
+    }
 
     const num = String(i + 1).padStart(2, '0');
     const nomFichier = (titres[i] || 'Produit').replace(/[^a-zA-Z0-9àâäéèêëîïôùûüÀÉ _-]/g, '').substring(0, 40).trim();
