@@ -21,12 +21,15 @@
     "@libsql/client": "^0.17.4",
     "ejs": "^6.0.1",
     "express": "^5.2.1",
+    "html-to-pdfmake": "^2.5.33",
+    "jsdom": "^29.1.1",
     "jszip": "^3.10.1",
     "mammoth": "^1.12.0",
     "multer": "^2.2.0",
     "pdf-lib": "^1.17.1",
     "pdf-parse": "1.1.1",
     "pdfkit": "^0.19.1",
+    "pdfmake": "^0.3.11",
     "word-extractor": "^1.0.4",
     "xlsx": "^0.18.5"
   }

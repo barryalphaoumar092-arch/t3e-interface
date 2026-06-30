@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { parseDevis } = require('../services/document-parser');
 const { remplirBordereau } = require('../services/bordereau-filler');
+const { convertirDocxEnPdf } = require('../services/docx-to-pdf');
 const { PDFDocument } = require('pdf-lib');
 const JSZip = require('jszip');
 
@@ -562,13 +563,15 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
     const num = String(i + 1).padStart(2, '0');
     const nomFichier = (titres[i] || 'Produit').replace(/[^a-zA-Z0-9àâäéèêëîïôùûüÀÉ _-]/g, '').substring(0, 40).trim();
 
-    // 1. Remplir le .docx avec JSZip (exact même code que bordereau-filler.js)
+    // 1. Remplir le .docx avec JSZip (exact même code que bordereau-filler.js,
+    //    étapes inchangées), puis convertir CE document rempli en PDF
     try {
       const docxBuf = await remplirBordereau(champs, bordereauBuffer);
-      zip.file(`${num}_${nomFichier}/Bordereau_${nomFichier}.docx`, docxBuf);
-      console.log(`[generer] ${num} .docx OK: ${titres[i]}`);
+      const pdfBuf = await convertirDocxEnPdf(docxBuf);
+      zip.file(`${num}_${nomFichier}/Bordereau_${nomFichier}.pdf`, pdfBuf);
+      console.log(`[generer] ${num} PDF OK: ${titres[i]}`);
     } catch (e) {
-      console.error(`[generer] ${num} Erreur .docx:`, e.message);
+      console.error(`[generer] ${num} Erreur PDF:`, e.message);
     }
 
     // 2. Trouver et ajouter la FT — respecte la sélection manuelle de l'utilisateur,
