@@ -80,13 +80,13 @@
 
               <div class="col-md-4">
                 <label class="form-label fw-bold">Fabricant</label>
-                <select class="form-select form-select-sm mb-1" onchange="appliquerFabricant(this)">
+                <select class="form-select form-select-sm mb-1" onchange="this.nextElementSibling.value = this.value;">
                   <option value="">— Choisir dans la liste —</option>
                   <% fabricantsListe.forEach(function(f) { %>
                   <option value="<%= f %>" <%= p.FABRICANT === f ? 'selected' : '' %>><%= f %></option>
                   <% }); %>
                 </select>
-                <input type="text" name="FABRICANT" class="form-control form-control-sm fabricant-input" value="<%= p.FABRICANT || '' %>" placeholder="ou saisir manuellement" oninput="surFabricantSaisi(this)">
+                <input type="text" name="FABRICANT" class="form-control form-control-sm fabricant-input" value="<%= p.FABRICANT || '' %>" placeholder="ou saisir manuellement">
               </div>
 
               <div class="col-md-4">
@@ -105,8 +105,12 @@
                 <select name="FT_FICHIER" class="form-select form-select-sm ft-select">
                   <option value="__AUTO__" <%= p.ft_selection === '__AUTO__' ? 'selected' : '' %>>Auto (recommandé)</option>
                   <option value="__NONE__" <%= p.ft_selection === '__NONE__' ? 'selected' : '' %>>Aucune fiche technique</option>
-                  <% (ftParFabricant[p.FABRICANT] || []).forEach(function(f) { %>
-                  <option value="<%= p.FABRICANT %>/<%= f %>" <%= p.ft_selection === (p.FABRICANT + '/' + f) ? 'selected' : '' %>><%= f %></option>
+                  <% Object.keys(ftParFabricant).sort(function(a, b) { return a.localeCompare(b); }).forEach(function(fab) { %>
+                  <optgroup label="<%= fab %>">
+                    <% ftParFabricant[fab].forEach(function(f) { %>
+                    <option value="<%= fab %>/<%= f %>" <%= p.ft_selection === (fab + '/' + f) ? 'selected' : '' %>><%= f %></option>
+                    <% }); %>
+                  </optgroup>
                   <% }); %>
                 </select>
                 <% if (p.ft_noms && p.ft_noms.length > 0) { %>
@@ -146,47 +150,6 @@
 </div>
 
 <script>
-var FT_PAR_FABRICANT = <%- JSON.stringify(ftParFabricant) %>;
-
-function trouverCleFabricant(fabricant) {
-  var cible = (fabricant || '').trim().toLowerCase();
-  if (!cible) return null;
-  for (var k in FT_PAR_FABRICANT) {
-    if (k.toLowerCase() === cible) return k;
-  }
-  return null;
-}
-
-function rafraichirOptionsFT(card) {
-  var fabInput = card.querySelector('.fabricant-input');
-  var ftSelect = card.querySelector('.ft-select');
-  if (!fabInput || !ftSelect) return;
-
-  var ancienneValeur = ftSelect.value;
-  var cle = trouverCleFabricant(fabInput.value);
-  var fichiers = cle ? FT_PAR_FABRICANT[cle] : [];
-
-  var html = '<option value="__AUTO__">Auto (recommandé)</option>';
-  html += '<option value="__NONE__">Aucune fiche technique</option>';
-  fichiers.forEach(function(f) {
-    html += '<option value="' + cle + '/' + f + '">' + f + '</option>';
-  });
-  ftSelect.innerHTML = html;
-
-  var existe = Array.prototype.some.call(ftSelect.options, function(o) { return o.value === ancienneValeur; });
-  ftSelect.value = existe ? ancienneValeur : '__AUTO__';
-}
-
-function appliquerFabricant(select) {
-  var input = select.nextElementSibling;
-  input.value = select.value;
-  rafraichirOptionsFT(select.closest('.produit-card'));
-}
-
-function surFabricantSaisi(input) {
-  rafraichirOptionsFT(input.closest('.produit-card'));
-}
-
 function renum() {
   document.querySelectorAll('.produit-card').forEach(function(card, i) {
     var h6 = card.querySelector('h6');
