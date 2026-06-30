@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { parseDevis } = require('../services/document-parser');
 const { remplirBordereau } = require('../services/bordereau-filler');
+const { convertirDocxEnPdf } = require('../services/docx-to-pdf');
 const { PDFDocument } = require('pdf-lib');
 const JSZip = require('jszip');
 
@@ -280,6 +281,19 @@ async function resoudreFichesTechniquesAvecSelection(db, fabricant, titre, selec
     console.log('[FT] Sélection manuelle introuvable:', selection, '- fallback auto');
   }
   return resoudreFichesTechniques(db, fabricant, titre);
+}
+
+async function fusionnerPdfBuffers(buffers) {
+  const merged = await PDFDocument.create();
+  for (const buf of buffers) {
+    try {
+      const doc = await PDFDocument.load(buf, { ignoreEncryption: true });
+      (await merged.copyPages(doc, doc.getPageIndices())).forEach(pg => merged.addPage(pg));
+    } catch (e) {
+      console.error('[fusionnerPdfBuffers] Erreur chargement PDF:', e.message);
+    }
+  }
+  return merged.getPageCount() > 0 ? Buffer.from(await merged.save()) : null;
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -562,41 +576,45 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
     const num = String(i + 1).padStart(2, '0');
     const nomFichier = (titres[i] || 'Produit').replace(/[^a-zA-Z0-9àâäéèêëîïôùûüÀÉ _-]/g, '').substring(0, 40).trim();
 
-    // 1. Remplir le .docx avec JSZip (étapes inchangées)
+    // 1. Remplir le .docx (étapes inchangées), convertir en PDF, puis fusionner
+    //    avec la fiche technique en UN SEUL PDF (bordereau + FT à la suite)
     try {
       const docxBuf = await remplirBordereau(champs, bordereauBuffer);
-      zip.file(`${num}_${nomFichier}/Bordereau_${nomFichier}.docx`, docxBuf);
-      console.log(`[generer] ${num} OK: ${titres[i]}`);
+
+      let ftBuffers = [];
+      try {
+        ftBuffers = await resoudreFichesTechniquesAvecSelection(db, champs.FABRICANT, champs.TITRE, ftSelections[i]);
+        if (ftBuffers.length === 0) {
+          console.log(`[generer] ${num} Aucune FT trouvee (ni locale ni web) pour`, champs.TITRE, '/', champs.FABRICANT);
+        }
+      } catch (eFt) {
+        console.error(`[generer] ${num} Erreur FT:`, eFt.message);
+      }
+
+      let bordereauPdfBuf = null;
+      try {
+        bordereauPdfBuf = await convertirDocxEnPdf(docxBuf);
+      } catch (ePdf) {
+        console.error(`[generer] ${num} Erreur conversion PDF:`, ePdf.message);
+      }
+
+      if (bordereauPdfBuf) {
+        const finalPdf = await fusionnerPdfBuffers([bordereauPdfBuf, ...ftBuffers]);
+        if (finalPdf) {
+          zip.file(`${num}_${nomFichier}/Bordereau_${nomFichier}.pdf`, finalPdf);
+          console.log(`[generer] ${num} PDF fusionné OK (bordereau + ${ftBuffers.length} FT): ${titres[i]}`);
+        }
+      } else {
+        // Filet de sécurité : conversion PDF échouée -> on garde le .docx
+        // (déjà prouvé fonctionnel) + la FT séparée + le détail de l'erreur
+        zip.file(`${num}_${nomFichier}/Bordereau_${nomFichier}.docx`, docxBuf);
+        zip.file(`${num}_${nomFichier}/ERREUR_conversion_PDF.txt`, 'La conversion en PDF a échoué, voir logs serveur Render.');
+        const ftPdf = await fusionnerPdfBuffers(ftBuffers);
+        if (ftPdf) zip.file(`${num}_${nomFichier}/FT_${nomFichier}.pdf`, ftPdf);
+      }
     } catch (e) {
       console.error(`[generer] ${num} Erreur remplissage:`, e.message);
       zip.file(`${num}_${nomFichier}/ERREUR_remplissage.txt`, 'Le remplissage du bordereau a échoué :\n' + e.stack);
-    }
-
-    // 2. Trouver et ajouter la FT — respecte la sélection manuelle de l'utilisateur,
-    //    sinon dossier local, sinon lien_fiche_technique (DB matériaux) en fallback
-    try {
-      const ftBuffers = await resoudreFichesTechniquesAvecSelection(db, champs.FABRICANT, champs.TITRE, ftSelections[i]);
-      if (ftBuffers.length > 0) {
-        const merged = await PDFDocument.create();
-        for (const ftBuf of ftBuffers) {
-          try {
-            const ftDoc = await PDFDocument.load(ftBuf, { ignoreEncryption: true });
-            const pages = await merged.copyPages(ftDoc, ftDoc.getPageIndices());
-            pages.forEach(pg => merged.addPage(pg));
-          } catch (e) {
-            console.error(`[generer] ${num} Erreur chargement PDF FT:`, e.message);
-          }
-        }
-        if (merged.getPageCount() > 0) {
-          const ftPdf = Buffer.from(await merged.save());
-          zip.file(`${num}_${nomFichier}/FT_${nomFichier}.pdf`, ftPdf);
-          console.log(`[generer] ${num} FT OK: ${ftBuffers.length} fichier(s), ${merged.getPageCount()} pages`);
-        }
-      } else {
-        console.log(`[generer] ${num} Aucune FT trouvee (ni locale ni web) pour`, champs.TITRE, '/', champs.FABRICANT);
-      }
-    } catch (e) {
-      console.error(`[generer] ${num} Erreur FT:`, e.message);
     }
   }
 
