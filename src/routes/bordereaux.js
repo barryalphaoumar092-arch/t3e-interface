@@ -567,11 +567,20 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
     //    étapes inchangées), puis convertir CE document rempli en PDF
     try {
       const docxBuf = await remplirBordereau(champs, bordereauBuffer);
-      const pdfBuf = await convertirDocxEnPdf(docxBuf);
-      zip.file(`${num}_${nomFichier}/Bordereau_${nomFichier}.pdf`, pdfBuf);
-      console.log(`[generer] ${num} PDF OK: ${titres[i]}`);
+      try {
+        const pdfBuf = await convertirDocxEnPdf(docxBuf);
+        zip.file(`${num}_${nomFichier}/Bordereau_${nomFichier}.pdf`, pdfBuf);
+        console.log(`[generer] ${num} PDF OK: ${titres[i]}`);
+      } catch (ePdf) {
+        // La conversion PDF a échoué : on inclut quand même le .docx rempli
+        // (au lieu de rien) + le détail de l'erreur pour diagnostic
+        console.error(`[generer] ${num} Erreur conversion PDF:`, ePdf.message);
+        zip.file(`${num}_${nomFichier}/Bordereau_${nomFichier}.docx`, docxBuf);
+        zip.file(`${num}_${nomFichier}/ERREUR_conversion_PDF.txt`, 'La conversion en PDF a échoué :\n' + ePdf.stack);
+      }
     } catch (e) {
-      console.error(`[generer] ${num} Erreur PDF:`, e.message);
+      console.error(`[generer] ${num} Erreur remplissage:`, e.message);
+      zip.file(`${num}_${nomFichier}/ERREUR_remplissage.txt`, 'Le remplissage du bordereau a échoué :\n' + e.stack);
     }
 
     // 2. Trouver et ajouter la FT — respecte la sélection manuelle de l'utilisateur,
