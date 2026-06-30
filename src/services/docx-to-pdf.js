@@ -1,48 +1,63 @@
-const mammoth = require('mammoth');
-const pdfMake = require('pdfmake');
-const htmlToPdfmake = require('html-to-pdfmake');
-const { JSDOM } = require('jsdom');
+const fs = require('fs');
+const path = require('path');
+const { execFile } = require('child_process');
+const crypto = require('crypto');
 
-pdfMake.setFonts({
-  Helvetica: {
-    normal: 'Helvetica',
-    bold: 'Helvetica-Bold',
-    italics: 'Helvetica-Oblique',
-    bolditalics: 'Helvetica-BoldOblique',
-  },
-});
-pdfMake.setUrlAccessPolicy(() => false);
-pdfMake.setLocalAccessPolicy(() => true);
+const TMP_DIR = path.join(__dirname, '..', '..', 'uploads');
 
 // Convertit le .docx REMPLI (sortie de remplirBordereau, contenu réel inchangé)
-// en PDF. N'altère pas le remplissage : prend simplement le résultat et le
-// rend en PDF via mammoth (extraction du contenu réel) + pdfmake (rendu PDF).
-async function convertirDocxEnPdf(docxBuffer) {
-  const { value: htmlBrut } = await mammoth.convertToHtml({ buffer: docxBuffer });
-  // mammoth génère des ancres id="__Fieldmark__..." pour les champs de formulaire
-  // (cases à cocher) du document Word ; ces id peuvent se dupliquer et font
-  // planter pdfmake (qui exige des id uniques pour les signets). On ne s'en sert
-  // pas dans le PDF final, donc on les retire.
-  // La police standard Helvetica de pdfkit (WinAnsi) ne supporte pas ☒/☐
-  // (hors Latin-1) : on les remplace par un équivalent ASCII pour le rendu PDF
-  // uniquement. Le .docx réel garde le vrai symbole, on ne touche pas au
-  // remplissage (bordereau-filler.js).
-  const html = htmlBrut
-    .replace(/\sid="__Fieldmark[^"]*"/g, '')
-    .replace(/☒/g, '[X]')
-    .replace(/☐/g, '[ ]');
-  const dom = new JSDOM('');
-  const content = htmlToPdfmake(html, { window: dom.window });
+// en PDF via LibreOffice headless. Rendu fidèle au template Word (logo, tableaux,
+// mise en page identiques) car c'est le vrai moteur de rendu Word-compatible,
+// contrairement à une recréation/réinterprétation du contenu.
+function convertirDocxEnPdf(docxBuffer) {
+  return new Promise((resolve, reject) => {
+    const id = crypto.randomBytes(8).toString('hex');
+    const workDir = path.join(TMP_DIR, `lo_${id}`);
+    const docxPath = path.join(workDir, 'bordereau.docx');
+    const pdfPath = path.join(workDir, 'bordereau.pdf');
+    const profileDir = path.join(workDir, 'profile');
 
-  const docDefinition = {
-    content,
-    defaultStyle: { font: 'Helvetica', fontSize: 9 },
-    pageSize: 'LETTER',
-    pageMargins: [40, 40, 40, 40],
-  };
+    const nettoyer = () => {
+      try { fs.rmSync(workDir, { recursive: true, force: true }); } catch (_) {}
+    };
 
-  const pdfDoc = pdfMake.createPdf(docDefinition);
-  return pdfDoc.getBuffer();
+    try {
+      fs.mkdirSync(workDir, { recursive: true });
+      fs.writeFileSync(docxPath, docxBuffer);
+    } catch (e) {
+      nettoyer();
+      return reject(e);
+    }
+
+    // -env:UserInstallation isole le profil LibreOffice par conversion pour
+    // éviter les conflits de verrou entre appels successifs/concurrents
+    const args = [
+      '--headless',
+      '--norestore',
+      `-env:UserInstallation=file://${profileDir}`,
+      '--convert-to', 'pdf',
+      '--outdir', workDir,
+      docxPath,
+    ];
+
+    execFile('soffice', args, { timeout: 30000 }, (err) => {
+      if (err) {
+        nettoyer();
+        return reject(new Error('Conversion LibreOffice échouée: ' + err.message));
+      }
+      try {
+        if (!fs.existsSync(pdfPath)) {
+          throw new Error('LibreOffice n\'a pas produit de PDF');
+        }
+        const buf = fs.readFileSync(pdfPath);
+        nettoyer();
+        resolve(buf);
+      } catch (e) {
+        nettoyer();
+        reject(e);
+      }
+    });
+  });
 }
 
 module.exports = { convertirDocxEnPdf };
