@@ -145,10 +145,16 @@ function trouverFichesTechniques(fabricant, titre) {
     const fname = f.toLowerCase();
     const score = keywords.filter(k => fname.includes(k)).length;
     return { file: f, score };
-  }).filter(s => s.score > 0).sort((a, b) => b.score - a.score);
+  }).sort((a, b) => b.score - a.score);
 
-  if (scored.length > 0) return [path.join(fabDir, scored[0].file)];
-  return [];
+  const meilleur = scored[0];
+  if (meilleur && meilleur.score > 0) {
+    console.log('[FT] Match par titre:', meilleur.file, '(score:', meilleur.score + ')');
+    return [path.join(fabDir, meilleur.file)];
+  }
+
+  console.log('[FT] Aucun match par titre pour "' + titre + '" dans ' + path.basename(fabDir) + ', fallback sur les 2 premiers PDFs');
+  return pdfs.slice(0, 2).map(f => path.join(fabDir, f));
 }
 
 // ══════════════════════════════════════════════════════════════
