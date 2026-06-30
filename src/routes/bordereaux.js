@@ -592,10 +592,12 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
       }
 
       let bordereauPdfBuf = null;
+      let erreurPdf = null;
       try {
         bordereauPdfBuf = await convertirDocxEnPdf(docxBuf);
       } catch (ePdf) {
         console.error(`[generer] ${num} Erreur conversion PDF:`, ePdf.message);
+        erreurPdf = ePdf;
       }
 
       if (bordereauPdfBuf) {
@@ -608,7 +610,7 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
         // Filet de sécurité : conversion PDF échouée -> on garde le .docx
         // (déjà prouvé fonctionnel) + la FT séparée + le détail de l'erreur
         zip.file(`${num}_${nomFichier}/Bordereau_${nomFichier}.docx`, docxBuf);
-        zip.file(`${num}_${nomFichier}/ERREUR_conversion_PDF.txt`, 'La conversion en PDF a échoué, voir logs serveur Render.');
+        zip.file(`${num}_${nomFichier}/ERREUR_conversion_PDF.txt`, 'La conversion en PDF a échoué :\n' + (erreurPdf ? erreurPdf.stack : 'erreur inconnue'));
         const ftPdf = await fusionnerPdfBuffers(ftBuffers);
         if (ftPdf) zip.file(`${num}_${nomFichier}/FT_${nomFichier}.pdf`, ftPdf);
       }
