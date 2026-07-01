@@ -572,6 +572,7 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
 
   const zip = new JSZip();
   const ts = Date.now();
+  const diagnostic = [];
 
   for (let i = 0; i < nbProduits; i++) {
     const champs = {
@@ -626,6 +627,7 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
         console.log(`[generer] ${num} LibreOffice OK: ${titres[i]}`);
       } catch (e) {
         console.error(`[generer] ${num} LibreOffice KO:`, e.message);
+        diagnostic.push(`${num} (${titres[i] || ''}) — conversion PDF échouée : ${e.message}`);
       }
     }
 
@@ -659,6 +661,12 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
       }
       console.log(`[generer] ${num} Fallback .docx + FT: ${titres[i]}`);
     }
+  }
+
+  // Fichier temporaire de diagnostic (à retirer une fois la conversion PDF
+  // distante confirmée stable) — permet de voir la cause exacte sans logs.
+  if (diagnostic.length > 0) {
+    zip.file('_DIAGNOSTIC.txt', diagnostic.join('\n'));
   }
 
   // Mettre à jour la DB

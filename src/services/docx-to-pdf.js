@@ -69,8 +69,7 @@ async function convertirDocxEnPdfDistant(docxBuffer) {
   const url = (process.env.CONVERT_SERVICE_URL || '').trim();
   const secret = (process.env.CONVERT_SERVICE_SECRET || '').trim();
   if (!url || !secret) {
-    console.log(`[docx-to-pdf] Fallback distant non configuré (URL: ${url ? 'ok' : 'manquante'}, secret: ${secret ? 'ok' : 'manquant'})`);
-    return null;
+    throw new Error(`fallback distant non configuré (URL: ${url ? 'ok' : 'MANQUANTE'}, secret: ${secret ? 'ok' : 'MANQUANT'})`);
   }
 
   const controller = new AbortController();
@@ -84,28 +83,28 @@ async function convertirDocxEnPdfDistant(docxBuffer) {
     });
     if (!resp.ok) {
       const corps = await resp.text().catch(() => '');
-      throw new Error(`Service de conversion distant a répondu ${resp.status}: ${corps.slice(0, 200)}`);
+      throw new Error(`service distant a répondu ${resp.status}: ${corps.slice(0, 200)}`);
     }
-    console.log('[docx-to-pdf] Conversion distante réussie via', url);
     return Buffer.from(await resp.arrayBuffer());
   } finally {
     clearTimeout(timeout);
   }
 }
 
+// Le message d'erreur final combine les deux tentatives (locale + distante) afin
+// que la cause exacte soit visible partout où l'appelant journalise e.message,
+// sans dépendre de l'accès aux logs d'une plateforme spécifique.
 async function convertirDocxEnPdf(docxBuffer) {
+  let erreurLocaleMsg;
   try {
     return await convertirDocxEnPdfLocal(docxBuffer);
   } catch (erreurLocale) {
-    console.log('[docx-to-pdf] Conversion locale échouée (attendu sur Vercel):', erreurLocale.message);
-    let resultatDistant = null;
-    try {
-      resultatDistant = await convertirDocxEnPdfDistant(docxBuffer);
-    } catch (erreurDistante) {
-      console.error('[docx-to-pdf] Conversion distante échouée:', erreurDistante.message);
-    }
-    if (resultatDistant) return resultatDistant;
-    throw erreurLocale;
+    erreurLocaleMsg = erreurLocale.message;
+  }
+  try {
+    return await convertirDocxEnPdfDistant(docxBuffer);
+  } catch (erreurDistante) {
+    throw new Error(`conversion locale échouée (${erreurLocaleMsg}) ; conversion distante échouée (${erreurDistante.message})`);
   }
 }
 
