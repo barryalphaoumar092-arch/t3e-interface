@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { parseDevis } = require('../services/document-parser');
 const { remplirBordereau } = require('../services/bordereau-filler');
-const { convertirDocxEnPdf, convertirPdfEnDocx } = require('../services/docx-to-pdf');
+const { convertirDocxEnPdf } = require('../services/docx-to-pdf');
 const { creerBordereauPdf } = require('../services/bordereau-pdf');
 const { PDFDocument } = require('pdf-lib');
 const JSZip = require('jszip');
@@ -581,71 +581,49 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
     const num = String(i + 1).padStart(2, '0');
     const nomFichier = (titres[i] || 'Produit').replace(/[^a-zA-Z0-9àâäéèêëîïôùûüÀÉ _-]/g, '').substring(0, 40).trim();
 
-    // 1. Remplir le template (DOCX ou PDF), convertir en PDF, puis fusionner
-    //    avec la fiche technique en UN SEUL PDF (bordereau + FT à la suite).
-    //    Chaque étape a son propre try/catch : un échec LibreOffice ne bloque
-    //    pas le fallback pdfkit, et un échec pdfkit ne bloque pas les FT.
-    const estPdfTemplate = bordereauBuffer.length >= 4 &&
-      bordereauBuffer.slice(0, 4).toString('latin1') === '%PDF';
-
-    // Étape A — Remplir le template → docxBuf (null si échec)
-    let docxBuf = null;
-    if (estPdfTemplate) {
-      try {
-        console.log(`[generer] ${num} Template PDF → PDF→DOCX via LibreOffice`);
-        const docxTemplate = await convertirPdfEnDocx(bordereauBuffer);
-        docxBuf = await remplirBordereau(champs, docxTemplate);
-      } catch (e) {
-        console.error(`[generer] ${num} PDF→DOCX échoué (fallback pdfkit):`, e.message);
-      }
-    } else {
-      try {
-        docxBuf = await remplirBordereau(champs, bordereauBuffer);
-      } catch (e) {
-        console.error(`[generer] ${num} Remplissage DOCX échoué (fallback pdfkit):`, e.message);
-      }
-    }
-
-    // Étape B — Charger les fiches techniques (indépendant du template)
-    let ftBuffers = [];
+    // 1. Remplir le .docx (étapes inchangées), convertir en PDF, puis fusionner
+    //    avec la fiche technique en UN SEUL PDF (bordereau + FT à la suite)
     try {
-      ftBuffers = await resoudreFichesTechniquesAvecSelection(db, champs.FABRICANT, champs.TITRE, ftSelections[i]);
-      if (ftBuffers.length === 0) {
-        console.log(`[generer] ${num} Aucune FT pour`, champs.TITRE, '/', champs.FABRICANT);
-      }
-    } catch (eFt) {
-      console.error(`[generer] ${num} Erreur FT:`, eFt.message);
-    }
+      const docxBuf = await remplirBordereau(champs, bordereauBuffer);
 
-    // Étape C — Convertir docxBuf en PDF via LibreOffice
-    let bordereauPdfBuf = null;
-    if (docxBuf) {
+      let ftBuffers = [];
+      try {
+        ftBuffers = await resoudreFichesTechniquesAvecSelection(db, champs.FABRICANT, champs.TITRE, ftSelections[i]);
+        if (ftBuffers.length === 0) {
+          console.log(`[generer] ${num} Aucune FT trouvee (ni locale ni web) pour`, champs.TITRE, '/', champs.FABRICANT);
+        }
+      } catch (eFt) {
+        console.error(`[generer] ${num} Erreur FT:`, eFt.message);
+      }
+
+      let bordereauPdfBuf = null;
+      let erreurPdf = null;
       try {
         bordereauPdfBuf = await convertirDocxEnPdf(docxBuf);
       } catch (ePdf) {
-        console.error(`[generer] ${num} LibreOffice DOCX→PDF échoué:`, ePdf.message);
+        console.error(`[generer] ${num} Erreur conversion PDF:`, ePdf.message);
+        erreurPdf = ePdf;
       }
-    }
 
-    // Étape D — Fallback pdfkit si LibreOffice KO ou template PDF sans LibreOffice
-    if (!bordereauPdfBuf) {
-      console.log(`[generer] ${num} Fallback pdfkit pour:`, titres[i]);
-      try {
-        bordereauPdfBuf = await creerBordereauPdf(champs);
-      } catch (ePdfkit) {
-        console.error(`[generer] ${num} Erreur pdfkit:`, ePdfkit.message);
+      if (bordereauPdfBuf) {
+        // Bordereau PDF + FT = 1 seul document PDF
+        const finalPdf = await fusionnerPdfBuffers([bordereauPdfBuf, ...ftBuffers]);
+        if (finalPdf) {
+          zip.file(`${num}_${nomFichier}.pdf`, finalPdf);
+          console.log(`[generer] ${num} PDF fusionné OK (bordereau + ${ftBuffers.length} FT): ${titres[i]}`);
+        }
+      } else {
+        // LibreOffice KO → fallback pdfkit (format T3E standard, toujours disponible)
+        console.log(`[generer] ${num} LibreOffice KO, fallback pdfkit`);
+        try { bordereauPdfBuf = await creerBordereauPdf(champs); } catch (_) {}
+        const finalPdf = await fusionnerPdfBuffers([bordereauPdfBuf, ...ftBuffers].filter(Boolean));
+        if (finalPdf) {
+          zip.file(`${num}_${nomFichier}.pdf`, finalPdf);
+        }
       }
-    }
-
-    // Étape E — Fusionner bordereau + FT et ajouter au ZIP
-    if (bordereauPdfBuf) {
-      const finalPdf = await fusionnerPdfBuffers([bordereauPdfBuf, ...ftBuffers]);
-      if (finalPdf) {
-        zip.file(`${num}_${nomFichier}.pdf`, finalPdf);
-        console.log(`[generer] ${num} PDF OK (${ftBuffers.length} FT): ${titres[i]}`);
-      }
-    } else {
-      console.error(`[generer] ${num} Aucune méthode PDF n'a fonctionné pour:`, titres[i]);
+    } catch (e) {
+      console.error(`[generer] ${num} Erreur remplissage:`, e.message);
+      zip.file(`${num}_${nomFichier}/ERREUR_remplissage.txt`, 'Le remplissage du bordereau a échoué :\n' + e.stack);
     }
   }
 
