@@ -91,7 +91,7 @@ SUPABASE_SERVICE_ROLE_KEY=eyJhbGci...
 MDP_APP=barry
 NODE_ENV=production
 OPENAI_API_KEY=sk-...  (active l'IA soumissions + bordereaux)
-CONVERT_SERVICE_URL=https://t3e-interface.onrender.com   (Vercel uniquement — voir ci-dessous)
+CONVERT_SERVICE_URL=https://t3e-interface-jfxe.onrender.com   (Vercel uniquement — voir ci-dessous)
 CONVERT_SERVICE_SECRET=<secret aléatoire partagé>          (Vercel ET Render — même valeur des deux côtés)
 ```
 À configurer à la fois sur Vercel et (si toujours utilisé) sur Render.
@@ -105,6 +105,6 @@ CONVERT_SERVICE_SECRET=<secret aléatoire partagé>          (Vercel ET Render �
 ## Points d'attention
 - Express 5 gère les erreurs async nativement (pas besoin de express-async-errors)
 - Le filesystem est éphémère et en lecture seule (Vercel) : ne jamais écrire de fichier permanent sur disque, utiliser Supabase Storage ou la DB
-- La conversion LibreOffice (`docx-to-pdf.js`) échoue silencieusement sur Vercel (binaire `soffice` absent). Depuis l'ajout du fallback distant : `convertirDocxEnPdf()` essaie d'abord `soffice` en local, et si ça échoue, délègue la même conversion à l'instance Render via `POST /internal/convertir-docx-pdf` (endpoint protégé par `CONVERT_SERVICE_SECRET`, voir `server.js`) — c'est le même moteur LibreOffice, le même .docx, aucune recréation du contenu/mise en page. Si `CONVERT_SERVICE_URL`/`CONVERT_SERVICE_SECRET` ne sont pas configurés ou que Render est aussi indisponible, `bordereaux.js` retombe sur le fallback .docx + FT séparés dans le ZIP (route `/generer/:id`)
+- La conversion LibreOffice (`docx-to-pdf.js`) échoue silencieusement sur Vercel (binaire `soffice` absent). Depuis l'ajout du fallback distant : `convertirDocxEnPdf()` essaie d'abord `soffice` en local, et si ça échoue, délègue la même conversion au service Render **t3e-interface-jfxe** (celui-ci en environnement **Docker**, donc avec LibreOffice installé — à ne pas confondre avec `t3e-interface.onrender.com` qui tourne en Node natif et n'a pas `soffice`) via `POST /internal/convertir-docx-pdf` (endpoint protégé par `CONVERT_SERVICE_SECRET`, voir `server.js`) — c'est le même moteur LibreOffice, le même .docx, aucune recréation du contenu/mise en page. Si `CONVERT_SERVICE_URL`/`CONVERT_SERVICE_SECRET` ne sont pas configurés ou que ce service est aussi indisponible, `bordereaux.js` retombe sur le fallback .docx + FT séparés dans le ZIP (route `/generer/:id`), et un fichier `_DIAGNOSTIC.txt` listant la cause exacte est ajouté au ZIP
 - Les templates Word splitent le texte en multiple `<w:r>` runs — utiliser `replaceInXml()` ou `normalizeXmlText()` pour gérer
 - Les apostrophes Word sont U+2019 (curly), pas U+0027 (straight) — utiliser `CURLY_APOS` constant
