@@ -1,3 +1,4 @@
+require('./src/load-env');
 const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
@@ -6,7 +7,8 @@ const { getDb, initDb } = require('./src/db/init');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const MOT_DE_PASSE = process.env.MDP_APP || 'barry';
-const sessions = new Set();
+const SESSION_SECRET = process.env.SESSION_SECRET || MOT_DE_PASSE;
+const SESSION_MAX_AGE = 24 * 60 * 60 * 1000;
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
@@ -17,6 +19,24 @@ app.use(express.urlencoded({ extended: true }));
 // Endpoint public pour le keep-alive (avant le middleware d'auth)
 app.get('/health', (req, res) => res.json({ status: 'ok', ts: Date.now() }));
 
+// Session signee (HMAC), sans etat serveur — necessaire car les fonctions
+// serverless (Vercel) ne partagent pas de memoire entre invocations/instances.
+function signSession() {
+  const exp = Date.now() + SESSION_MAX_AGE;
+  const sig = crypto.createHmac('sha256', SESSION_SECRET).update(String(exp)).digest('hex');
+  return `${exp}.${sig}`;
+}
+function verifySession(token) {
+  if (!token) return false;
+  const [expStr, sig] = token.split('.');
+  if (!expStr || !sig || !/^\d+$/.test(expStr)) return false;
+  const expected = crypto.createHmac('sha256', SESSION_SECRET).update(expStr).digest('hex');
+  const sigBuf = Buffer.from(sig, 'hex');
+  const expBuf = Buffer.from(expected, 'hex');
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) return false;
+  return Number(expStr) > Date.now();
+}
+
 app.get('/login', (req, res) => {
   const erreur = req.query.erreur === '1';
   res.render('login', { erreur });
@@ -24,9 +44,7 @@ app.get('/login', (req, res) => {
 
 app.post('/login', (req, res) => {
   if (req.body.mot_de_passe === MOT_DE_PASSE) {
-    const token = crypto.randomBytes(32).toString('hex');
-    sessions.add(token);
-    res.cookie('t3e_session', token, { httpOnly: true, maxAge: 24 * 60 * 60 * 1000 });
+    res.cookie('t3e_session', signSession(), { httpOnly: true, maxAge: SESSION_MAX_AGE });
     res.redirect('/');
   } else {
     res.redirect('/login?erreur=1');
@@ -34,8 +52,6 @@ app.post('/login', (req, res) => {
 });
 
 app.get('/logout', (req, res) => {
-  const token = parseCookie(req.headers.cookie || '')['t3e_session'];
-  if (token) sessions.delete(token);
   res.clearCookie('t3e_session');
   res.redirect('/login');
 });
@@ -52,17 +68,21 @@ function parseCookie(str) {
 app.use((req, res, next) => {
   if (req.path === '/login') return next();
   const cookies = parseCookie(req.headers.cookie || '');
-  if (cookies.t3e_session && sessions.has(cookies.t3e_session)) return next();
+  if (verifySession(cookies.t3e_session)) return next();
   res.redirect('/login');
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
-app.use('/documents', express.static(path.join(__dirname, 'documents')));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+// Initialisation DB paresseuse et mise en cache : sur serverless, chaque
+// instance froide doit executer les migrations une seule fois avant de servir.
+let dbInitPromise = null;
 app.use((req, res, next) => {
-  req.db = getDb();
-  next();
+  if (!dbInitPromise) dbInitPromise = initDb().catch(err => { dbInitPromise = null; throw err; });
+  dbInitPromise.then(() => {
+    req.db = getDb();
+    next();
+  }).catch(next);
 });
 
 app.use('/', require('./src/routes/index'));
@@ -78,39 +98,28 @@ app.use((err, req, res, next) => {
   res.status(500).send(`<h2>Erreur serveur</h2><pre>${msg}</pre><a href="/">Retour</a>`);
 });
 
-async function start() {
-  try {
-    const fs = require('fs');
-    const dirs = ['uploads', 'data'];
-    for (const d of dirs) {
-      const p = path.join(__dirname, d);
-      if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
+// Ne demarre un serveur HTTP long-lived que hors environnement serverless
+// (Vercel importe ce module via api/index.js sans jamais l'executer directement).
+if (require.main === module) {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`\n  Interface T3E demarree:`);
+    console.log(`    Local:  http://localhost:${PORT}`);
+    if (!process.env.TURSO_DATABASE_URL) {
+      console.log(`    Mode:   Local (SQLite fichier)`);
+    } else {
+      console.log(`    Mode:   Cloud (Turso)`);
     }
+    console.log();
 
-    await initDb();
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`\n  Interface T3E demarree:`);
-      console.log(`    Local:  http://localhost:${PORT}`);
-      if (!process.env.TURSO_DATABASE_URL) {
-        console.log(`    Mode:   Local (SQLite fichier)`);
-      } else {
-        console.log(`    Mode:   Cloud (Turso)`);
-      }
-      console.log();
-
-      // Auto-ping toutes les 14 min pour éviter le cold start Render free tier
-      if (process.env.RENDER || process.env.NODE_ENV === 'production') {
-        const siteUrl = process.env.RENDER_EXTERNAL_URL || 'https://t3e-interface.onrender.com';
-        setInterval(() => {
-          fetch(siteUrl + '/health').catch(() => {});
-        }, 14 * 60 * 1000);
-        console.log('  Keep-alive actif (ping /health toutes les 14 min)');
-      }
-    });
-  } catch (err) {
-    console.error('Erreur au demarrage:', err);
-    process.exit(1);
-  }
+    // Auto-ping toutes les 14 min pour éviter le cold start Render free tier
+    if (process.env.RENDER) {
+      const siteUrl = process.env.RENDER_EXTERNAL_URL || 'https://t3e-interface.onrender.com';
+      setInterval(() => {
+        fetch(siteUrl + '/health').catch(() => {});
+      }, 14 * 60 * 1000);
+      console.log('  Keep-alive actif (ping /health toutes les 14 min)');
+    }
+  });
 }
 
-start();
+module.exports = app;

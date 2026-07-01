@@ -1,8 +1,7 @@
 const JSZip = require('jszip');
-const path = require('path');
-const fs = require('fs');
+const { downloadBuffer, BUCKETS } = require('./storage');
 
-const TEMPLATE_PATH = path.join(__dirname, '..', '..', 'documents', 'bordereau-template.docx');
+const TEMPLATE_KEY = 'bordereau-template.docx';
 
 function escapeXml(str) {
   return String(str || '')
@@ -84,7 +83,8 @@ function cocherFicheTechnique(xml) {
 }
 
 async function remplirBordereau(champs, buf) {
-  const templateBuf = buf || fs.readFileSync(TEMPLATE_PATH);
+  const templateBuf = buf || await downloadBuffer(BUCKETS.DOCUMENTS, TEMPLATE_KEY);
+  if (!templateBuf) throw new Error('Template bordereau introuvable (Supabase Storage).');
   const zip = await JSZip.loadAsync(templateBuf);
   let xml = await zip.file('word/document.xml').async('string');
 

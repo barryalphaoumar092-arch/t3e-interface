@@ -3,15 +3,15 @@ const router = express.Router();
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { parseDevis } = require('../services/document-parser');
 const { remplirBordereau } = require('../services/bordereau-filler');
 const { convertirDocxEnPdf } = require('../services/docx-to-pdf');
 const { PDFDocument } = require('pdf-lib');
 const JSZip = require('jszip');
+const { downloadBuffer, listFiles, stripAccents, BUCKETS } = require('../services/storage');
 
-const UPLOADS_DIR = path.join(__dirname, '..', '..', 'uploads');
-const FT_DIR = path.join(__dirname, '..', '..', 'documents', 'FT');
-const upload = multer({ dest: UPLOADS_DIR, limits: { fileSize: 20 * 1024 * 1024 } });
+const upload = multer({ dest: os.tmpdir(), limits: { fileSize: 20 * 1024 * 1024 } });
 const uploadFields = upload.fields([
   { name: 'devis', maxCount: 1 },
   { name: 'bordereau', maxCount: 1 },
@@ -91,34 +91,43 @@ IMPORTANT : "produits" doit contenir EXACTEMENT ${produitsSelectionnes.length} e
 }
 
 // ══════════════════════════════════════════════════════════════
-//  AUTO-MATCH FICHES TECHNIQUES — scan documents/FT/{Fabricant}/
+//  AUTO-MATCH FICHES TECHNIQUES — bucket Supabase "fiches-techniques",
+//  organise en dossiers virtuels {Fabricant}/{fichier}.pdf
 // ══════════════════════════════════════════════════════════════
-function trouverFichesTechniques(fabricant, titre) {
-  if (!fabricant || !fs.existsSync(FT_DIR)) return [];
+let _ftFoldersCache = null;
+let _ftFoldersCacheAt = 0;
 
-  let fabDir = path.join(FT_DIR, fabricant);
-
-  if (!fs.existsSync(fabDir)) {
-    const allDirs = [];
-    try {
-      for (const d of fs.readdirSync(FT_DIR)) {
-        const full = path.join(FT_DIR, d);
-        if (fs.statSync(full).isDirectory()) allDirs.push(d);
-      }
-    } catch (_) {}
-
-    const fabLower = fabricant.toLowerCase();
-    const match = allDirs.find(d => d.toLowerCase() === fabLower)
-      || allDirs.find(d => d.toLowerCase().includes(fabLower.substring(0, 4)))
-      || allDirs.find(d => fabLower.includes(d.toLowerCase().substring(0, 4)));
-
-    if (!match) return [];
-    fabDir = path.join(FT_DIR, match);
+async function listerDossiersFT() {
+  const now = Date.now();
+  if (_ftFoldersCache && now - _ftFoldersCacheAt < 5 * 60 * 1000) return _ftFoldersCache;
+  let entries = [];
+  try { entries = await listFiles(BUCKETS.FICHES_TECHNIQUES, ''); } catch (e) {
+    console.error('[FT] Erreur listage dossiers:', e.message);
   }
+  _ftFoldersCache = entries.filter(e => e.id === null).map(e => e.name);
+  _ftFoldersCacheAt = now;
+  return _ftFoldersCache;
+}
 
-  let pdfs;
-  try { pdfs = fs.readdirSync(fabDir).filter(f => f.endsWith('.pdf')); } catch (_) { return []; }
-  if (!titre || pdfs.length === 0) return pdfs.slice(0, 1).map(f => path.join(fabDir, f));
+async function listerPdfsDossierFT(dossier) {
+  let entries = [];
+  try { entries = await listFiles(BUCKETS.FICHES_TECHNIQUES, dossier); } catch (_) { return []; }
+  return entries.filter(e => e.id !== null && e.name.toLowerCase().endsWith('.pdf')).map(e => e.name);
+}
+
+async function trouverFichesTechniques(fabricant, titre) {
+  if (!fabricant) return [];
+
+  const allDirs = await listerDossiersFT();
+  const fabLower = stripAccents(fabricant).toLowerCase();
+  const match = allDirs.find(d => stripAccents(d).toLowerCase() === fabLower)
+    || allDirs.find(d => stripAccents(d).toLowerCase().includes(fabLower.substring(0, 4)))
+    || allDirs.find(d => fabLower.includes(stripAccents(d).toLowerCase().substring(0, 4)));
+
+  if (!match) return [];
+
+  const pdfs = await listerPdfsDossierFT(match);
+  if (!titre || pdfs.length === 0) return pdfs.slice(0, 1).map(f => `${match}/${f}`);
 
   const keywords = titre.toLowerCase()
     .replace(/[^a-zàâäéèêëîïôùûü0-9]+/g, ' ')
@@ -134,11 +143,11 @@ function trouverFichesTechniques(fabricant, titre) {
   const meilleur = scored[0];
   if (meilleur && meilleur.score > 0) {
     console.log('[FT] Match par titre:', meilleur.file, '(score:', meilleur.score + ')');
-    return [path.join(fabDir, meilleur.file)];
+    return [`${match}/${meilleur.file}`];
   }
 
-  console.log('[FT] Aucun match par titre pour "' + titre + '" dans ' + path.basename(fabDir) + ', fallback sur les 2 premiers PDFs');
-  return pdfs.slice(0, 2).map(f => path.join(fabDir, f));
+  console.log('[FT] Aucun match par titre pour "' + titre + '" dans ' + match + ', fallback sur les 2 premiers PDFs');
+  return pdfs.slice(0, 2).map(f => `${match}/${f}`);
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -249,13 +258,14 @@ async function telechargerFT(url) {
   }
 }
 
-// Résout les FT d'un produit : 1) dossier local documents/FT/, 2) lien_fiche_technique (web)
+// Résout les FT d'un produit : 1) bucket Supabase fiches-techniques, 2) lien_fiche_technique (web)
 async function resoudreFichesTechniques(db, fabricant, titre) {
   const buffers = [];
 
-  const cheminsLocaux = trouverFichesTechniques(fabricant, titre);
-  for (const p of cheminsLocaux) {
-    if (fs.existsSync(p)) buffers.push(fs.readFileSync(p));
+  const clesLocales = await trouverFichesTechniques(fabricant, titre);
+  for (const key of clesLocales) {
+    const buf = await downloadBuffer(BUCKETS.FICHES_TECHNIQUES, key);
+    if (buf) buffers.push(buf);
   }
   if (buffers.length > 0) return buffers;
 
@@ -273,10 +283,11 @@ async function resoudreFichesTechniques(db, fabricant, titre) {
 async function resoudreFichesTechniquesAvecSelection(db, fabricant, titre, selection) {
   if (selection === '__NONE__') return [];
   if (selection && selection !== '__AUTO__') {
-    const fullPath = path.resolve(FT_DIR, selection);
-    if (fullPath.startsWith(path.resolve(FT_DIR)) && fs.existsSync(fullPath)) {
-      console.log('[FT] Sélection manuelle utilisée:', selection);
-      return [fs.readFileSync(fullPath)];
+    const safeKey = selection.split('/').filter(seg => seg && seg !== '..').join('/');
+    const buf = safeKey ? await downloadBuffer(BUCKETS.FICHES_TECHNIQUES, safeKey) : null;
+    if (buf) {
+      console.log('[FT] Sélection manuelle utilisée:', safeKey);
+      return [buf];
     }
     console.log('[FT] Sélection manuelle introuvable:', selection, '- fallback auto');
   }
@@ -299,18 +310,12 @@ async function fusionnerPdfBuffers(buffers) {
 // ══════════════════════════════════════════════════════════════
 //  LISTES POUR LES MENUS DÉROULANTS (fabricant / fournisseur / FT)
 // ══════════════════════════════════════════════════════════════
-function listerFTParFabricant() {
+async function listerFTParFabricant() {
   const result = {};
-  if (!fs.existsSync(FT_DIR)) return result;
-  let dirs;
-  try { dirs = fs.readdirSync(FT_DIR); } catch (_) { return result; }
+  const dirs = await listerDossiersFT();
   for (const d of dirs) {
-    const full = path.join(FT_DIR, d);
-    try {
-      if (!fs.statSync(full).isDirectory()) continue;
-      const pdfs = fs.readdirSync(full).filter(f => f.toLowerCase().endsWith('.pdf')).sort((a, b) => a.localeCompare(b));
-      if (pdfs.length > 0) result[d] = pdfs;
-    } catch (_) {}
+    const pdfs = (await listerPdfsDossierFT(d)).sort((a, b) => a.localeCompare(b));
+    if (pdfs.length > 0) result[d] = pdfs;
   }
   return result;
 }
@@ -323,18 +328,13 @@ async function listerFabricantsEtFournisseurs(db) {
     if (m.fabricant) fabSet.add(m.fabricant.trim());
     if (m.fournisseur) fourSet.add(m.fournisseur.trim());
   }
-  const ftParFab = listerFTParFabricant();
+  const ftParFab = await listerFTParFabricant();
   for (const f of Object.keys(ftParFab)) fabSet.add(f);
 
   return {
     fabricants: [...fabSet].filter(Boolean).sort((a, b) => a.localeCompare(b)),
     fournisseurs: [...fourSet].filter(Boolean).sort((a, b) => a.localeCompare(b)),
   };
-}
-
-function cheminRelatifFT(absPath) {
-  if (!absPath) return '';
-  return path.relative(FT_DIR, absPath).split(path.sep).join('/');
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -422,7 +422,9 @@ router.post('/analyser', uploadFields, async (req, res) => {
     ADRESSE: adresse?.trim() || '7550 Rue Saint-Patrick, Montréal, QC H8N 1V1',
   };
 
-  const produits = produitsBase.map((mat, i) => {
+  const produits = [];
+  for (let i = 0; i < produitsBase.length; i++) {
+    const mat = produitsBase[i];
     const ctx = contexteProduits[i] || {};
     const p = {
       TITRE: mat.nom,
@@ -434,14 +436,14 @@ router.post('/analyser', uploadFields, async (req, res) => {
       REMARQUE: '',
       ft_url: mat.lien_fiche_technique || '',
     };
-    p.ft_chemins = trouverFichesTechniques(p.FABRICANT, p.TITRE);
+    p.ft_chemins = await trouverFichesTechniques(p.FABRICANT, p.TITRE);
     p.ft_noms = p.ft_chemins.map(c => path.basename(c));
     if (p.ft_noms.length === 0 && p.ft_url) {
       p.ft_noms = [nomFichierDepuisUrl(p.ft_url) + ' (web)'];
     }
-    p.ft_selection = p.ft_chemins.length > 0 ? cheminRelatifFT(p.ft_chemins[0]) : '__AUTO__';
-    return p;
-  });
+    p.ft_selection = p.ft_chemins.length > 0 ? p.ft_chemins[0] : '__AUTO__';
+    produits.push(p);
+  }
 
   console.log('[analyser]', produits.length, 'produits sélectionnés par l\'utilisateur pour', nomProjet);
 
@@ -489,7 +491,7 @@ router.get('/reviser/:id', async (req, res) => {
         DESCRIPTION: c.REMARQUE || '',
         REMARQUE: '',
         ft_noms: data.ft_chemins ? data.ft_chemins.map(p => path.basename(p)) : [],
-        ft_selection: data.ft_chemins && data.ft_chemins.length > 0 ? cheminRelatifFT(data.ft_chemins[0]) : '__AUTO__',
+        ft_selection: data.ft_chemins && data.ft_chemins.length > 0 ? data.ft_chemins[0] : '__AUTO__',
       }],
       ia_erreur: data.ia_erreur || '',
     };
@@ -501,7 +503,7 @@ router.get('/reviser/:id', async (req, res) => {
   }
 
   const { fabricants, fournisseurs } = await listerFabricantsEtFournisseurs(req.db);
-  const ftParFabricant = listerFTParFabricant();
+  const ftParFabricant = await listerFTParFabricant();
 
   res.render('bordereau-reviser', {
     bordereau: row,

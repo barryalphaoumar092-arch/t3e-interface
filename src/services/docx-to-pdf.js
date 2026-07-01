@@ -1,9 +1,10 @@
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { execFile } = require('child_process');
 const crypto = require('crypto');
 
-const TMP_DIR = path.join(__dirname, '..', '..', 'uploads');
+const TMP_DIR = os.tmpdir();
 
 // Convertit le .docx REMPLI (sortie de remplirBordereau, contenu réel inchangé)
 // en PDF via LibreOffice headless. Rendu fidèle au template Word (logo, tableaux,

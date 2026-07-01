@@ -48,7 +48,7 @@ async function lancer() {
       if (d.annee) html += ' <span class="badge bg-info">' + esc(d.annee) + '</span>';
       html += '<p class="text-muted small mb-1">' + esc(d.description) + '</p>';
       html += '<small>Source: ' + esc(d.source || '-') + '</small>';
-      html += '<div class="mt-2"><a href="/documents/' + encodeURIComponent(d.fichier) + '" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i> Ouvrir</a></div>';
+      html += '<div class="mt-2"><a href="/connaissances/fichier/' + d.id + '" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i> Ouvrir</a></div>';
       html += '</div></div>';
     });
     html += '</div>';

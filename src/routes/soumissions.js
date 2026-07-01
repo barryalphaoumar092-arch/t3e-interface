@@ -1,12 +1,12 @@
 const express = require('express');
 const router = express.Router();
-const path = require('path');
-const fs = require('fs');
+const os = require('os');
 const multer = require('multer');
 const { generateSoumission, listTemplates, selectTemplate } = require('../services/soumission-generator');
 const { parseDevis, extractProjectInfo } = require('../services/document-parser');
+const { downloadBuffer, BUCKETS } = require('../services/storage');
 
-const uploadDevis = multer({ dest: path.join(__dirname, '../../uploads'), limits: { fileSize: 20 * 1024 * 1024 } });
+const uploadDevis = multer({ dest: os.tmpdir(), limits: { fileSize: 20 * 1024 * 1024 } });
 
 const SYSTEMES = [
   { value: 'BUR', label: 'BUR - Asphalte et Gravier (2-4-5 plis)' },
@@ -116,11 +116,11 @@ router.get('/', async (req, res) => {
 });
 
 // API: template preview (DOIT être avant /:id pour ne pas être intercepté)
-router.get('/api/template-preview', (req, res) => {
+router.get('/api/template-preview', async (req, res) => {
   const { systeme, type_travaux } = req.query;
   const key = selectTemplate(systeme || '', type_travaux || '');
   if (!key) return res.json({ found: false });
-  const templates = listTemplates();
+  const templates = await listTemplates();
   const tpl = templates.find(t => t.key === key);
   res.json({ found: true, ...tpl });
 });
@@ -483,12 +483,14 @@ router.get('/:id/telecharger', async (req, res) => {
     return res.status(404).send('Fichier non trouvé');
   }
 
-  const filePath = path.join(__dirname, '../../uploads/soumissions', result.rows[0].fichier_genere);
-  if (!fs.existsSync(filePath)) {
+  const buffer = await downloadBuffer(BUCKETS.SOUMISSIONS_GENEREES, result.rows[0].fichier_genere);
+  if (!buffer) {
     return res.status(404).send('Le fichier a été supprimé. Regénérez le document.');
   }
   const downloadName = `Soumission_${result.rows[0].numero}.docx`;
-  res.download(filePath, downloadName);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+  res.setHeader('Content-Disposition', `attachment; filename="${downloadName}"`);
+  res.send(buffer);
 });
 
 // Changer le statut

@@ -9,6 +9,13 @@ if (url && url.startsWith('libsql://')) {
   db = createTursoClient(url, authToken);
   console.log('Mode: Turso cloud');
 } else {
+  // Fallback SQLite local (dev uniquement) : le fichier vit dans data/, qui
+  // doit exister avant l'ouverture de la connexion.
+  const fs = require('fs');
+  const path = require('path');
+  const dataDir = path.join(__dirname, '..', '..', 'data');
+  if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+
   const { createClient } = require('@libsql/client');
   db = createClient({ url: url || 'file:./data/t3e.db', authToken });
   console.log('Mode: Local SQLite');

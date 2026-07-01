@@ -2,12 +2,23 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const path = require('path');
+const { uploadBuffer, downloadBuffer, sanitizeKey, BUCKETS } = require('../services/storage');
 
-const storage = multer.diskStorage({
-  destination: path.join(__dirname, '..', '..', 'documents'),
-  filename: (req, file, cb) => cb(null, file.originalname)
-});
-const upload = multer({ storage });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+
+const MIME_TYPES = {
+  '.pdf': 'application/pdf',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.doc': 'application/msword',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.xls': 'application/vnd.ms-excel',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+};
+function mimeFor(filename) {
+  return MIME_TYPES[path.extname(filename).toLowerCase()] || 'application/octet-stream';
+}
 
 router.get('/', async (req, res) => {
   const db = req.db;
@@ -79,12 +90,28 @@ router.post('/ajouter', upload.single('fichier'), async (req, res) => {
 
   const ext = path.extname(file.originalname).toLowerCase().replace('.', '');
   const relativePath = 'documents/' + file.originalname;
+  await uploadBuffer(BUCKETS.DOCUMENTS, sanitizeKey(file.originalname), file.buffer, mimeFor(file.originalname));
   await db.execute({
     sql: `INSERT INTO documents (titre, nom_fichier, chemin_fichier, categorie_id, type_fichier, taille_octets, description, source, annee, mots_cles)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [titre, file.originalname, relativePath, parseInt(categorie_id), ext, file.size, description || null, source || null, annee || null, mots_cles || null]
   });
   res.redirect('/connaissances?success=added');
+});
+
+router.get('/fichier/:id', async (req, res) => {
+  const db = req.db;
+  const r = await db.execute({ sql: 'SELECT nom_fichier, chemin_fichier FROM documents WHERE id = ?', args: [parseInt(req.params.id)] });
+  if (r.rows.length === 0) return res.status(404).send('Document introuvable');
+
+  const { nom_fichier, chemin_fichier } = r.rows[0];
+  const key = sanitizeKey(path.basename(chemin_fichier || nom_fichier));
+  const buffer = await downloadBuffer(BUCKETS.DOCUMENTS, key);
+  if (!buffer) return res.status(404).send('Fichier introuvable dans le stockage.');
+
+  res.setHeader('Content-Type', mimeFor(nom_fichier));
+  res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(nom_fichier)}"`);
+  res.send(buffer);
 });
 
 router.post('/supprimer/:id', async (req, res) => {

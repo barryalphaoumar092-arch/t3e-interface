@@ -1,8 +1,5 @@
-const fs = require('fs');
-const path = require('path');
 const JSZip = require('jszip');
-
-const TEMPLATES_DIR = path.join(__dirname, '../../documents/templates-soumission');
+const { uploadBuffer, downloadBuffer, listFiles, sanitizeKey, BUCKETS } = require('./storage');
 
 const TEMPLATE_MAP = {
   'BUR_REFECTION':       { fr: 'T3E - BUR 2-4-5 PLIS REFECTION (FR).docx',    en: 'T3E - BUR 2-4-5 PLIS REFECTION (EN).docx' },
@@ -606,13 +603,13 @@ async function generateSoumission(soumission) {
   }
 
   const templateFile = getTemplateFile(templateKey, soumission.langue);
-  const templatePath = path.join(TEMPLATES_DIR, templateFile);
+  const templateKeyStorage = sanitizeKey(templateFile);
+  const zipData = await downloadBuffer(BUCKETS.TEMPLATES_SOUMISSION, templateKeyStorage);
 
-  if (!fs.existsSync(templatePath)) {
-    throw new Error(`Template introuvable: ${templatePath}`);
+  if (!zipData) {
+    throw new Error(`Template introuvable (Supabase Storage): ${templateKeyStorage}`);
   }
 
-  const zipData = fs.readFileSync(templatePath);
   const zip = await JSZip.loadAsync(zipData);
 
   // Appliquer les remplacements à TOUS les fichiers XML (document + headers + footers)
@@ -663,34 +660,30 @@ async function generateSoumission(soumission) {
     if (changed) zip.file(xmlFile, xml);
   }
 
-  const outputDir = path.join(__dirname, '../../uploads/soumissions');
-  if (!fs.existsSync(outputDir)) {
-    fs.mkdirSync(outputDir, { recursive: true });
-  }
-
   const safeNumero = (soumission.numero || 'DRAFT').replace(/[^a-zA-Z0-9-]/g, '_');
   const outputFilename = `Soumission_${safeNumero}_${Date.now()}.docx`;
-  const outputPath = path.join(outputDir, outputFilename);
 
   const outputBuffer = await zip.generateAsync({ type: 'nodebuffer' });
-  fs.writeFileSync(outputPath, outputBuffer);
+  await uploadBuffer(BUCKETS.SOUMISSIONS_GENEREES, outputFilename, outputBuffer,
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
 
   return {
     filename: outputFilename,
-    filepath: outputPath,
     templateUsed: templateFile,
     templateKey
   };
 }
 
-function listTemplates() {
+async function listTemplates() {
+  const entries = await listFiles(BUCKETS.TEMPLATES_SOUMISSION, '');
+  const disponibles = new Set(entries.filter(e => e.id !== null).map(e => e.name));
   return Object.entries(TEMPLATE_MAP).map(([key, files]) => ({
     key,
     label: key.replace(/_/g, ' '),
     fileFr: files.fr,
     fileEn: files.en,
-    existsFr: fs.existsSync(path.join(TEMPLATES_DIR, files.fr)),
-    existsEn: fs.existsSync(path.join(TEMPLATES_DIR, files.en)),
+    existsFr: disponibles.has(sanitizeKey(files.fr)),
+    existsEn: disponibles.has(sanitizeKey(files.en)),
   }));
 }
 

@@ -68,7 +68,7 @@
         <td><%= d.annee || '-' %></td>
         <td><%= d.taille_mb %> Mo</td>
         <td>
-          <a href="/documents/<%= encodeURIComponent(d.nom_fichier) %>" target="_blank" class="btn btn-sm btn-outline-primary" title="Ouvrir"><i class="bi bi-eye"></i></a>
+          <a href="/connaissances/fichier/<%= d.id %>" target="_blank" class="btn btn-sm btn-outline-primary" title="Ouvrir"><i class="bi bi-eye"></i></a>
           <form method="POST" action="/connaissances/supprimer/<%= d.id %>" class="d-inline" onsubmit="var mdp = prompt('Mot de passe administrateur :'); if (!mdp) return false; this.querySelector('[name=mdp_admin]').value = mdp; return true;">
             <input type="hidden" name="mdp_admin" value="">
             <button type="submit" class="btn btn-sm btn-outline-danger" title="Retirer"><i class="bi bi-trash"></i></button>
