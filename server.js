@@ -31,9 +31,12 @@ app.get('/health', (req, res) => res.json({ status: 'ok', ts: Date.now() }));
 // (Render) alors que l'appelant ne l'a pas (Vercel). Protégé par secret partagé
 // car public sur Internet, avant le middleware d'auth car sans cookie de session.
 app.post('/internal/convertir-docx-pdf', express.raw({ type: '*/*', limit: '25mb' }), async (req, res) => {
-  const secret = process.env.CONVERT_SERVICE_SECRET;
-  const fourni = req.headers['x-convert-secret'];
-  const valide = secret && typeof fourni === 'string'
+  // .trim() car les dashboards d'env vars (Render/Vercel) ajoutent parfois un
+  // espace ou saut de ligne invisible en fin de valeur lors du copier-coller.
+  const secret = (process.env.CONVERT_SERVICE_SECRET || '').trim();
+  const fourni = typeof req.headers['x-convert-secret'] === 'string'
+    ? req.headers['x-convert-secret'].trim() : '';
+  const valide = secret.length > 0 && fourni.length > 0
     && Buffer.byteLength(fourni) === Buffer.byteLength(secret)
     && crypto.timingSafeEqual(Buffer.from(fourni), Buffer.from(secret));
   if (!valide) return res.status(403).send('Forbidden');

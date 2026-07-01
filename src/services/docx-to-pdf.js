@@ -66,8 +66,8 @@ function convertirDocxEnPdfLocal(docxBuffer) {
 // LibreOffice (voir Dockerfile) — c'est le même moteur, le même .docx, aucune
 // recréation du contenu ou de la mise en page, juste exécuté ailleurs.
 async function convertirDocxEnPdfDistant(docxBuffer) {
-  const url = process.env.CONVERT_SERVICE_URL;
-  const secret = process.env.CONVERT_SERVICE_SECRET;
+  const url = (process.env.CONVERT_SERVICE_URL || '').trim();
+  const secret = (process.env.CONVERT_SERVICE_SECRET || '').trim();
   if (!url || !secret) return null;
 
   const controller = new AbortController();
