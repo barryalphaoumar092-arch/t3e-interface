@@ -245,7 +245,8 @@ async function mapperChampsBordereau(runsTexte, champsAPlacer) {
 
   const systemPrompt = `Tu analyses un bordereau de transmission (formulaire Word rempli par un sous-traitant en couverture) pour trouver où écrire des informations manquantes.
 On te donne la liste numérotée de tous les textes visibles du document, dans l'ordre. Pour chaque champ demandé, réponds avec l'index du texte (libellé) juste après lequel sa valeur doit être écrite, ou null si aucun endroit pertinent n'existe dans ce document.
-Utilise le contexte (titres de section comme SOUS-TRAITANT / FOURNISSEUR / ENTREPRENEUR) pour choisir la bonne occurrence quand un libellé comme "Nom :" apparaît plusieurs fois — FOURNISSEUR/FABRICANT va sous la section fournisseur/manufacturier, jamais sous SOUS-TRAITANT ou ENTREPRENEUR (qui désignent T3E elle-même).
+RÈGLE IMPORTANTE : préfère toujours un libellé de champ précis qui se termine par ":" (ex: "Nom :", "Coordonnées :", "Responsable :") plutôt qu'un titre de section en majuscules sans deux-points (ex: "SOUS-TRAITANT", "FOURNISSEUR", "ENTREPRENEUR") — le titre de section sert seulement à savoir QUEL groupe de champs ":" lui appartient, jamais à recevoir directement une valeur.
+Utilise ces titres de section comme contexte pour choisir la bonne occurrence quand un libellé comme "Nom :" apparaît plusieurs fois dans le document — FOURNISSEUR/FABRICANT va sous le "Nom :" de la section fournisseur/manufacturier, jamais sous celui de SOUS-TRAITANT ou ENTREPRENEUR (qui désignent T3E elle-même).
 Si deux champs correspondent au même libellé combiné (ex: "Devis (section et article)"), donne le même index aux deux.
 Ne réponds jamais avec un index qui n'est pas un libellé (évite les longs paragraphes de texte légal).`;
 
