@@ -5,16 +5,12 @@ const crypto = require('crypto');
 
 const TMP_DIR = path.join(__dirname, '..', '..', 'uploads');
 
-// Convertit le .docx REMPLI (sortie de remplirBordereau, contenu réel inchangé)
-// en PDF via LibreOffice headless. Rendu fidèle au template Word (logo, tableaux,
-// mise en page identiques) car c'est le vrai moteur de rendu Word-compatible,
-// contrairement à une recréation/réinterprétation du contenu.
-function convertirDocxEnPdf(docxBuffer) {
+function convertirViaLibreOffice(inputBuffer, formatEntree, formatSortie) {
   return new Promise((resolve, reject) => {
     const id = crypto.randomBytes(8).toString('hex');
     const workDir = path.join(TMP_DIR, `lo_${id}`);
-    const docxPath = path.join(workDir, 'bordereau.docx');
-    const pdfPath = path.join(workDir, 'bordereau.pdf');
+    const inputPath = path.join(workDir, `doc.${formatEntree}`);
+    const outputPath = path.join(workDir, `doc.${formatSortie}`);
     const profileDir = path.join(workDir, 'profile');
 
     const nettoyer = () => {
@@ -23,7 +19,7 @@ function convertirDocxEnPdf(docxBuffer) {
 
     try {
       fs.mkdirSync(workDir, { recursive: true });
-      fs.writeFileSync(docxPath, docxBuffer);
+      fs.writeFileSync(inputPath, inputBuffer);
     } catch (e) {
       nettoyer();
       return reject(e);
@@ -35,21 +31,21 @@ function convertirDocxEnPdf(docxBuffer) {
       '--headless',
       '--norestore',
       `-env:UserInstallation=file://${profileDir}`,
-      '--convert-to', 'pdf',
+      '--convert-to', formatSortie,
       '--outdir', workDir,
-      docxPath,
+      inputPath,
     ];
 
     execFile('soffice', args, { timeout: 30000 }, (err) => {
       if (err) {
         nettoyer();
-        return reject(new Error('Conversion LibreOffice échouée: ' + err.message));
+        return reject(new Error(`LibreOffice ${formatEntree}→${formatSortie} échoué: ${err.message}`));
       }
       try {
-        if (!fs.existsSync(pdfPath)) {
-          throw new Error('LibreOffice n\'a pas produit de PDF');
+        if (!fs.existsSync(outputPath)) {
+          throw new Error(`LibreOffice n'a pas produit de .${formatSortie}`);
         }
-        const buf = fs.readFileSync(pdfPath);
+        const buf = fs.readFileSync(outputPath);
         nettoyer();
         resolve(buf);
       } catch (e) {
@@ -60,4 +56,12 @@ function convertirDocxEnPdf(docxBuffer) {
   });
 }
 
-module.exports = { convertirDocxEnPdf };
+function convertirDocxEnPdf(docxBuffer) {
+  return convertirViaLibreOffice(docxBuffer, 'docx', 'pdf');
+}
+
+function convertirPdfEnDocx(pdfBuffer) {
+  return convertirViaLibreOffice(pdfBuffer, 'pdf', 'docx');
+}
+
+module.exports = { convertirDocxEnPdf, convertirPdfEnDocx };

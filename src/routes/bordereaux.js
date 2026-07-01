@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { parseDevis } = require('../services/document-parser');
 const { remplirBordereau } = require('../services/bordereau-filler');
-const { convertirDocxEnPdf } = require('../services/docx-to-pdf');
+const { convertirDocxEnPdf, convertirPdfEnDocx } = require('../services/docx-to-pdf');
 const { PDFDocument } = require('pdf-lib');
 const JSZip = require('jszip');
 
@@ -580,10 +580,20 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
     const num = String(i + 1).padStart(2, '0');
     const nomFichier = (titres[i] || 'Produit').replace(/[^a-zA-Z0-9àâäéèêëîïôùûüÀÉ _-]/g, '').substring(0, 40).trim();
 
-    // 1. Remplir le .docx (étapes inchangées), convertir en PDF, puis fusionner
+    // 1. Remplir le template (DOCX ou PDF), convertir en PDF, puis fusionner
     //    avec la fiche technique en UN SEUL PDF (bordereau + FT à la suite)
     try {
-      const docxBuf = await remplirBordereau(champs, bordereauBuffer);
+      const estPdfTemplate = bordereauBuffer.length >= 4 &&
+        bordereauBuffer.slice(0, 4).toString('latin1') === '%PDF';
+
+      let docxBuf;
+      if (estPdfTemplate) {
+        console.log(`[generer] ${num} Template PDF détecté → conversion PDF→DOCX via LibreOffice`);
+        const docxTemplate = await convertirPdfEnDocx(bordereauBuffer);
+        docxBuf = await remplirBordereau(champs, docxTemplate);
+      } else {
+        docxBuf = await remplirBordereau(champs, bordereauBuffer);
+      }
 
       let ftBuffers = [];
       try {
