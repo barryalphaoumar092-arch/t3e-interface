@@ -26,6 +26,30 @@ app.use(express.urlencoded({ extended: true }));
 // Endpoint public pour le keep-alive (avant le middleware d'auth)
 app.get('/health', (req, res) => res.json({ status: 'ok', ts: Date.now() }));
 
+// Endpoint interne (appelé serveur-à-serveur par docx-to-pdf.js) : convertit un
+// .docx en PDF via LibreOffice, exécuté ici quand cette instance a soffice
+// (Render) alors que l'appelant ne l'a pas (Vercel). Protégé par secret partagé
+// car public sur Internet, avant le middleware d'auth car sans cookie de session.
+app.post('/internal/convertir-docx-pdf', express.raw({ type: '*/*', limit: '25mb' }), async (req, res) => {
+  const secret = process.env.CONVERT_SERVICE_SECRET;
+  const fourni = req.headers['x-convert-secret'];
+  const valide = secret && typeof fourni === 'string'
+    && Buffer.byteLength(fourni) === Buffer.byteLength(secret)
+    && crypto.timingSafeEqual(Buffer.from(fourni), Buffer.from(secret));
+  if (!valide) return res.status(403).send('Forbidden');
+
+  if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+    return res.status(400).send('Corps .docx manquant');
+  }
+  try {
+    const { convertirDocxEnPdfLocal } = require('./src/services/docx-to-pdf');
+    const pdfBuf = await convertirDocxEnPdfLocal(req.body);
+    res.type('application/pdf').send(pdfBuf);
+  } catch (e) {
+    res.status(500).send('Conversion échouée: ' + e.message);
+  }
+});
+
 // Session signee (HMAC), sans etat serveur — necessaire car les fonctions
 // serverless (Vercel) ne partagent pas de memoire entre invocations/instances.
 function signSession() {
