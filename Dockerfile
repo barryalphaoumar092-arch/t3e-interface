@@ -1,7 +1,7 @@
-FROM node:22-slim
+FROM node:22-bookworm
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
+    apt-get install -y \
       libreoffice-writer \
       fonts-liberation \
       fonts-liberation2 \
@@ -9,6 +9,13 @@ RUN apt-get update && \
       fontconfig && \
     fc-cache -fv && \
     rm -rf /var/lib/apt/lists/*
+
+# Vérifier que LibreOffice démarre — si cette ligne échoue, le build échoue
+# et les logs Render montrent l'erreur exacte
+RUN soffice --headless --version
+
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
 
 WORKDIR /app
 
