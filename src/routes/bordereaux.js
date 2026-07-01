@@ -6,6 +6,7 @@ const fs = require('fs');
 const { parseDevis } = require('../services/document-parser');
 const { remplirBordereau } = require('../services/bordereau-filler');
 const { convertirDocxEnPdf, convertirPdfEnDocx } = require('../services/docx-to-pdf');
+const { creerBordereauPdf } = require('../services/bordereau-pdf');
 const { PDFDocument } = require('pdf-lib');
 const JSZip = require('jszip');
 
@@ -614,19 +615,26 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
         erreurPdf = ePdf;
       }
 
+      if (!bordereauPdfBuf) {
+        // LibreOffice indisponible → générer le PDF directement via pdfkit (format T3E standard)
+        console.log(`[generer] ${num} LibreOffice KO, fallback pdfkit pour:`, titres[i]);
+        try {
+          bordereauPdfBuf = await creerBordereauPdf(champs);
+        } catch (ePdfkit) {
+          console.error(`[generer] ${num} Erreur pdfkit:`, ePdfkit.message);
+        }
+      }
+
       if (bordereauPdfBuf) {
-        // Bordereau PDF + FT = 1 seul document PDF
         const finalPdf = await fusionnerPdfBuffers([bordereauPdfBuf, ...ftBuffers]);
         if (finalPdf) {
           zip.file(`${num}_${nomFichier}.pdf`, finalPdf);
-          console.log(`[generer] ${num} PDF fusionné OK (bordereau + ${ftBuffers.length} FT): ${titres[i]}`);
+          console.log(`[generer] ${num} PDF OK (${ftBuffers.length} FT): ${titres[i]}`);
         }
       } else {
-        // Filet de sécurité : conversion PDF échouée → .docx + FT séparée
+        // Les deux méthodes ont échoué — dernier recours : .docx seul
         zip.file(`${num}_${nomFichier}.docx`, docxBuf);
-        zip.file(`${num}_${nomFichier}_ERREUR_conversion_PDF.txt`, 'La conversion en PDF a échoué :\n' + (erreurPdf ? erreurPdf.stack : 'erreur inconnue'));
-        const ftPdf = await fusionnerPdfBuffers(ftBuffers);
-        if (ftPdf) zip.file(`${num}_${nomFichier}_FT.pdf`, ftPdf);
+        console.error(`[generer] ${num} Aucune méthode PDF n'a fonctionné pour:`, titres[i]);
       }
     } catch (e) {
       console.error(`[generer] ${num} Erreur remplissage:`, e.message);

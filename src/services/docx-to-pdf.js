@@ -34,19 +34,23 @@ function convertirViaLibreOffice(inputBuffer, formatEntree, formatSortie) {
       return reject(e);
     }
 
-    // -env:UserInstallation isole le profil LibreOffice par conversion pour
-    // éviter les conflits de verrou entre appels successifs/concurrents
     const args = [
       '--headless',
       '--norestore',
+      '--nofirststartwizard',
       `-env:UserInstallation=file://${profileDir}`,
       '--convert-to', formatSortie,
       '--outdir', workDir,
       inputPath,
     ];
 
-    // HOME nécessaire pour que LibreOffice puisse écrire ses fichiers temporaires
-    const env = Object.assign({}, process.env, { HOME: process.env.HOME || '/tmp' });
+    const env = Object.assign({}, process.env, {
+      HOME: process.env.HOME || '/tmp',
+      LANG: 'C.UTF-8',
+      LC_ALL: 'C.UTF-8',
+      // Désactiver dbus — LibreOffice peut échouer si dbus n'est pas disponible en conteneur
+      DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS || '/dev/null',
+    });
 
     let tentative = 0;
 
