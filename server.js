@@ -88,7 +88,7 @@ async function start() {
     }
 
     await initDb();
-    app.listen(PORT, '0.0.0.0', () => {
+    app.listen(PORT, '0.0.0.0', async () => {
       console.log(`\n  Interface T3E demarree:`);
       console.log(`    Local:  http://localhost:${PORT}`);
       if (!process.env.TURSO_DATABASE_URL) {
@@ -96,6 +96,24 @@ async function start() {
       } else {
         console.log(`    Mode:   Cloud (Turso)`);
       }
+
+      // Vérifier la disponibilité de LibreOffice au démarrage
+      const { execFile } = require('child_process');
+      const sofficePaths = ['soffice', '/usr/bin/soffice', '/usr/lib/libreoffice/program/soffice.bin'];
+      let sofound = null;
+      for (const p of sofficePaths) {
+        await new Promise(r => execFile(p, ['--version'], { timeout: 10000 }, (err, stdout) => {
+          if (!err && stdout) { sofound = p + ': ' + stdout.trim(); }
+          r();
+        }));
+        if (sofound) break;
+      }
+      if (sofound) {
+        console.log(`  LibreOffice: ${sofound}`);
+      } else {
+        console.log('  LibreOffice: INTROUVABLE — conversion PDF désactivée (bordereaux en .docx)');
+      }
+
       console.log();
 
       // Auto-ping toutes les 14 min pour éviter le cold start Render free tier
