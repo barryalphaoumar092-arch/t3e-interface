@@ -225,8 +225,51 @@ Si une info n'est pas trouvée, retourne une chaîne vide "".`;
   return callOpenAI(SYSTEM_T3E, userContent, ANALYSE_DEVIS_SCHEMA, true);
 }
 
+// Les bordereaux uploadés viennent de firmes d'architectes différentes, chacune
+// avec son propre gabarit (libellés, mise en page, champs combinés/dupliqués).
+// Plutôt que de chercher un texte exact, on donne à l'IA la liste numérotée des
+// textes du document et elle indique après quel texte insérer chaque valeur —
+// utilisé seulement pour les champs que la recherche exacte n'a pas trouvés.
+async function mapperChampsBordereau(runsTexte, champsAPlacer) {
+  if (!OPENAI_API_KEY) return null;
+
+  const cles = Object.keys(champsAPlacer);
+  if (cles.length === 0) return null;
+
+  const schema = {
+    type: 'object',
+    properties: Object.fromEntries(cles.map(k => [k, { type: ['integer', 'null'] }])),
+    required: cles,
+    additionalProperties: false,
+  };
+
+  const systemPrompt = `Tu analyses un bordereau de transmission (formulaire Word rempli par un sous-traitant en couverture) pour trouver où écrire des informations manquantes.
+On te donne la liste numérotée de tous les textes visibles du document, dans l'ordre. Pour chaque champ demandé, réponds avec l'index du texte (libellé) juste après lequel sa valeur doit être écrite, ou null si aucun endroit pertinent n'existe dans ce document.
+Utilise le contexte (titres de section comme SOUS-TRAITANT / FOURNISSEUR / ENTREPRENEUR) pour choisir la bonne occurrence quand un libellé comme "Nom :" apparaît plusieurs fois — FOURNISSEUR/FABRICANT va sous la section fournisseur/manufacturier, jamais sous SOUS-TRAITANT ou ENTREPRENEUR (qui désignent T3E elle-même).
+Si deux champs correspondent au même libellé combiné (ex: "Devis (section et article)"), donne le même index aux deux.
+Ne réponds jamais avec un index qui n'est pas un libellé (évite les longs paragraphes de texte légal).`;
+
+  const userContent = `Textes du document (index) texte :
+${runsTexte.map((t, i) => `[${i}] ${t}`).join('\n')}
+
+Champs à placer :
+${cles.map(k => `- ${k} = "${champsAPlacer[k]}"`).join('\n')}`;
+
+  try {
+    const result = await callOpenAI(systemPrompt, userContent, schema, true);
+    if (result.error) {
+      console.error('[claude-client] Mapping bordereau échoué:', result.error);
+      return null;
+    }
+    return result;
+  } catch (e) {
+    console.error('[claude-client] Mapping bordereau échoué:', e.message);
+    return null;
+  }
+}
+
 function isConfigured() {
   return !!OPENAI_API_KEY;
 }
 
-module.exports = { analyserDevis, analyserDevisSoumission, isConfigured };
+module.exports = { analyserDevis, analyserDevisSoumission, mapperChampsBordereau, isConfigured };

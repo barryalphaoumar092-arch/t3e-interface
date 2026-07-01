@@ -47,7 +47,57 @@ function remplirChampDansXml(xml, label, valeur) {
 
     const nouvelleValeur = valeur ? ' ' + escapeXml(String(valeur)) : '';
     xml = xml.substring(0, colonIdx + 1) + nouvelleValeur + xml.substring(closeIdx);
+    return { xml, trouve: true };
+  }
+  return { xml, trouve: false };
+}
+
+// Fallback pour les bordereaux dont les libellés ne correspondent à aucune des
+// variantes connues (gabarits d'architectes tiers) : demande à l'IA où insérer
+// chaque champ restant, en se basant sur les textes réellement présents dans
+// CE document plutôt que sur une liste fixe de libellés attendus.
+async function placerChampsRestantsViaIA(xml, champsNonTrouves) {
+  const { isConfigured, mapperChampsBordereau } = require('./claude-client');
+  if (!isConfigured() || Object.keys(champsNonTrouves).length === 0) return xml;
+
+  const runRegex = /<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g;
+  const runs = [];
+  const positions = [];
+  let m;
+  while ((m = runRegex.exec(xml))) {
+    const texte = m[1].trim();
+    if (!texte) continue;
+    runs.push(texte);
+    positions.push(m.index + m[0].length - '</w:t>'.length);
+  }
+  if (runs.length === 0 || runs.length > 400) return xml;
+
+  let mapping;
+  try {
+    mapping = await mapperChampsBordereau(runs, champsNonTrouves);
+  } catch (e) {
+    console.error('[bordereau-filler] Mapping IA échoué:', e.message);
     return xml;
+  }
+  if (!mapping) return xml;
+
+  // Plusieurs champs peuvent partager le même libellé combiné (ex: "Devis
+  // (section et article)" pour SECTION + ARTICLE) — on les regroupe pour ne
+  // faire qu'une seule insertion par run.
+  const valeursParRun = {};
+  for (const [champ, idxRun] of Object.entries(mapping)) {
+    if (idxRun === null || idxRun === undefined || !runs[idxRun]) continue;
+    if (!champsNonTrouves[champ]) continue;
+    (valeursParRun[idxRun] = valeursParRun[idxRun] || []).push(champsNonTrouves[champ]);
+  }
+
+  // Insertion en partant de la fin du document pour ne pas décaler les
+  // positions déjà calculées pour les runs précédents.
+  const indices = Object.keys(valeursParRun).map(Number).sort((a, b) => b - a);
+  for (const idx of indices) {
+    const valeur = ' ' + escapeXml(valeursParRun[idx].join(' / '));
+    const pos = positions[idx];
+    xml = xml.substring(0, pos) + valeur + xml.substring(pos);
   }
   return xml;
 }
@@ -96,26 +146,34 @@ async function remplirBordereau(champs, buf) {
   // Labels plus longs EN PREMIER pour eviter correspondances partielles
   const NBSP = ' ';
   const remplacements = [
-    ['NOM DU PROJET' + NBSP + ':',      champs.NOM_DU_PROJET    || ''],
-    ['NUMÉRO DU PROJET' + NBSP + ':', champs.NUMERO_DU_PROJET || ''],
-    ['SPÉCIALITÉ' + NBSP + ':', champs.SPECIALITE     || 'COUVREUR'],
-    ['ADRESSE' + NBSP + ':',             champs.ADRESSE          || '7550 Rue Saint-Patrick, Montréal, QC H8N 1V1'],
-    ['NOM' + NBSP + ':',                 champs.NOM              || 'Toitures Trois Étoiles'],
-    ['Titre' + NBSP + ':',               champs.TITRE            || ''],
-    ['Numéro de dessins' + NBSP + ':', ''],
-    ['Nombre feuilles' + NBSP + ':',     ''],
-    ['Révision' + NBSP + ':',       ''],
-    ['Description' + NBSP + ':',         champs.DESCRIPTION      || ''],
-    ['Fournisseur' + NBSP + ':',         champs.FOURNISSEUR      || ''],
-    ['Fabricant' + NBSP + ':',           champs.FABRICANT        || ''],
-    ['Section (item)' + NBSP + ':',      champs.SECTION          || ''],
-    ['Article' + NBSP + ':',             champs.ARTICLE          || ''],
-    ['Délai' + NBSP + ':',          ''],
-    ['Remarque' + NBSP + ':',            champs.REMARQUE         || ''],
+    ['NOM_DU_PROJET',    'NOM DU PROJET' + NBSP + ':',      champs.NOM_DU_PROJET    || ''],
+    ['NUMERO_DU_PROJET', 'NUMÉRO DU PROJET' + NBSP + ':', champs.NUMERO_DU_PROJET || ''],
+    ['SPECIALITE',       'SPÉCIALITÉ' + NBSP + ':', champs.SPECIALITE     || 'COUVREUR'],
+    ['ADRESSE',          'ADRESSE' + NBSP + ':',             champs.ADRESSE          || '7550 Rue Saint-Patrick, Montréal, QC H8N 1V1'],
+    ['NOM',              'NOM' + NBSP + ':',                 champs.NOM              || 'Toitures Trois Étoiles'],
+    ['TITRE',            'Titre' + NBSP + ':',               champs.TITRE            || ''],
+    ['DESSINS',          'Numéro de dessins' + NBSP + ':', ''],
+    ['FEUILLES',         'Nombre feuilles' + NBSP + ':',     ''],
+    ['REVISION',         'Révision' + NBSP + ':',       ''],
+    ['DESCRIPTION',      'Description' + NBSP + ':',         champs.DESCRIPTION      || ''],
+    ['FOURNISSEUR',      'Fournisseur' + NBSP + ':',         champs.FOURNISSEUR      || ''],
+    ['FABRICANT',        'Fabricant' + NBSP + ':',           champs.FABRICANT        || ''],
+    ['SECTION',          'Section (item)' + NBSP + ':',      champs.SECTION          || ''],
+    ['ARTICLE',          'Article' + NBSP + ':',             champs.ARTICLE          || ''],
+    ['DELAI',            'Délai' + NBSP + ':',          ''],
+    ['REMARQUE',         'Remarque' + NBSP + ':',            champs.REMARQUE         || ''],
   ];
 
-  for (const [label, valeur] of remplacements) {
-    xml = remplirChampDansXml(xml, label, valeur);
+  const champsNonTrouves = {};
+  for (const [champKey, label, valeur] of remplacements) {
+    const resultat = remplirChampDansXml(xml, label, valeur);
+    xml = resultat.xml;
+    if (!resultat.trouve && valeur) champsNonTrouves[champKey] = valeur;
+  }
+
+  if (Object.keys(champsNonTrouves).length > 0) {
+    console.log('[bordereau-filler] Libellés non trouvés, tentative IA pour:', Object.keys(champsNonTrouves).join(', '));
+    xml = await placerChampsRestantsViaIA(xml, champsNonTrouves);
   }
 
   zip.file('word/document.xml', xml);
