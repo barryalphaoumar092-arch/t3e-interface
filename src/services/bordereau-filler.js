@@ -102,31 +102,57 @@ async function placerChampsRestantsViaIA(xml, champsNonTrouves) {
   return xml;
 }
 
-function cocherFicheTechnique(xml) {
-  const ftIdx = xml.indexOf('Fiche technique');
-  if (ftIdx === -1) return xml;
+// Coche la case à cocher Word (legacy FORMCHECKBOX) la plus proche d'un
+// libellé donné. Généralisé pour fonctionner sur n'importe quel gabarit de
+// bordereau : selon le document, la case peut être placée AVANT ou APRÈS le
+// libellé (le template T3E la met après, d'autres gabarits d'architectes
+// avant), donc on cherche le champ <w:ffData> avec <w:checkBox> le plus
+// proche du libellé dans les deux directions plutôt que de supposer un ordre.
+function cocherCaseACocher(xml, label) {
+  const labelMatch = xml.match(new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'));
+  if (!labelMatch) return xml;
+  const labelIdx = labelMatch.index;
 
-  // 1. Ajouter <w:default w:val="1"/> dans le checkBox
-  const cbIdx = xml.indexOf('<w:checkBox>', ftIdx);
-  if (cbIdx !== -1) {
-    const cbEnd = xml.indexOf('</w:checkBox>', cbIdx);
-    if (cbEnd !== -1 && !xml.substring(cbIdx, cbEnd).includes('w:default')) {
-      xml = xml.substring(0, cbEnd) + '<w:default w:val="1"/>' + xml.substring(cbEnd);
+  const ffDataRegex = /<w:ffData>[\s\S]*?<\/w:ffData>/g;
+  let champ = null;
+  let meilleureDistance = Infinity;
+  let m;
+  while ((m = ffDataRegex.exec(xml))) {
+    if (!m[0].includes('<w:checkBox')) continue;
+    const distance = Math.abs(m.index - labelIdx);
+    if (distance < meilleureDistance && distance < 1500) {
+      meilleureDistance = distance;
+      champ = { ffStart: m.index, ffEnd: m.index + m[0].length, ffXml: m[0] };
+    }
+  }
+  if (!champ) return xml;
+
+  // Bornes du champ : du "begin" de CE checkbox jusqu'au prochain "begin"
+  // (ou fin de document), pour ne jamais déborder sur un autre champ voisin.
+  const prochainBegin = xml.indexOf('fldCharType="begin"', champ.ffEnd);
+  const limite = prochainBegin === -1 ? xml.length : prochainBegin;
+  const sepIdx = xml.indexOf('fldCharType="separate"', champ.ffEnd);
+
+  // 1. Rendu visuel : insérer ☒ juste après le run "separate" (position la
+  // plus tardive dans le document → appliqué en premier pour ne pas décaler
+  // la position du <w:ffData>, traité ensuite).
+  if (sepIdx !== -1 && sepIdx < limite) {
+    const finRunSepIdx = xml.indexOf('</w:r>', sepIdx);
+    if (finRunSepIdx !== -1) {
+      const insertPos = finRunSepIdx + '</w:r>'.length;
+      const dejaCoche = xml.substring(insertPos, Math.min(insertPos + 40, limite)).includes('☒');
+      if (!dejaCoche) {
+        xml = xml.substring(0, insertPos) + '<w:r><w:t>☒</w:t></w:r>' + xml.substring(insertPos);
+      }
     }
   }
 
-  // 2. Insérer le symbole coché ☒ dans le résultat du champ (entre separate et end)
-  const sepIdx = xml.indexOf('fldCharType="separate"', ftIdx);
-  if (sepIdx === -1) return xml;
-  const endIdx = xml.indexOf('fldCharType="end"', sepIdx);
-  if (endIdx === -1) return xml;
-
-  // Trouver un <w:r> avec <w:rPr> mais SANS <w:t> entre separate et end → y insérer ☒
-  const between = xml.substring(sepIdx, endIdx);
-  const emptyRunMatch = between.match(/<\/w:rPr><\/w:r>/);
-  if (emptyRunMatch) {
-    const insertPos = sepIdx + emptyRunMatch.index + '</w:rPr>'.length;
-    xml = xml.substring(0, insertPos) + '<w:t>☒</w:t>' + xml.substring(insertPos);
+  // 2. Coché par défaut (au cas où Word recalcule le champ)
+  if (!champ.ffXml.includes('w:default w:val="1"')) {
+    const patched = /<w:default[^/]*\/>/.test(champ.ffXml)
+      ? champ.ffXml.replace(/<w:default[^/]*\/>/, '<w:default w:val="1"/>')
+      : champ.ffXml.replace('<w:checkBox>', '<w:checkBox><w:default w:val="1"/>');
+    xml = xml.substring(0, champ.ffStart) + patched + xml.substring(champ.ffEnd);
   }
 
   return xml;
@@ -141,7 +167,7 @@ async function remplirBordereau(champs, buf) {
   xml = normalizeXmlText(xml);
 
   // Cocher la case "Fiche technique" (toujours)
-  xml = cocherFicheTechnique(xml);
+  xml = cocherCaseACocher(xml, 'Fiche technique');
 
   // Labels plus longs EN PREMIER pour eviter correspondances partielles
   const NBSP = ' ';
