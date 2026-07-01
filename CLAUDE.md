@@ -31,7 +31,6 @@ src/
     connaissances.js               # CRUD documents, matériaux, architectes
     bordereaux.js                  # Upload template PDF → éditeur drag-and-drop → PDF final
     soumissions.js                 # Formulaire → remplissage template Word → .docx
-    approbation.js                 # Workflow validation bordereaux
     recherche.js                   # Page recherche
     api.js                         # API JSON (recherche fulltext)
   services/
