@@ -22,7 +22,7 @@
       </div>
       <div class="card-body">
 
-        <form method="POST" action="/bordereaux/analyser" enctype="multipart/form-data" id="formUpload">
+        <form method="POST" action="/bordereaux/analyser" id="formUpload">
 
           <div class="mb-4">
             <label class="form-label fw-bold">
@@ -96,7 +96,11 @@
   </div>
 </div>
 
+<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="/js/direct-upload.js"></script>
 <script>
+window.T3E_SUPABASE_URL = "<%= SUPABASE_URL %>";
+window.T3E_SUPABASE_ANON_KEY = "<%= SUPABASE_ANON_KEY %>";
 var materiauxChoisis = [];
 var searchInput = document.getElementById('rechercheMateriau');
 var suggestionsBox = document.getElementById('suggestionsMateriaux');
@@ -193,9 +197,48 @@ document.addEventListener('click', function(e) {
   }
 });
 
-document.getElementById('formUpload').addEventListener('submit', function() {
+var formUpload = document.getElementById('formUpload');
+var devisInput = formUpload.querySelector('input[name="devis"]');
+var bordereauInput = formUpload.querySelector('input[name="bordereau"]');
+
+function ajouterChampCache(form, name, value) {
+  var inp = document.createElement('input');
+  inp.type = 'hidden';
+  inp.name = name;
+  inp.value = value;
+  form.appendChild(inp);
+}
+
+formUpload.addEventListener('submit', function(e) {
+  e.preventDefault();
+  if (materiauxChoisis.length === 0) return;
+
+  var devisFile = devisInput.files[0];
+  var bordereauFile = bordereauInput.files[0];
+  var labelOriginale = btnAnalyser.innerHTML;
   btnAnalyser.disabled = true;
-  btnAnalyser.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>L\'IA analyse le devis…';
+  btnAnalyser.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Envoi des fichiers…';
+
+  Promise.all([
+    t3eDirectUpload.uploadDirect(devisFile, 'temp'),
+    t3eDirectUpload.uploadDirect(bordereauFile, 'temp'),
+  ]).then(function(results) {
+    var devisInfo = results[0], bordereauInfo = results[1];
+    ajouterChampCache(formUpload, 'devis_bucket', devisInfo.bucket);
+    ajouterChampCache(formUpload, 'devis_key', devisInfo.key);
+    ajouterChampCache(formUpload, 'devis_name', devisInfo.name);
+    ajouterChampCache(formUpload, 'bordereau_bucket', bordereauInfo.bucket);
+    ajouterChampCache(formUpload, 'bordereau_key', bordereauInfo.key);
+    ajouterChampCache(formUpload, 'bordereau_name', bordereauInfo.name);
+    devisInput.value = '';
+    bordereauInput.value = '';
+    btnAnalyser.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>L\'IA analyse le devis…';
+    formUpload.submit();
+  }).catch(function(err) {
+    alert('Erreur lors de l\'envoi du fichier : ' + err.message);
+    btnAnalyser.disabled = false;
+    btnAnalyser.innerHTML = labelOriginale;
+  });
 });
 </script>
 

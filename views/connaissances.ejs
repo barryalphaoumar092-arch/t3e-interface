@@ -145,7 +145,7 @@
 <div class="modal fade" id="modalAjouter" tabindex="-1">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
-      <form method="POST" action="/connaissances/ajouter" enctype="multipart/form-data">
+      <form method="POST" action="/connaissances/ajouter" id="formAjouterDoc">
         <div class="modal-header"><h5 class="modal-title"><i class="bi bi-plus-circle"></i> Ajouter un document</h5></div>
         <div class="modal-body">
           <div class="mb-3">
@@ -190,11 +190,50 @@
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
-          <button type="submit" class="btn btn-primary"><i class="bi bi-upload"></i> Ajouter</button>
+          <button type="submit" class="btn btn-primary" id="btnAjouterDoc"><i class="bi bi-upload"></i> Ajouter</button>
         </div>
       </form>
     </div>
   </div>
 </div>
+
+<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="/js/direct-upload.js"></script>
+<script>
+window.T3E_SUPABASE_URL = "<%= SUPABASE_URL %>";
+window.T3E_SUPABASE_ANON_KEY = "<%= SUPABASE_ANON_KEY %>";
+
+var formAjouterDoc = document.getElementById('formAjouterDoc');
+var fichierInput = formAjouterDoc.querySelector('input[name="fichier"]');
+var btnAjouterDoc = document.getElementById('btnAjouterDoc');
+
+function ajouterChampCacheDoc(form, name, value) {
+  var inp = document.createElement('input');
+  inp.type = 'hidden';
+  inp.name = name;
+  inp.value = value;
+  form.appendChild(inp);
+}
+
+formAjouterDoc.addEventListener('submit', function(e) {
+  e.preventDefault();
+  var file = fichierInput.files[0];
+  if (!file) return;
+  var labelOriginale = btnAjouterDoc.innerHTML;
+  btnAjouterDoc.disabled = true;
+  btnAjouterDoc.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Envoi du fichier…';
+
+  t3eDirectUpload.uploadDirect(file, 'documents').then(function(info) {
+    ajouterChampCacheDoc(formAjouterDoc, 'fichier_nom', info.name);
+    ajouterChampCacheDoc(formAjouterDoc, 'fichier_taille', info.size);
+    fichierInput.value = '';
+    formAjouterDoc.submit();
+  }).catch(function(err) {
+    alert('Erreur lors de l\'envoi du fichier : ' + err.message);
+    btnAjouterDoc.disabled = false;
+    btnAjouterDoc.innerHTML = labelOriginale;
+  });
+});
+</script>
 
 <%- include('partials/footer', { scripts: [] }) %>

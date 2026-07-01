@@ -11,7 +11,7 @@
       </div>
     </div>
 
-    <form method="POST" action="/soumissions/analyser" enctype="multipart/form-data" id="formEtape1">
+    <form method="POST" action="/soumissions/analyser" id="formEtape1">
       <input type="hidden" name="numero" value="<%= numero %>">
 
       <div class="card mb-3">
@@ -63,11 +63,47 @@
   </div>
 </div>
 
+<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="/js/direct-upload.js"></script>
 <script>
-document.getElementById('formEtape1').addEventListener('submit', function() {
+window.T3E_SUPABASE_URL = "<%= SUPABASE_URL %>";
+window.T3E_SUPABASE_ANON_KEY = "<%= SUPABASE_ANON_KEY %>";
+
+var formEtape1 = document.getElementById('formEtape1');
+var devisInputE1 = formEtape1.querySelector('input[name="devis"]');
+
+function ajouterChampCacheE1(form, name, value) {
+  var inp = document.createElement('input');
+  inp.type = 'hidden';
+  inp.name = name;
+  inp.value = value;
+  form.appendChild(inp);
+}
+
+formEtape1.addEventListener('submit', function(e) {
+  e.preventDefault();
   var btn = document.getElementById('btnAnalyser');
+  var devisFile = devisInputE1.files[0];
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Analyse en cours...';
+
+  if (!devisFile) {
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Analyse en cours...';
+    formEtape1.submit();
+    return;
+  }
+
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Envoi du fichier…';
+  t3eDirectUpload.uploadDirect(devisFile, 'temp').then(function(info) {
+    ajouterChampCacheE1(formEtape1, 'devis_key', info.key);
+    ajouterChampCacheE1(formEtape1, 'devis_name', info.name);
+    devisInputE1.value = '';
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Analyse en cours...';
+    formEtape1.submit();
+  }).catch(function(err) {
+    alert('Erreur lors de l\'envoi du fichier : ' + err.message);
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-arrow-right-circle"></i> Analyser et continuer';
+  });
 });
 </script>
 

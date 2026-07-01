@@ -21,6 +21,7 @@ const BUCKETS = {
   FICHES_TECHNIQUES: 'fiches-techniques',
   TEMPLATES_SOUMISSION: 'templates-soumission',
   SOUMISSIONS_GENEREES: 'soumissions-generees',
+  UPLOADS_TEMP: 'uploads-temp',
 };
 
 // Supabase Storage rejette les cles avec accents/caracteres speciaux.
@@ -55,6 +56,16 @@ async function uploadBuffer(bucket, key, buffer, contentType) {
   if (error) throw error;
 }
 
+// Genere une URL d'upload signee : le navigateur envoie le fichier DIRECTEMENT
+// a Supabase Storage, sans passer par la fonction serverless Vercel (limitee
+// a 4.5 Mo de corps de requete).
+async function createSignedUploadUrl(bucket, key) {
+  const supabase = getClient();
+  const { data, error } = await supabase.storage.from(bucket).createSignedUploadUrl(key);
+  if (error) throw error;
+  return data; // { signedUrl, token, path }
+}
+
 async function downloadBuffer(bucket, key) {
   const supabase = getClient();
   const { data, error } = await supabase.storage.from(bucket).download(key);
@@ -80,4 +91,4 @@ async function listFiles(bucket, prefix = '') {
   return data || [];
 }
 
-module.exports = { getClient, BUCKETS, ensureBucket, uploadBuffer, downloadBuffer, removeFile, listFiles, sanitizeKey, stripAccents };
+module.exports = { getClient, BUCKETS, ensureBucket, uploadBuffer, downloadBuffer, createSignedUploadUrl, removeFile, listFiles, sanitizeKey, stripAccents };

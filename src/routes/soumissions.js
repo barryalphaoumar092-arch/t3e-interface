@@ -1,12 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const os = require('os');
-const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
 const { generateSoumission, listTemplates, selectTemplate } = require('../services/soumission-generator');
 const { parseDevis, extractProjectInfo } = require('../services/document-parser');
-const { downloadBuffer, BUCKETS } = require('../services/storage');
-
-const uploadDevis = multer({ dest: os.tmpdir(), limits: { fileSize: 20 * 1024 * 1024 } });
+const { downloadBuffer, removeFile, BUCKETS } = require('../services/storage');
 
 const SYSTEMES = [
   { value: 'BUR', label: 'BUR - Asphalte et Gravier (2-4-5 plis)' },
@@ -139,19 +139,30 @@ router.get('/nouveau', async (req, res) => {
 });
 
 // ÉTAPE 1→2 : Analyser le devis et créer la soumission brouillon
-router.post('/analyser', uploadDevis.single('devis'), async (req, res) => {
+router.post('/analyser', async (req, res) => {
   const db = req.db;
   const d = req.body || {};
   const { isConfigured, analyserDevis } = require('../services/claude-client');
 
+  const devisKeyValide = typeof d.devis_key === 'string' && d.devis_key.length > 0 && !d.devis_key.includes('/') && !d.devis_key.includes('..');
+
   let devisTexte = '';
-  if (req.file) {
+  if (devisKeyValide) {
+    let tempPath = null;
     try {
-      const parsed = await parseDevis(req.file.path, req.file.originalname);
-      devisTexte = parsed.text || '';
-      d._documents_recus = req.file.originalname;
+      const buf = await downloadBuffer(BUCKETS.UPLOADS_TEMP, d.devis_key);
+      if (buf) {
+        tempPath = path.join(os.tmpdir(), `t3e_${crypto.randomBytes(6).toString('hex')}_${path.basename(d.devis_name || d.devis_key)}`);
+        fs.writeFileSync(tempPath, buf);
+        const parsed = await parseDevis(tempPath, d.devis_name || d.devis_key);
+        devisTexte = parsed.text || '';
+        d._documents_recus = d.devis_name || '';
+      }
     } catch (err) {
       console.error('Erreur parsing devis:', err.message);
+    } finally {
+      if (tempPath) { try { fs.unlinkSync(tempPath); } catch (_) {} }
+      await removeFile(BUCKETS.UPLOADS_TEMP, d.devis_key).catch(() => {});
     }
   }
 

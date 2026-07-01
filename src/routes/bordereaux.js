@@ -1,21 +1,28 @@
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const crypto = require('crypto');
 const { parseDevis } = require('../services/document-parser');
 const { remplirBordereau } = require('../services/bordereau-filler');
 const { convertirDocxEnPdf } = require('../services/docx-to-pdf');
 const { PDFDocument } = require('pdf-lib');
 const JSZip = require('jszip');
-const { downloadBuffer, listFiles, stripAccents, BUCKETS } = require('../services/storage');
+const { downloadBuffer, removeFile, listFiles, stripAccents, BUCKETS } = require('../services/storage');
 
-const upload = multer({ dest: os.tmpdir(), limits: { fileSize: 20 * 1024 * 1024 } });
-const uploadFields = upload.fields([
-  { name: 'devis', maxCount: 1 },
-  { name: 'bordereau', maxCount: 1 },
-]);
+// Les fichiers devis/bordereau sont uploades par le navigateur DIRECTEMENT
+// vers Supabase Storage (bucket "uploads-temp", voir /api/upload-url) pour
+// contourner la limite de 4.5 Mo par requete des fonctions serverless Vercel.
+// On les rapatrie ici en fichier temporaire pour parseDevis()/remplirBordereau()
+// puis on les supprime du bucket temp.
+async function telechargerVersFichierTemp(bucket, key, nomOriginal) {
+  const buf = await downloadBuffer(bucket, key);
+  if (!buf) return null;
+  const tmpPath = path.join(os.tmpdir(), `t3e_${crypto.randomBytes(6).toString('hex')}_${path.basename(nomOriginal || key)}`);
+  fs.writeFileSync(tmpPath, buf);
+  return tmpPath;
+}
 
 // ══════════════════════════════════════════════════════════════
 //  APPEL OPENAI GPT-4o — Contexte (section/article/remarque) pour
@@ -352,43 +359,55 @@ router.get('/nouveau', (req, res) => {
   res.render('bordereau-nouveau');
 });
 
+// Cles generees exclusivement par /api/upload-url : jamais de separateur de
+// chemin. On rejette tout ce qui y ressemblerait (defense en profondeur, le
+// bucket temp etant partage entre tous les utilisateurs de l'outil).
+function cleTempValide(key) {
+  return typeof key === 'string' && key.length > 0 && !key.includes('/') && !key.includes('..');
+}
+
 // ── ANALYSER : upload devis + bordereau + matériaux SÉLECTIONNÉS PAR L'UTILISATEUR → révision ──
-router.post('/analyser', uploadFields, async (req, res) => {
+router.post('/analyser', async (req, res) => {
   const db = req.db;
   const { nom_entrepreneur, specialite, adresse, nom_projet } = req.body;
 
-  const devisFile = req.files?.devis?.[0];
-  const bordereauFile = req.files?.bordereau?.[0];
-  if (!devisFile) return res.status(400).send('Veuillez importer le devis PDF.');
-  if (!bordereauFile) return res.status(400).send('Veuillez importer le bordereau .docx.');
+  const devisKey = req.body.devis_key, devisName = req.body.devis_name;
+  const bordereauKey = req.body.bordereau_key, bordereauName = req.body.bordereau_name;
+  if (!cleTempValide(devisKey)) return res.status(400).send('Veuillez importer le devis PDF.');
+  if (!cleTempValide(bordereauKey)) return res.status(400).send('Veuillez importer le bordereau .docx.');
 
   const materiauIds = [].concat(req.body.materiau_id || [])
     .map(id => parseInt(id))
     .filter(id => !isNaN(id));
 
   if (materiauIds.length === 0) {
-    try { fs.unlinkSync(devisFile.path); } catch (_) {}
-    try { fs.unlinkSync(bordereauFile.path); } catch (_) {}
+    await removeFile(BUCKETS.UPLOADS_TEMP, devisKey).catch(() => {});
+    await removeFile(BUCKETS.UPLOADS_TEMP, bordereauKey).catch(() => {});
     return res.status(400).send('Veuillez sélectionner au moins un matériau dans la barre de recherche.');
   }
 
+  let devisTempPath = null;
   let texteDevis = '';
   try {
-    const parsed = await parseDevis(devisFile.path, devisFile.originalname);
+    devisTempPath = await telechargerVersFichierTemp(BUCKETS.UPLOADS_TEMP, devisKey, devisName);
+    if (!devisTempPath) throw new Error('fichier introuvable dans le stockage');
+    const parsed = await parseDevis(devisTempPath, devisName);
     texteDevis = parsed.text || '';
   } catch (e) {
     return res.status(400).send('Impossible de lire le devis : ' + e.message);
   } finally {
-    try { fs.unlinkSync(devisFile.path); } catch (_) {}
+    if (devisTempPath) { try { fs.unlinkSync(devisTempPath); } catch (_) {} }
+    await removeFile(BUCKETS.UPLOADS_TEMP, devisKey).catch(() => {});
   }
 
   if (!texteDevis.trim()) {
-    try { fs.unlinkSync(bordereauFile.path); } catch (_) {}
+    await removeFile(BUCKETS.UPLOADS_TEMP, bordereauKey).catch(() => {});
     return res.status(400).send('Le devis semble vide ou illisible.');
   }
 
-  const bordereauBuffer = fs.readFileSync(bordereauFile.path);
-  try { fs.unlinkSync(bordereauFile.path); } catch (_) {}
+  const bordereauBuffer = await downloadBuffer(BUCKETS.UPLOADS_TEMP, bordereauKey);
+  await removeFile(BUCKETS.UPLOADS_TEMP, bordereauKey).catch(() => {});
+  if (!bordereauBuffer) return res.status(400).send('Impossible de lire le bordereau .docx.');
 
   // Charger les matériaux EXACTEMENT choisis par l'utilisateur (source 100% fiable,
   // plus de devinage par l'IA pour TITRE/FABRICANT/FOURNISSEUR)

@@ -1,5 +1,32 @@
 const express = require('express');
 const router = express.Router();
+const crypto = require('crypto');
+const { createSignedUploadUrl, sanitizeKey, BUCKETS } = require('../services/storage');
+
+// URL d'upload signee — le navigateur envoie ensuite le fichier DIRECTEMENT a
+// Supabase Storage, en contournant la limite de 4.5 Mo par requete des
+// fonctions serverless Vercel. `dest` est restreint a une liste blanche.
+const UPLOAD_DESTS = {
+  temp: BUCKETS.UPLOADS_TEMP,
+  documents: BUCKETS.DOCUMENTS,
+};
+
+router.post('/upload-url', async (req, res) => {
+  const { filename, dest } = req.body || {};
+  const bucket = UPLOAD_DESTS[dest];
+  if (!filename || !bucket) return res.status(400).json({ error: 'Parametres invalides' });
+
+  const key = dest === 'temp'
+    ? `${Date.now()}-${crypto.randomBytes(6).toString('hex')}-${sanitizeKey(filename)}`
+    : sanitizeKey(filename);
+
+  try {
+    const { signedUrl, token, path } = await createSignedUploadUrl(bucket, key);
+    res.json({ bucket, key: path || key, signedUrl, token });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 router.get('/recherche', async (req, res) => {
   const db = req.db;

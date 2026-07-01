@@ -1,10 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
 const path = require('path');
-const { uploadBuffer, downloadBuffer, sanitizeKey, BUCKETS } = require('../services/storage');
-
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+const { downloadBuffer, sanitizeKey, BUCKETS } = require('../services/storage');
 
 const MIME_TYPES = {
   '.pdf': 'application/pdf',
@@ -81,20 +78,22 @@ router.get('/', async (req, res) => {
 
 const MDP_ADMIN = process.env.MDP_APP || 'barry';
 
-router.post('/ajouter', upload.single('fichier'), async (req, res) => {
+// Le fichier est deja uploade DIRECTEMENT vers le bucket Supabase "documents"
+// par le navigateur (voir /api/upload-url + views/connaissances.ejs) — cette
+// route ne recoit plus que les metadonnees, pour contourner la limite de
+// 4.5 Mo par requete des fonctions serverless Vercel.
+router.post('/ajouter', async (req, res) => {
   if (req.body.mdp_admin !== MDP_ADMIN) return res.redirect('/connaissances?error=mdp');
   const db = req.db;
-  const { titre, categorie_id, description, source, annee, mots_cles } = req.body;
-  const file = req.file;
-  if (!file) return res.redirect('/connaissances?error=no_file');
+  const { titre, categorie_id, description, source, annee, mots_cles, fichier_nom, fichier_taille } = req.body;
+  if (!fichier_nom) return res.redirect('/connaissances?error=no_file');
 
-  const ext = path.extname(file.originalname).toLowerCase().replace('.', '');
-  const relativePath = 'documents/' + file.originalname;
-  await uploadBuffer(BUCKETS.DOCUMENTS, sanitizeKey(file.originalname), file.buffer, mimeFor(file.originalname));
+  const ext = path.extname(fichier_nom).toLowerCase().replace('.', '');
+  const relativePath = 'documents/' + fichier_nom;
   await db.execute({
     sql: `INSERT INTO documents (titre, nom_fichier, chemin_fichier, categorie_id, type_fichier, taille_octets, description, source, annee, mots_cles)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    args: [titre, file.originalname, relativePath, parseInt(categorie_id), ext, file.size, description || null, source || null, annee || null, mots_cles || null]
+    args: [titre, fichier_nom, relativePath, parseInt(categorie_id), ext, parseInt(fichier_taille) || 0, description || null, source || null, annee || null, mots_cles || null]
   });
   res.redirect('/connaissances?success=added');
 });

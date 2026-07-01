@@ -13,6 +13,13 @@ const SESSION_MAX_AGE = 24 * 60 * 60 * 1000;
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
+// Cle anon Supabase : concue pour etre publique (elle ne donne aucun droit
+// sans policy explicite), utilisee par le navigateur pour uploader les gros
+// fichiers directement vers Supabase Storage (voir public/js/direct-upload.js).
+app.locals.SUPABASE_URL = process.env.SUPABASE_URL || '';
+app.locals.SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY
+  || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNmdWxjZHp2dGN5bXF3bnVpdG1rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI5MDEyMjEsImV4cCI6MjA5ODQ3NzIyMX0.bZkfLOVptBvuo3npjRRTOEN2AwLkVAJAmR2K9nS-UY8';
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
