@@ -68,7 +68,10 @@ function convertirDocxEnPdfLocal(docxBuffer) {
 async function convertirDocxEnPdfDistant(docxBuffer) {
   const url = (process.env.CONVERT_SERVICE_URL || '').trim();
   const secret = (process.env.CONVERT_SERVICE_SECRET || '').trim();
-  if (!url || !secret) return null;
+  if (!url || !secret) {
+    console.log(`[docx-to-pdf] Fallback distant non configuré (URL: ${url ? 'ok' : 'manquante'}, secret: ${secret ? 'ok' : 'manquant'})`);
+    return null;
+  }
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 45000);
@@ -79,7 +82,11 @@ async function convertirDocxEnPdfDistant(docxBuffer) {
       body: docxBuffer,
       signal: controller.signal,
     });
-    if (!resp.ok) throw new Error('Service de conversion distant a répondu ' + resp.status);
+    if (!resp.ok) {
+      const corps = await resp.text().catch(() => '');
+      throw new Error(`Service de conversion distant a répondu ${resp.status}: ${corps.slice(0, 200)}`);
+    }
+    console.log('[docx-to-pdf] Conversion distante réussie via', url);
     return Buffer.from(await resp.arrayBuffer());
   } finally {
     clearTimeout(timeout);
@@ -90,6 +97,7 @@ async function convertirDocxEnPdf(docxBuffer) {
   try {
     return await convertirDocxEnPdfLocal(docxBuffer);
   } catch (erreurLocale) {
+    console.log('[docx-to-pdf] Conversion locale échouée (attendu sur Vercel):', erreurLocale.message);
     let resultatDistant = null;
     try {
       resultatDistant = await convertirDocxEnPdfDistant(docxBuffer);
