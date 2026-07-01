@@ -430,7 +430,8 @@ router.post('/analyser', uploadFields, async (req, res) => {
       FOURNISSEUR: mat.fournisseur || '',
       SECTION: ctx.SECTION || '',
       ARTICLE: ctx.ARTICLE || '',
-      REMARQUE: ctx.REMARQUE || '',
+      DESCRIPTION: ctx.REMARQUE || '',
+      REMARQUE: '',
       ft_url: mat.lien_fiche_technique || '',
     };
     p.ft_chemins = trouverFichesTechniques(p.FABRICANT, p.TITRE);
@@ -484,7 +485,9 @@ router.get('/reviser/:id', async (req, res) => {
       produits: [{
         SECTION: c.SECTION || '', ARTICLE: c.ARTICLE || '',
         TITRE: c.TITRE || '', FABRICANT: c.FABRICANT || '',
-        FOURNISSEUR: c.FOURNISSEUR || '', REMARQUE: c.REMARQUE || '',
+        FOURNISSEUR: c.FOURNISSEUR || '',
+        DESCRIPTION: c.REMARQUE || '',
+        REMARQUE: '',
         ft_noms: data.ft_chemins ? data.ft_chemins.map(p => path.basename(p)) : [],
         ft_selection: data.ft_chemins && data.ft_chemins.length > 0 ? cheminRelatifFT(data.ft_chemins[0]) : '__AUTO__',
       }],
@@ -540,7 +543,7 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
   const fournisseurs = [].concat(req.body.FOURNISSEUR || []);
   const sections = [].concat(req.body.SECTION || []);
   const articles = [].concat(req.body.ARTICLE || []);
-  const remarques = [].concat(req.body.REMARQUE || []);
+  const descriptions = [].concat(req.body.DESCRIPTION || []);
   const ftSelections = [].concat(req.body.FT_FICHIER || []);
 
   const nbProduits = titres.length;
@@ -561,7 +564,8 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
       FOURNISSEUR: fournisseurs[i] || '',
       SECTION: sections[i] || '',
       ARTICLE: articles[i] || '',
-      REMARQUE: remarques[i] || '',
+      DESCRIPTION: descriptions[i] || '',
+      REMARQUE: '',
     };
 
     // Compléter FABRICANT/FOURNISSEUR si vides, via la DB matériaux (filet de sécurité)
@@ -601,18 +605,18 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
       }
 
       if (bordereauPdfBuf) {
+        // Bordereau PDF + FT = 1 seul document PDF
         const finalPdf = await fusionnerPdfBuffers([bordereauPdfBuf, ...ftBuffers]);
         if (finalPdf) {
-          zip.file(`${num}_${nomFichier}/Bordereau_${nomFichier}.pdf`, finalPdf);
+          zip.file(`${num}_${nomFichier}.pdf`, finalPdf);
           console.log(`[generer] ${num} PDF fusionné OK (bordereau + ${ftBuffers.length} FT): ${titres[i]}`);
         }
       } else {
-        // Filet de sécurité : conversion PDF échouée -> on garde le .docx
-        // (déjà prouvé fonctionnel) + la FT séparée + le détail de l'erreur
-        zip.file(`${num}_${nomFichier}/Bordereau_${nomFichier}.docx`, docxBuf);
-        zip.file(`${num}_${nomFichier}/ERREUR_conversion_PDF.txt`, 'La conversion en PDF a échoué :\n' + (erreurPdf ? erreurPdf.stack : 'erreur inconnue'));
+        // Filet de sécurité : conversion PDF échouée → .docx + FT séparée
+        zip.file(`${num}_${nomFichier}.docx`, docxBuf);
+        zip.file(`${num}_${nomFichier}_ERREUR_conversion_PDF.txt`, 'La conversion en PDF a échoué :\n' + (erreurPdf ? erreurPdf.stack : 'erreur inconnue'));
         const ftPdf = await fusionnerPdfBuffers(ftBuffers);
-        if (ftPdf) zip.file(`${num}_${nomFichier}/FT_${nomFichier}.pdf`, ftPdf);
+        if (ftPdf) zip.file(`${num}_${nomFichier}_FT.pdf`, ftPdf);
       }
     } catch (e) {
       console.error(`[generer] ${num} Erreur remplissage:`, e.message);

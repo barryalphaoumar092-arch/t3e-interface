@@ -105,7 +105,7 @@ async function remplirBordereau(champs, buf) {
     ['Numéro de dessins' + NBSP + ':', ''],
     ['Nombre feuilles' + NBSP + ':',     ''],
     ['Révision' + NBSP + ':',       ''],
-    ['Description' + NBSP + ':',         ''],
+    ['Description' + NBSP + ':',         champs.DESCRIPTION      || ''],
     ['Fournisseur' + NBSP + ':',         champs.FOURNISSEUR      || ''],
     ['Fabricant' + NBSP + ':',           champs.FABRICANT        || ''],
     ['Section (item)' + NBSP + ':',      champs.SECTION          || ''],
