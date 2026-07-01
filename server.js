@@ -39,7 +39,10 @@ app.post('/internal/convertir-docx-pdf', express.raw({ type: '*/*', limit: '25mb
   const valide = secret.length > 0 && fourni.length > 0
     && Buffer.byteLength(fourni) === Buffer.byteLength(secret)
     && crypto.timingSafeEqual(Buffer.from(fourni), Buffer.from(secret));
-  if (!valide) return res.status(403).send('Forbidden');
+  if (!valide) {
+    console.error(`[convert-auth] refuse — secret configure: ${secret.length} caracteres, recu: ${fourni.length} caracteres`);
+    return res.status(403).send('Forbidden');
+  }
 
   if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
     return res.status(400).send('Corps .docx manquant');
