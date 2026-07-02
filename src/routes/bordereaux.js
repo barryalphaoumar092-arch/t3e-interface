@@ -35,8 +35,8 @@ On te donne un devis de toiture ET une liste de produits DÉJÀ CHOISIS par l'es
 === TA MISSION ===
 Pour CHAQUE produit de la liste, dans l'ORDRE donné :
 1. Trouve dans L'EXTRAIT DE DEVIS FOURNI CI-DESSOUS (pas dans ta mémoire générale de devis types) la SECTION (numéro 6 chiffres + titre, ex: "07 52 21 — Couverture à membrane de bitume modifié") où ce produit ou sa catégorie est réellement traité. Le numéro de section VARIE d'un devis à l'autre (un projet peut utiliser "07 52 21", un autre "07 52 00" pour un contenu similaire) — ne réutilise JAMAIS un numéro "typique" que tu connais par ailleurs sans l'avoir vu explicitement dans CET extrait.
-2. Trouve l'ARTICLE (sous-section Partie 2, ex: "2.2 Pare-vapeur") qui correspond le mieux à ce produit, EN LISANT la liste réelle des articles de cette section dans l'extrait fourni. Si le produit exact n'est pas nommé mot pour mot, déduis l'article le plus probable selon sa fonction (pare-vapeur, isolant, membrane, sous-couche, adhésif, apprêt, drain, évent, etc.) MAIS uniquement parmi les articles qui existent réellement dans la section identifiée à l'étape 1 — n'invente pas un numéro d'article qui n'apparaît pas dans l'extrait.
-3. Si l'extrait fourni ne contient AUCUNE section pertinente pour ce produit, retourne une chaîne vide pour SECTION et ARTICLE plutôt que de deviner — mieux vaut vide que faux.
+2. Trouve l'ARTICLE (sous-section Partie 2, ex: "2.2 Pare-vapeur") qui correspond le mieux à ce produit, EN LISANT la liste réelle des articles de cette section dans l'extrait fourni. Les devis QUÉBÉCOIS NOMMENT RAREMENT LES MARQUES : ne t'attends PAS à trouver "Soprastar" ou tout autre nom de marque écrit textuellement — le devis décrit une FONCTION ("membrane de finition", "pare-vapeur autocollant", etc.) que le produit remplit. C'est NORMAL et ATTENDU de devoir déduire l'article à partir de la fonction/catégorie du produit plutôt que de chercher son nom exact. Choisis l'article dont la description de fonction correspond le mieux, PARMI ceux qui existent réellement dans la section identifiée à l'étape 1 — n'invente jamais un numéro d'article absent de l'extrait.
+3. Retourne une chaîne vide pour SECTION et ARTICLE UNIQUEMENT si aucune section de l'extrait ne traite, même en substance, la catégorie/fonction de ce produit (ex: un produit électrique alors que l'extrait ne couvre que la toiture). Ne retourne JAMAIS vide simplement parce que la marque n'est pas nommée mot pour mot — c'est la situation normale, pas une raison de renoncer (voir point 2).
 4. Compose un USAGE très court (une seule phrase courte, 3 à 10 mots, PAS un paragraphe) décrivant simplement ce qu'est le produit, du style "Une membrane de sous-couche", "Un panneau isolant thermique de polyisocyanurate", "Une bande de recouvrement"
 
 Aussi, extrais du devis :
@@ -61,7 +61,7 @@ Beaucoup de bordereaux d'architectes tiers (différents du gabarit T3E) ont des 
 // On priorise : la table des matières (liste tous les VRAIS numéros de
 // section de CE devis) + le contenu complet de chaque section de Division
 // 05/06/07/08/09 (où se trouvent les matériaux de toiture et travaux connexes).
-function extraireContextePertinent(texteDevis, budgetMax = 300000) {
+function extraireContextePertinent(texteDevis, budgetMax = 400000, capParSection = 30000) {
   const intro = [];
 
   // Page de garde / sceaux et signatures : c'est là que se trouvent le nom du
@@ -94,11 +94,16 @@ function extraireContextePertinent(texteDevis, budgetMax = 300000) {
     return intro.join('\n\n---\n\n').substring(0, budgetMax);
   }
 
+  // Les sections de couverture font souvent 15-20 pages (~35-45k caractères) :
+  // la PARTIE 2 - PRODUITS (numéros d'article) arrive après la PARTIE 1 -
+  // GÉNÉRALITÉS (normes/références, parfois volumineuse) et démarre donc
+  // souvent bien après les 15 premiers milliers de caractères. Un plafond par
+  // section trop bas coupait la section EXACTEMENT avant la liste d'articles.
   positions.sort((a, b) => a.index - b.index);
   const sections = positions.map((pos, i) => {
     const debut = pos.index;
-    const fin = i + 1 < positions.length ? positions[i + 1].index : Math.min(texteDevis.length, debut + 15000);
-    return { numero: pos.numero, texte: texteDevis.substring(debut, Math.min(fin, debut + 15000)) };
+    const fin = i + 1 < positions.length ? positions[i + 1].index : Math.min(texteDevis.length, debut + capParSection);
+    return { numero: pos.numero, texte: texteDevis.substring(debut, Math.min(fin, debut + capParSection)) };
   });
 
   // Priorité Division 07 (couverture — le cœur du métier de T3E), puis 06/08
