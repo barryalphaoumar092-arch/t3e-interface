@@ -191,6 +191,7 @@ function ajouterChampsNonPlaces(xml, champsRestants) {
     TITRE: 'Titre', DESCRIPTION: 'Description', USAGE: 'Usage',
     FOURNISSEUR: 'Fournisseur', FABRICANT: 'Fabricant', SECTION: 'Section',
     ARTICLE: 'Article', REMARQUE: 'Remarque',
+    NOM_ETABLISSEMENT: 'Établissement', ARCHITECTE: 'Architecte',
   };
   const texte = 'Renseignements complémentaires — ' + entrees
     .map(([k, v]) => `${NOMS_LISIBLES[k] || k} : ${v}`)
@@ -304,6 +305,13 @@ async function remplirBordereau(champs, buf) {
     ['ARTICLE',          'Article' + NBSP + ':',             champs.ARTICLE          || ''],
     ['DELAI',            'Délai' + NBSP + ':',          ''],
     ['REMARQUE',         'Remarque' + NBSP + ':',            champs.REMARQUE         || ''],
+    // Sans équivalent dans le gabarit T3E (donc jamais trouvés ici), mais
+    // présents sur beaucoup de gabarits d'architectes tiers — le nom du
+    // libellé fixe ci-dessous ne matchera presque jamais ; ils passeront donc
+    // par le fallback IA (placerChampsRestantsViaIA) puis, en dernier
+    // recours, par le bloc "Renseignements complémentaires" garanti.
+    ['NOM_ETABLISSEMENT', 'Nom de l\'établissement' + NBSP + ':', champs.NOM_ETABLISSEMENT || ''],
+    ['ARCHITECTE',        'Architecte' + NBSP + ':',              champs.ARCHITECTE        || ''],
   ];
 
   const champsNonTrouves = {};

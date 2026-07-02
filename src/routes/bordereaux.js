@@ -41,6 +41,11 @@ Pour CHAQUE produit de la liste, dans l'ORDRE donné :
 Aussi, extrais du devis :
 - NOM_DU_PROJET : page de garde, en-tête, "Projet :", "Objet :"
 - NUMERO_DU_PROJET : "N° projet", "Dossier", "N/Réf", "Projet no"
+- NOM_ETABLISSEMENT : le nom du propriétaire/établissement/école/bâtiment (ex: "Polytechnique Montréal", "École Laval Senior Academy") — PAS le nom du projet lui-même, mais l'entité propriétaire. Vide si absent du devis.
+- ARCHITECTE_FIRME : le nom de la firme d'architectes qui a préparé le devis (souvent en page de garde ou page des sceaux/signatures). Vide si absent.
+- ARCHITECTE_CONTACT : le nom de la personne (architecte associé/responsable) si mentionné, sinon vide.
+
+Beaucoup de bordereaux d'architectes tiers (différents du gabarit T3E) ont des champs comme "Nom de l'école ou de l'établissement" ou "ARCHITECTE" qui n'existent pas dans le gabarit T3E — ces informations, quand elles sont dans le devis, DOIVENT être extraites même si tu ne sais pas encore où elles seront utilisées.
 
 === RÈGLES ===
 - Retourne EXACTEMENT un produit en sortie par produit en entrée, DANS LE MÊME ORDRE
@@ -67,6 +72,9 @@ Retourne ce JSON :
 {
   "NOM_DU_PROJET": "nom complet du projet (du DEVIS)",
   "NUMERO_DU_PROJET": "numéro de référence (du DEVIS)",
+  "NOM_ETABLISSEMENT": "nom du propriétaire/établissement (du DEVIS), ou chaîne vide si absent",
+  "ARCHITECTE_FIRME": "nom de la firme d'architectes (du DEVIS), ou chaîne vide si absent",
+  "ARCHITECTE_CONTACT": "nom de la personne architecte (du DEVIS), ou chaîne vide si absent",
   "produits": [
     { "SECTION": "...", "ARTICLE": "...", "USAGE": "..." }
   ]
@@ -231,6 +239,41 @@ async function obtenirMateriauMatch(db, titre, fabricant) {
     console.error('[materiaux] Erreur lookup:', e.message);
     return null;
   }
+}
+
+// Si l'IA a extrait un nom de firme d'architectes du devis, on tente de le
+// recouper avec la base de connaissances (table architectes) pour obtenir des
+// coordonnées plus completes/fiables que ce que le devis mentionne seul.
+async function obtenirArchitecteMatch(db, firme) {
+  if (!firme) return null;
+  try {
+    const firmeLower = stripAccents(firme).toLowerCase().trim();
+    const r = await db.execute({ sql: 'SELECT firme, ville, adresse, telephone, email, contact FROM architectes', args: [] });
+    const match = r.rows.find(a => stripAccents(a.firme || '').toLowerCase().trim() === firmeLower)
+      || r.rows.find(a => stripAccents(a.firme || '').toLowerCase().includes(firmeLower))
+      || r.rows.find(a => firmeLower.includes(stripAccents(a.firme || '').toLowerCase()) && a.firme);
+    return match || null;
+  } catch (e) {
+    console.error('[architectes] Erreur lookup:', e.message);
+    return null;
+  }
+}
+
+// Compose une valeur texte unique et lisible pour le champ ARCHITECTE, en
+// combinant ce que le devis mentionne avec l'enrichissement de la base de
+// connaissances quand une firme correspondante y est trouvée.
+function composerTexteArchitecte(firmeDevis, contactDevis, matchDb) {
+  const parties = [];
+  const firme = (matchDb && matchDb.firme) || firmeDevis || '';
+  if (firme) parties.push(firme);
+  const contact = contactDevis || (matchDb && matchDb.contact) || '';
+  if (contact) parties.push(contact);
+  if (matchDb) {
+    if (matchDb.telephone) parties.push(matchDb.telephone);
+    if (matchDb.email) parties.push(matchDb.email);
+    if (matchDb.adresse) parties.push(matchDb.adresse);
+  }
+  return parties.join(' — ');
 }
 
 function nomFichierDepuisUrl(url) {
@@ -451,10 +494,19 @@ router.post('/analyser', async (req, res) => {
   const numProjet = iaResult.NUMERO_DU_PROJET || '';
   const contexteProduits = iaResult.produits || [];
 
+  // Champs additionnels que le devis contient parfois mais que le gabarit T3E
+  // n'a pas (donc absents des 16 libellés fixes) — utiles pour les gabarits
+  // d'architectes tiers qui ont leurs propres sections (ex: "Nom de l'école
+  // ou de l'établissement", "ARCHITECTE"). Voir aussi bordereau-filler.js.
+  const architecteMatch = await obtenirArchitecteMatch(db, iaResult.ARCHITECTE_FIRME);
+  const architecteTexte = composerTexteArchitecte(iaResult.ARCHITECTE_FIRME, iaResult.ARCHITECTE_CONTACT, architecteMatch);
+
   const identification = {
     NOM: nom_entrepreneur?.trim() || 'Toitures Trois Étoiles',
     SPECIALITE: specialite?.trim() || 'COUVREUR',
     ADRESSE: adresse?.trim() || '7550 Rue Saint-Patrick, Montréal, QC H8N 1V1',
+    NOM_ETABLISSEMENT: iaResult.NOM_ETABLISSEMENT || '',
+    ARCHITECTE: architecteTexte,
   };
 
   const produits = [];
@@ -575,6 +627,11 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
   const nom = req.body.NOM || 'Toitures Trois Étoiles';
   const specialite = req.body.SPECIALITE || 'COUVREUR';
   const adresse = req.body.ADRESSE || '7550 Rue Saint-Patrick, Montréal, QC H8N 1V1';
+  // Champs sans equivalent dans le gabarit T3E, mais presents sur beaucoup de
+  // gabarits d'architectes tiers (ex: "Nom de l'ecole ou de l'etablissement",
+  // "ARCHITECTE") — extraits du devis a l'etape /analyser, editables ici.
+  const nomEtablissement = req.body.NOM_ETABLISSEMENT || '';
+  const architecte = req.body.ARCHITECTE || '';
 
   // Les champs produit arrivent comme tableaux (TITRE[], FABRICANT[], etc.)
   const titres = [].concat(req.body.TITRE || []);
@@ -608,6 +665,8 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
       DESCRIPTION: descriptions[i] || '',
       USAGE: usages[i] || '',
       REMARQUE: '',
+      NOM_ETABLISSEMENT: nomEtablissement,
+      ARCHITECTE: architecte,
     };
 
     // Compléter FABRICANT/FOURNISSEUR si vides, via la DB matériaux (filet de sécurité)

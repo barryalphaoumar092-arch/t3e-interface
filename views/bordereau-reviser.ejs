@@ -54,6 +54,14 @@
               <label class="form-label fw-bold">ADRESSE</label>
               <input type="text" name="ADRESSE" class="form-control" value="<%= identification.ADRESSE || '7550 Rue Saint-Patrick, Montréal, QC H8N 1V1' %>">
             </div>
+            <div class="col-md-6">
+              <label class="form-label fw-bold">NOM DE L'ÉTABLISSEMENT <small class="text-muted fw-normal">(si présent sur certains gabarits d'architectes)</small></label>
+              <input type="text" name="NOM_ETABLISSEMENT" class="form-control" value="<%= identification.NOM_ETABLISSEMENT || '' %>">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-bold">ARCHITECTE <small class="text-muted fw-normal">(firme / contact — si présent sur certains gabarits)</small></label>
+              <input type="text" name="ARCHITECTE" class="form-control" value="<%= identification.ARCHITECTE || '' %>">
+            </div>
           </div>
         </div>
       </div>
