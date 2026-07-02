@@ -33,10 +33,11 @@ const SYSTEM_PROMPT_CONTEXTE = `Tu es un chargé de projet SENIOR expert en couv
 On te donne un devis de toiture ET une liste de produits DÉJÀ CHOISIS par l'estimateur (nom exact, fabricant, fournisseur — ne les remets pas en question).
 
 === TA MISSION ===
+On te fournit un INDEX COMPACT du devis : pour chaque section réelle de CE devis, son numéro et la liste des TITRES d'articles de sa PARTIE 2 - PRODUITS (ex: "2.8 Couche de finition") — PAS le texte intégral des paragraphes (trop volumineux). Base-toi UNIQUEMENT sur ces titres pour choisir, pas sur ta mémoire générale de devis types.
 Pour CHAQUE produit de la liste, dans l'ORDRE donné :
-1. Trouve dans L'EXTRAIT DE DEVIS FOURNI CI-DESSOUS (pas dans ta mémoire générale de devis types) la SECTION (numéro 6 chiffres + titre, ex: "07 52 21 — Couverture à membrane de bitume modifié") où ce produit ou sa catégorie est réellement traité. Le numéro de section VARIE d'un devis à l'autre (un projet peut utiliser "07 52 21", un autre "07 52 00" pour un contenu similaire) — ne réutilise JAMAIS un numéro "typique" que tu connais par ailleurs sans l'avoir vu explicitement dans CET extrait.
-2. Trouve l'ARTICLE (sous-section Partie 2, ex: "2.2 Pare-vapeur") qui correspond le mieux à ce produit, EN LISANT la liste réelle des articles de cette section dans l'extrait fourni. Les devis QUÉBÉCOIS NOMMENT RAREMENT LES MARQUES : ne t'attends PAS à trouver "Soprastar" ou tout autre nom de marque écrit textuellement — le devis décrit une FONCTION ("membrane de finition", "pare-vapeur autocollant", etc.) que le produit remplit. C'est NORMAL et ATTENDU de devoir déduire l'article à partir de la fonction/catégorie du produit plutôt que de chercher son nom exact. Choisis l'article dont la description de fonction correspond le mieux, PARMI ceux qui existent réellement dans la section identifiée à l'étape 1 — n'invente jamais un numéro d'article absent de l'extrait.
-3. Retourne une chaîne vide pour SECTION et ARTICLE UNIQUEMENT si aucune section de l'extrait ne traite, même en substance, la catégorie/fonction de ce produit (ex: un produit électrique alors que l'extrait ne couvre que la toiture). Ne retourne JAMAIS vide simplement parce que la marque n'est pas nommée mot pour mot — c'est la situation normale, pas une raison de renoncer (voir point 2).
+1. Trouve la SECTION (numéro 6 chiffres, ex: "07 52 00") dont le contenu correspond à la catégorie du produit. Le numéro VARIE d'un devis à l'autre (un projet peut utiliser "07 52 21", un autre "07 52 00" pour un contenu similaire) — ne réutilise JAMAIS un numéro "typique" que tu connais par ailleurs sans l'avoir vu explicitement dans l'index fourni.
+2. Trouve l'ARTICLE dont le TITRE correspond le mieux à la fonction du produit (ex: un membrane de finition granulée → l'article dont le titre est "Couche de finition" ou équivalent). Les devis QUÉBÉCOIS NOMMENT RAREMENT LES MARQUES dans les titres d'article : ne t'attends PAS à voir "Soprastar" ou toute autre marque — c'est le TITRE FONCTIONNEL de l'article qui doit correspondre à la catégorie du produit (membrane de finition, pare-vapeur, isolant, adhésif, apprêt, sous-couche, drain, évent, etc.). C'est NORMAL et ATTENDU de devoir déduire à partir du titre plutôt que du nom exact. Choisis PARMI les articles listés dans l'index pour la section identifiée à l'étape 1 — n'invente jamais un numéro absent de l'index.
+3. Retourne une chaîne vide pour SECTION et ARTICLE UNIQUEMENT si aucune section de l'index ne correspond, même en substance, à la catégorie de ce produit (ex: un produit électrique alors que l'index ne couvre que la toiture). Ne retourne JAMAIS vide simplement parce que la marque n'est pas nommée mot pour mot — c'est la situation normale, pas une raison de renoncer (voir point 2).
 4. Compose un USAGE très court (une seule phrase courte, 3 à 10 mots, PAS un paragraphe) décrivant simplement ce qu'est le produit, du style "Une membrane de sous-couche", "Un panneau isolant thermique de polyisocyanurate", "Une bande de recouvrement"
 
 Aussi, extrais du devis :
@@ -53,23 +54,23 @@ Beaucoup de bordereaux d'architectes tiers (différents du gabarit T3E) ont des 
 - Ne change JAMAIS le nom/fabricant/fournisseur du produit, ils sont déjà corrects
 - Retourne UNIQUEMENT du JSON valide`;
 
-// Les devis font souvent 100+ pages : tronquer bêtement aux N premiers
-// caractères (comportement précédent) laisse fréquemment la Division 07
-// (couverture — ce qui nous intéresse) hors du texte envoyé à l'IA, qui doit
-// alors DEVINER section/article plutôt que de les lire réellement dans CE
-// devis précis. D'où des erreurs qui varient d'un devis à l'autre.
-// On priorise : la table des matières (liste tous les VRAIS numéros de
-// section de CE devis) + le contenu complet de chaque section de Division
-// 05/06/07/08/09 (où se trouvent les matériaux de toiture et travaux connexes).
-function extraireContextePertinent(texteDevis, budgetMax = 220000, capParSection = 25000) {
-  const intro = [];
+// Les devis font souvent 100+ pages, et le compte OpenAI de T3E a une limite
+// stricte de 30 000 tokens/minute (~115 000 caractères) — envoyer le texte
+// intégral des sections (même limité par section) dépasse systématiquement
+// cette limite sur les gros devis (ex: 220 000 caractères ≈ 58 000 tokens,
+// refusé par l'API en erreur 429, ce qui viDAIT TOUS les champs, pas
+// seulement SECTION/ARTICLE).
+// Solution : au lieu du texte complet, on construit un INDEX COMPACT —
+// juste les numéros + titres d'article de PARTIE 2 (PRODUITS), sans les
+// paragraphes descriptifs. Pour un devis de 551 pages, cet index tient en
+// ~6 000 caractères (au lieu de 220 000+) tout en donnant à l'IA une vue
+// fidèle et complète des VRAIS numéros de section/article de CE devis.
+function extraireContextePertinent(texteDevis) {
+  const morceaux = [];
 
   // Page de garde / sceaux et signatures : c'est là que se trouvent le nom du
   // projet, son numéro, le propriétaire/établissement et la firme d'architectes.
-  intro.push('=== DÉBUT DU DEVIS (page de garde, sceaux) ===\n' + texteDevis.substring(0, 4000));
-
-  const tdmMatch = texteDevis.match(/TABLE DES MATI[EÈ]RES[\s\S]{0,6000}?FIN DE LA SECTION/i);
-  if (tdmMatch) intro.push('=== TABLE DES MATIÈRES DU DEVIS ===\n' + tdmMatch[0]);
+  morceaux.push('=== DÉBUT DU DEVIS (page de garde, sceaux) ===\n' + texteDevis.substring(0, 3000));
 
   // Marqueur fiable de DÉBUT de section, observé dans les devis québécois type
   // CIMAISE/AMCQ : "Section 07 52 21 ... Page 1 de 29" (seule la première page
@@ -82,44 +83,48 @@ function extraireContextePertinent(texteDevis, budgetMax = 220000, capParSection
     const numero = m[1].replace(/\s/g, '');
     if (vus.has(numero)) continue;
     vus.add(numero);
-    positions.push({ numero, index: m.index });
+    const avantTitre = texteDevis.substring(Math.max(0, m.index - 90), m.index)
+      .replace(/\s+/g, ' ').replace(/FIN DE LA SECTION/gi, '').trim();
+    positions.push({ numero, index: m.index, titre: avantTitre.slice(-60) });
   }
 
   if (positions.length === 0) {
     // Format de devis non standard (marqueurs "Page 1 de" introuvables) : pas
-    // de sections détectées, on élargit plutôt le début du document pour
-    // conserver une chance raisonnable de couvrir la Division 07, au lieu de
-    // se limiter aux 4000 premiers caractères déjà pris pour la page de garde.
-    intro.push(texteDevis.substring(4000, budgetMax));
-    return intro.join('\n\n---\n\n').substring(0, budgetMax);
+    // de sections détectées, on retombe sur un extrait brut limité (mieux que
+    // rien, mais moins fiable que l'index par section).
+    morceaux.push(texteDevis.substring(3000, 20000));
+    return morceaux.join('\n\n---\n\n');
   }
 
-  // Les sections de couverture font souvent 15-20 pages (~35-45k caractères) :
-  // la PARTIE 2 - PRODUITS (numéros d'article) arrive après la PARTIE 1 -
-  // GÉNÉRALITÉS (normes/références, parfois volumineuse) et démarre donc
-  // souvent bien après les 15 premiers milliers de caractères. Un plafond par
-  // section trop bas coupait la section EXACTEMENT avant la liste d'articles.
   positions.sort((a, b) => a.index - b.index);
-  const sections = positions.map((pos, i) => {
-    const debut = pos.index;
-    const fin = i + 1 < positions.length ? positions[i + 1].index : Math.min(texteDevis.length, debut + capParSection);
-    return { numero: pos.numero, texte: texteDevis.substring(debut, Math.min(fin, debut + capParSection)) };
-  });
+  const numeroLisible = (n) => n.replace(/^(\d{2})(\d{2})(\d{2})$/, '$1 $2 $3');
 
-  // Priorité Division 07 (couverture — le cœur du métier de T3E), puis 06/08
-  // (charpenterie/ouvertures, souvent connexes), puis 05/09 en dernier — pour
-  // que la troncature finale au budget, si elle doit arriver, coupe les
-  // divisions les moins pertinentes plutôt que la 07.
-  const rang = (numero) => {
-    const div = numero.substring(0, 2);
-    if (div === '07') return 0;
-    if (div === '06' || div === '08') return 1;
-    return 2;
-  };
-  sections.sort((a, b) => rang(a.numero) - rang(b.numero));
+  morceaux.push('=== INDEX DES SECTIONS ET ARTICLES (PARTIE 2 - PRODUITS) DE CE DEVIS ===\n' +
+    '(Titres uniquement, pas le texte complet — les numéros et titres ci-dessous sont les VRAIS numéros de CE devis)');
 
-  const morceaux = [...intro, ...sections.map(s => s.texte)];
-  return morceaux.join('\n\n---\n\n').substring(0, budgetMax);
+  for (let i = 0; i < positions.length; i++) {
+    const debut = positions[i].index;
+    const fin = i + 1 < positions.length ? positions[i + 1].index : texteDevis.length;
+    const bloc = texteDevis.substring(debut, fin);
+
+    // PARTIE 2 = PRODUITS/MATÉRIAUX dans la quasi-totalité des devis
+    // québécois (convention AMCQ/CSTC) — c'est la seule partie utile pour
+    // faire correspondre un produit à un numéro d'article.
+    const articleRegex = /\n\s*(2\.\d{1,2})\s+([A-ZÉÈÀÇ][^\n.]{2,50})/g;
+    const articles = [];
+    const vusArt = new Set();
+    let am;
+    while ((am = articleRegex.exec(bloc))) {
+      if (vusArt.has(am[1])) continue;
+      vusArt.add(am[1]);
+      articles.push(`${am[1]} ${am[2].trim()}`);
+    }
+    if (articles.length === 0) continue; // section sans PARTIE 2 identifiable (ex: administrative)
+
+    morceaux.push(`SECTION ${numeroLisible(positions[i].numero)} (${positions[i].titre}) : ${articles.join(' | ')}`);
+  }
+
+  return morceaux.join('\n');
 }
 
 async function appelIAContexte(texteDevis, produitsSelectionnes) {
@@ -130,7 +135,7 @@ async function appelIAContexte(texteDevis, produitsSelectionnes) {
     `${i + 1}. ${p.nom} (Fabricant: ${p.fabricant || 'inconnu'}, Fournisseur: ${p.fournisseur || 'inconnu'})`
   ).join('\n');
 
-  const userContent = `EXTRAIT DU DEVIS (table des matières + sections de Division 05-09 pertinentes — PAS le début brut du fichier) :
+  const userContent = `INDEX DU DEVIS (page de garde + numéros/titres d'articles réels de ce devis — PAS le texte intégral) :
 ───────────────────────────────────────
 ${extraireContextePertinent(texteDevis)}
 ───────────────────────────────────────
@@ -157,7 +162,13 @@ IMPORTANT : "produits" doit contenir EXACTEMENT ${produitsSelectionnes.length} e
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + OPENAI_API_KEY },
     body: JSON.stringify({
       model: 'gpt-4o',
-      max_tokens: 6000,
+      // L'index compact remplace le texte intégral (voir extraireContextePertinent) :
+      // la sortie JSON reste petite (quelques champs courts par produit), 2000
+      // tokens est largement suffisant même pour une longue liste de produits.
+      // Réduit aussi la consommation du quota strict de 30 000 tokens/minute
+      // du compte OpenAI de T3E (limite Tier 1) — les tokens de complétion y
+      // comptent aussi.
+      max_tokens: 2000,
       temperature: 0.1,
       response_format: { type: 'json_object' },
       messages: [
