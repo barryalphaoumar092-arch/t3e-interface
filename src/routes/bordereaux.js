@@ -34,9 +34,10 @@ On te donne un devis de toiture ET une liste de produits DÉJÀ CHOISIS par l'es
 
 === TA MISSION ===
 Pour CHAQUE produit de la liste, dans l'ORDRE donné :
-1. Trouve dans le devis la SECTION (numéro 6 chiffres + titre, ex: "07 52 21 — Couverture à membrane de bitume modifié") où ce produit ou sa catégorie est traité
-2. Trouve l'ARTICLE (sous-section Partie 2, ex: "2.2 Pare-vapeur") qui correspond le mieux à ce produit. Si le produit exact n'est pas nommé, déduis l'article le plus probable selon sa fonction (pare-vapeur, isolant, membrane, sous-couche, adhésif, apprêt, drain, évent, etc.)
-3. Compose un USAGE très court (une seule phrase courte, 3 à 10 mots, PAS un paragraphe) décrivant simplement ce qu'est le produit, du style "Une membrane de sous-couche", "Un panneau isolant thermique de polyisocyanurate", "Une bande de recouvrement"
+1. Trouve dans L'EXTRAIT DE DEVIS FOURNI CI-DESSOUS (pas dans ta mémoire générale de devis types) la SECTION (numéro 6 chiffres + titre, ex: "07 52 21 — Couverture à membrane de bitume modifié") où ce produit ou sa catégorie est réellement traité. Le numéro de section VARIE d'un devis à l'autre (un projet peut utiliser "07 52 21", un autre "07 52 00" pour un contenu similaire) — ne réutilise JAMAIS un numéro "typique" que tu connais par ailleurs sans l'avoir vu explicitement dans CET extrait.
+2. Trouve l'ARTICLE (sous-section Partie 2, ex: "2.2 Pare-vapeur") qui correspond le mieux à ce produit, EN LISANT la liste réelle des articles de cette section dans l'extrait fourni. Si le produit exact n'est pas nommé mot pour mot, déduis l'article le plus probable selon sa fonction (pare-vapeur, isolant, membrane, sous-couche, adhésif, apprêt, drain, évent, etc.) MAIS uniquement parmi les articles qui existent réellement dans la section identifiée à l'étape 1 — n'invente pas un numéro d'article qui n'apparaît pas dans l'extrait.
+3. Si l'extrait fourni ne contient AUCUNE section pertinente pour ce produit, retourne une chaîne vide pour SECTION et ARTICLE plutôt que de deviner — mieux vaut vide que faux.
+4. Compose un USAGE très court (une seule phrase courte, 3 à 10 mots, PAS un paragraphe) décrivant simplement ce qu'est le produit, du style "Une membrane de sous-couche", "Un panneau isolant thermique de polyisocyanurate", "Une bande de recouvrement"
 
 Aussi, extrais du devis :
 - NOM_DU_PROJET : page de garde, en-tête, "Projet :", "Objet :"
@@ -52,6 +53,70 @@ Beaucoup de bordereaux d'architectes tiers (différents du gabarit T3E) ont des 
 - Ne change JAMAIS le nom/fabricant/fournisseur du produit, ils sont déjà corrects
 - Retourne UNIQUEMENT du JSON valide`;
 
+// Les devis font souvent 100+ pages : tronquer bêtement aux N premiers
+// caractères (comportement précédent) laisse fréquemment la Division 07
+// (couverture — ce qui nous intéresse) hors du texte envoyé à l'IA, qui doit
+// alors DEVINER section/article plutôt que de les lire réellement dans CE
+// devis précis. D'où des erreurs qui varient d'un devis à l'autre.
+// On priorise : la table des matières (liste tous les VRAIS numéros de
+// section de CE devis) + le contenu complet de chaque section de Division
+// 05/06/07/08/09 (où se trouvent les matériaux de toiture et travaux connexes).
+function extraireContextePertinent(texteDevis, budgetMax = 300000) {
+  const intro = [];
+
+  // Page de garde / sceaux et signatures : c'est là que se trouvent le nom du
+  // projet, son numéro, le propriétaire/établissement et la firme d'architectes.
+  intro.push('=== DÉBUT DU DEVIS (page de garde, sceaux) ===\n' + texteDevis.substring(0, 4000));
+
+  const tdmMatch = texteDevis.match(/TABLE DES MATI[EÈ]RES[\s\S]{0,6000}?FIN DE LA SECTION/i);
+  if (tdmMatch) intro.push('=== TABLE DES MATIÈRES DU DEVIS ===\n' + tdmMatch[0]);
+
+  // Marqueur fiable de DÉBUT de section, observé dans les devis québécois type
+  // CIMAISE/AMCQ : "Section 07 52 21 ... Page 1 de 29" (seule la première page
+  // d'une section porte "Page 1 de", les suivantes portent "Page 2 de", etc.)
+  const debutSectionRegex = /Section\s+((?:0[5-9])\s?\d{2}\s?\d{2})[^\n]*\r?\n[^\n]*Page\s*1\s*de\s*\d+/gi;
+  const positions = [];
+  const vus = new Set();
+  let m;
+  while ((m = debutSectionRegex.exec(texteDevis))) {
+    const numero = m[1].replace(/\s/g, '');
+    if (vus.has(numero)) continue;
+    vus.add(numero);
+    positions.push({ numero, index: m.index });
+  }
+
+  if (positions.length === 0) {
+    // Format de devis non standard (marqueurs "Page 1 de" introuvables) : pas
+    // de sections détectées, on élargit plutôt le début du document pour
+    // conserver une chance raisonnable de couvrir la Division 07, au lieu de
+    // se limiter aux 4000 premiers caractères déjà pris pour la page de garde.
+    intro.push(texteDevis.substring(4000, budgetMax));
+    return intro.join('\n\n---\n\n').substring(0, budgetMax);
+  }
+
+  positions.sort((a, b) => a.index - b.index);
+  const sections = positions.map((pos, i) => {
+    const debut = pos.index;
+    const fin = i + 1 < positions.length ? positions[i + 1].index : Math.min(texteDevis.length, debut + 15000);
+    return { numero: pos.numero, texte: texteDevis.substring(debut, Math.min(fin, debut + 15000)) };
+  });
+
+  // Priorité Division 07 (couverture — le cœur du métier de T3E), puis 06/08
+  // (charpenterie/ouvertures, souvent connexes), puis 05/09 en dernier — pour
+  // que la troncature finale au budget, si elle doit arriver, coupe les
+  // divisions les moins pertinentes plutôt que la 07.
+  const rang = (numero) => {
+    const div = numero.substring(0, 2);
+    if (div === '07') return 0;
+    if (div === '06' || div === '08') return 1;
+    return 2;
+  };
+  sections.sort((a, b) => rang(a.numero) - rang(b.numero));
+
+  const morceaux = [...intro, ...sections.map(s => s.texte)];
+  return morceaux.join('\n\n---\n\n').substring(0, budgetMax);
+}
+
 async function appelIAContexte(texteDevis, produitsSelectionnes) {
   const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
   if (!OPENAI_API_KEY) throw new Error('OPENAI_API_KEY manquante. Ajoutez-la sur Render.');
@@ -60,9 +125,9 @@ async function appelIAContexte(texteDevis, produitsSelectionnes) {
     `${i + 1}. ${p.nom} (Fabricant: ${p.fabricant || 'inconnu'}, Fournisseur: ${p.fournisseur || 'inconnu'})`
   ).join('\n');
 
-  const userContent = `TEXTE COMPLET DU DEVIS :
+  const userContent = `EXTRAIT DU DEVIS (table des matières + sections de Division 05-09 pertinentes — PAS le début brut du fichier) :
 ───────────────────────────────────────
-${texteDevis.substring(0, 40000)}
+${extraireContextePertinent(texteDevis)}
 ───────────────────────────────────────
 
 PRODUITS DÉJÀ CHOISIS PAR L'ESTIMATEUR (dans cet ordre) :
