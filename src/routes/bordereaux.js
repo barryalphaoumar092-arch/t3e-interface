@@ -127,6 +127,38 @@ function extraireContextePertinent(texteDevis) {
   return morceaux.join('\n');
 }
 
+// Schéma strict (Structured Outputs OpenAI) : sans lui, response_format
+// "json_object" laisse le modèle libre d'omettre des clés ou de mal
+// structurer un produit dans le tableau — observé en production : USAGE
+// rempli mais SECTION/ARTICLE absents pour certains produits, sans erreur
+// HTTP. Le mode "strict: true" garantit que CHAQUE produit retourné possède
+// les 3 clés (même vides), donc jamais silencieusement absentes.
+const SCHEMA_CONTEXTE = {
+  type: 'object',
+  properties: {
+    NOM_DU_PROJET: { type: 'string' },
+    NUMERO_DU_PROJET: { type: 'string' },
+    NOM_ETABLISSEMENT: { type: 'string' },
+    ARCHITECTE_FIRME: { type: 'string' },
+    ARCHITECTE_CONTACT: { type: 'string' },
+    produits: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          SECTION: { type: 'string' },
+          ARTICLE: { type: 'string' },
+          USAGE: { type: 'string' },
+        },
+        required: ['SECTION', 'ARTICLE', 'USAGE'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['NOM_DU_PROJET', 'NUMERO_DU_PROJET', 'NOM_ETABLISSEMENT', 'ARCHITECTE_FIRME', 'ARCHITECTE_CONTACT', 'produits'],
+  additionalProperties: false,
+};
+
 async function appelIAContexte(texteDevis, produitsSelectionnes) {
   const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
   if (!OPENAI_API_KEY) throw new Error('OPENAI_API_KEY manquante. Ajoutez-la sur Render.');
@@ -170,7 +202,10 @@ IMPORTANT : "produits" doit contenir EXACTEMENT ${produitsSelectionnes.length} e
       // comptent aussi.
       max_tokens: 2000,
       temperature: 0.1,
-      response_format: { type: 'json_object' },
+      response_format: {
+        type: 'json_schema',
+        json_schema: { name: 'contexte_bordereau', schema: SCHEMA_CONTEXTE, strict: true },
+      },
       messages: [
         { role: 'system', content: SYSTEM_PROMPT_CONTEXTE },
         { role: 'user', content: userContent },
@@ -574,6 +609,17 @@ router.post('/analyser', async (req, res) => {
   const nomProjet = iaResult.NOM_DU_PROJET || nom_projet || '';
   const numProjet = iaResult.NUMERO_DU_PROJET || '';
   const contexteProduits = iaResult.produits || [];
+
+  if (iaErreur) {
+    console.error('[analyser] Appel IA contexte échoué:', iaErreur);
+  } else if (contexteProduits.length !== produitsBase.length) {
+    console.warn(`[analyser] Décalage IA: ${contexteProduits.length} contexte(s) reçu(s) pour ${produitsBase.length} produit(s) — les produits en trop n'auront pas de SECTION/ARTICLE.`);
+  }
+  contexteProduits.forEach((c, i) => {
+    if (!c.SECTION && !c.ARTICLE) {
+      console.warn(`[analyser] SECTION/ARTICLE vides pour "${produitsBase[i]?.nom}" — l'IA n'a trouvé aucune correspondance dans l'index du devis.`);
+    }
+  });
 
   // Champs additionnels que le devis contient parfois mais que le gabarit T3E
   // n'a pas (donc absents des 16 libellés fixes) — utiles pour les gabarits
