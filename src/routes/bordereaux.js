@@ -35,7 +35,7 @@ On te donne un devis de toiture ET une liste de produits DÉJÀ CHOISIS par l'es
 Pour CHAQUE produit de la liste, dans l'ORDRE donné :
 1. Trouve dans le devis la SECTION (numéro 6 chiffres + titre, ex: "07 52 21 — Couverture à membrane de bitume modifié") où ce produit ou sa catégorie est traité
 2. Trouve l'ARTICLE (sous-section Partie 2, ex: "2.2 Pare-vapeur") qui correspond le mieux à ce produit. Si le produit exact n'est pas nommé, déduis l'article le plus probable selon sa fonction (pare-vapeur, isolant, membrane, sous-couche, adhésif, apprêt, drain, évent, etc.)
-3. Compose une REMARQUE technique courte (1-2 phrases) : fonction du produit + contexte pertinent du projet
+3. Compose un USAGE très court (une seule phrase courte, 3 à 10 mots, PAS un paragraphe) décrivant simplement ce qu'est le produit, du style "Une membrane de sous-couche", "Un panneau isolant thermique de polyisocyanurate", "Une bande de recouvrement"
 
 Aussi, extrais du devis :
 - NOM_DU_PROJET : page de garde, en-tête, "Projet :", "Objet :"
@@ -67,7 +67,7 @@ Retourne ce JSON :
   "NOM_DU_PROJET": "nom complet du projet (du DEVIS)",
   "NUMERO_DU_PROJET": "numéro de référence (du DEVIS)",
   "produits": [
-    { "SECTION": "...", "ARTICLE": "...", "REMARQUE": "..." }
+    { "SECTION": "...", "ARTICLE": "...", "USAGE": "..." }
   ]
 }
 
@@ -451,7 +451,8 @@ router.post('/analyser', async (req, res) => {
       FOURNISSEUR: mat.fournisseur || '',
       SECTION: ctx.SECTION || '',
       ARTICLE: ctx.ARTICLE || '',
-      DESCRIPTION: ctx.REMARQUE || '',
+      DESCRIPTION: mat.nom,
+      USAGE: ctx.USAGE || '',
       REMARQUE: '',
       ft_url: mat.lien_fiche_technique || '',
     };
@@ -507,7 +508,8 @@ router.get('/reviser/:id', async (req, res) => {
         SECTION: c.SECTION || '', ARTICLE: c.ARTICLE || '',
         TITRE: c.TITRE || '', FABRICANT: c.FABRICANT || '',
         FOURNISSEUR: c.FOURNISSEUR || '',
-        DESCRIPTION: c.REMARQUE || '',
+        DESCRIPTION: c.TITRE || '',
+        USAGE: c.REMARQUE || '',
         REMARQUE: '',
         ft_noms: data.ft_chemins ? data.ft_chemins.map(p => path.basename(p)) : [],
         ft_selection: data.ft_chemins && data.ft_chemins.length > 0 ? data.ft_chemins[0] : '__AUTO__',
@@ -565,6 +567,7 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
   const sections = [].concat(req.body.SECTION || []);
   const articles = [].concat(req.body.ARTICLE || []);
   const descriptions = [].concat(req.body.DESCRIPTION || []);
+  const usages = [].concat(req.body.USAGE || []);
   const ftSelections = [].concat(req.body.FT_FICHIER || []);
 
   const nbProduits = titres.length;
@@ -587,6 +590,7 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
       SECTION: sections[i] || '',
       ARTICLE: articles[i] || '',
       DESCRIPTION: descriptions[i] || '',
+      USAGE: usages[i] || '',
       REMARQUE: '',
     };
 

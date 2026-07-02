@@ -36,6 +36,59 @@ function labelVariants(label) {
   ];
 }
 
+// Certains gabarits (ex. architectes) placent le libellé et sa valeur dans
+// DEUX cellules de tableau séparées : le libellé occupe sa propre cellule
+// étroite, suivie d'une (ou plusieurs) cellule(s) dont celle portant une
+// bordure pointillée est la zone de saisie prévue pour la valeur. Insérer
+// directement dans le run du libellé (comme si libellé et valeur partageaient
+// la même cellule, cas du gabarit T3E) fait alors déborder la cellule étroite
+// et laisse la vraie zone de saisie vide — d'où le symptôme observé : gros
+// espace vide + texte tronqué/empilé sur plusieurs lignes.
+function resoudrePositionInsertion(xml, closeIdx) {
+  const finCelluleLabel = xml.indexOf('</w:tc>', closeIdx);
+  const celluleSeparee = finCelluleLabel !== -1
+    && finCelluleLabel < closeIdx + 40
+    && !/<w:t[ >]/.test(xml.substring(closeIdx, finCelluleLabel));
+
+  if (celluleSeparee) {
+    const posSaisie = trouverCelluleDeSaisie(xml, finCelluleLabel + '</w:tc>'.length);
+    if (posSaisie !== -1) return { pos: posSaisie, inline: false };
+  }
+  return { pos: closeIdx, inline: true };
+}
+
+// Cherche, a partir de `depart`, la premiere cellule <w:tc> dont la bordure
+// est pointillee (zone de saisie prevue par le gabarit) et retourne la
+// position juste avant le </w:p> de son premier paragraphe.
+function trouverCelluleDeSaisie(xml, depart) {
+  const tcRegex = /<w:tc>|<w:tc\s[^>]*>/g;
+  tcRegex.lastIndex = depart;
+  let m;
+  let tentatives = 0;
+  while (tentatives < 6 && (m = tcRegex.exec(xml))) {
+    tentatives++;
+    const finCellule = xml.indexOf('</w:tc>', m.index);
+    if (finCellule === -1) break;
+    const debutParagraphe = xml.indexOf('<w:p', m.index);
+    const entete = debutParagraphe !== -1 && debutParagraphe < finCellule
+      ? xml.substring(m.index, debutParagraphe)
+      : xml.substring(m.index, finCellule);
+    if (/w:val="dotted"/.test(entete)) {
+      const finPremierParagraphe = xml.indexOf('</w:p>', m.index);
+      if (finPremierParagraphe !== -1 && finPremierParagraphe < finCellule) return finPremierParagraphe;
+    }
+    tcRegex.lastIndex = finCellule;
+  }
+  return -1;
+}
+
+function inserer(xml, pos, inline, valeur) {
+  const texte = escapeXml(String(valeur));
+  return inline
+    ? xml.substring(0, pos) + ' ' + texte + xml.substring(pos)
+    : xml.substring(0, pos) + `<w:r><w:t xml:space="preserve">${texte}</w:t></w:r>` + xml.substring(pos);
+}
+
 function remplirChampDansXml(xml, label, valeur) {
   for (const variant of labelVariants(label)) {
     const idx = xml.indexOf(variant);
@@ -44,9 +97,10 @@ function remplirChampDansXml(xml, label, valeur) {
     const colonIdx = idx + variant.length - 1;
     const closeIdx = xml.indexOf('</w:t>', colonIdx);
     if (closeIdx === -1) continue;
+    if (!valeur) return { xml, trouve: true };
 
-    const nouvelleValeur = valeur ? ' ' + escapeXml(String(valeur)) : '';
-    xml = xml.substring(0, colonIdx + 1) + nouvelleValeur + xml.substring(closeIdx);
+    const { pos, inline } = resoudrePositionInsertion(xml, closeIdx);
+    xml = inserer(xml, pos, inline, valeur);
     return { xml, trouve: true };
   }
   return { xml, trouve: false };
@@ -95,9 +149,9 @@ async function placerChampsRestantsViaIA(xml, champsNonTrouves) {
   // positions déjà calculées pour les runs précédents.
   const indices = Object.keys(valeursParRun).map(Number).sort((a, b) => b - a);
   for (const idx of indices) {
-    const valeur = ' ' + escapeXml(valeursParRun[idx].join(' / '));
-    const pos = positions[idx];
-    xml = xml.substring(0, pos) + valeur + xml.substring(pos);
+    const valeurTexte = valeursParRun[idx].join(' / ');
+    const { pos, inline } = resoudrePositionInsertion(xml, positions[idx]);
+    xml = inserer(xml, pos, inline, valeurTexte);
   }
   return xml;
 }
@@ -120,10 +174,18 @@ function cocherCaseACocher(xml, label) {
   while ((m = ffDataRegex.exec(xml))) {
     if (!m[0].includes('<w:checkBox')) continue;
     const distance = Math.abs(m.index - labelIdx);
-    if (distance < meilleureDistance && distance < 1500) {
-      meilleureDistance = distance;
-      champ = { ffStart: m.index, ffEnd: m.index + m[0].length, ffXml: m[0] };
-    }
+    if (distance >= 1500 || distance >= meilleureDistance) continue;
+    // Ignorer les cases situees dans une AUTRE cellule de tableau que le
+    // libelle : dans les gabarits a colonnes (une case par colonne, ex.
+    // "Dessin d'atelier | Fiche technique | Echantillon"), la case la plus
+    // proche en distance de caracteres brute peut appartenir a la colonne
+    // voisine (ex. cocher "Echantillon" au lieu de "Fiche technique") des
+    // qu'on traverse une frontiere </w:tc>.
+    const debut = Math.min(m.index, labelIdx);
+    const fin = Math.max(m.index, labelIdx);
+    if (xml.substring(debut, fin).includes('</w:tc>')) continue;
+    meilleureDistance = distance;
+    champ = { ffStart: m.index, ffEnd: m.index + m[0].length, ffXml: m[0] };
   }
   if (!champ) return xml;
 
@@ -166,7 +228,9 @@ async function remplirBordereau(champs, buf) {
 
   xml = normalizeXmlText(xml);
 
-  // Cocher la case "Fiche technique" (toujours)
+  // Cocher les cases toujours applicables aux bordereaux T3E : discipline
+  // "Architecture" et produit soumis "Fiche technique"
+  xml = cocherCaseACocher(xml, 'Architecture');
   xml = cocherCaseACocher(xml, 'Fiche technique');
 
   // Labels plus longs EN PREMIER pour eviter correspondances partielles
@@ -182,6 +246,7 @@ async function remplirBordereau(champs, buf) {
     ['FEUILLES',         'Nombre feuilles' + NBSP + ':',     ''],
     ['REVISION',         'Révision' + NBSP + ':',       ''],
     ['DESCRIPTION',      'Description' + NBSP + ':',         champs.DESCRIPTION      || ''],
+    ['USAGE',            'Usage' + NBSP + ':',                champs.USAGE            || ''],
     ['FOURNISSEUR',      'Fournisseur' + NBSP + ':',         champs.FOURNISSEUR      || ''],
     ['FABRICANT',        'Fabricant' + NBSP + ':',           champs.FABRICANT        || ''],
     ['SECTION',          'Section (item)' + NBSP + ':',      champs.SECTION          || ''],

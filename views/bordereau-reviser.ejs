@@ -128,9 +128,13 @@
                 <label class="form-label">Article</label>
                 <input type="text" name="ARTICLE" class="form-control form-control-sm" value="<%= p.ARTICLE || '' %>">
               </div>
-              <div class="col-12">
-                <label class="form-label">Description</label>
+              <div class="col-md-6">
+                <label class="form-label">Description (nom court du produit)</label>
                 <input type="text" name="DESCRIPTION" class="form-control form-control-sm" value="<%= p.DESCRIPTION || '' %>">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Usage (phrase courte)</label>
+                <input type="text" name="USAGE" class="form-control form-control-sm" value="<%= p.USAGE || '' %>">
               </div>
             </div>
           </div>
