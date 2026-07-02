@@ -61,7 +61,7 @@ Beaucoup de bordereaux d'architectes tiers (différents du gabarit T3E) ont des 
 // On priorise : la table des matières (liste tous les VRAIS numéros de
 // section de CE devis) + le contenu complet de chaque section de Division
 // 05/06/07/08/09 (où se trouvent les matériaux de toiture et travaux connexes).
-function extraireContextePertinent(texteDevis, budgetMax = 400000, capParSection = 30000) {
+function extraireContextePertinent(texteDevis, budgetMax = 220000, capParSection = 25000) {
   const intro = [];
 
   // Page de garde / sceaux et signatures : c'est là que se trouvent le nom du
