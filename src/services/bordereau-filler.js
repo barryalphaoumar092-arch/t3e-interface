@@ -110,9 +110,16 @@ function remplirChampDansXml(xml, label, valeur) {
 // variantes connues (gabarits d'architectes tiers) : demande à l'IA où insérer
 // chaque champ restant, en se basant sur les textes réellement présents dans
 // CE document plutôt que sur une liste fixe de libellés attendus.
+// Retourne { xml, restants } où `restants` contient les champs que même l'IA
+// n'a pas pu placer (indisponible, échec d'appel, ou aucun index retourné) —
+// permet à l'appelant de garantir qu'aucune valeur n'est perdue en silence.
 async function placerChampsRestantsViaIA(xml, champsNonTrouves) {
   const { isConfigured, mapperChampsBordereau } = require('./claude-client');
-  if (!isConfigured() || Object.keys(champsNonTrouves).length === 0) return xml;
+  if (Object.keys(champsNonTrouves).length === 0) return { xml, restants: {} };
+  if (!isConfigured()) {
+    console.warn('[bordereau-filler] OPENAI_API_KEY non configurée — fallback IA sauté pour:', Object.keys(champsNonTrouves).join(', '));
+    return { xml, restants: { ...champsNonTrouves } };
+  }
 
   const runRegex = /<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g;
   const runs = [];
@@ -124,25 +131,39 @@ async function placerChampsRestantsViaIA(xml, champsNonTrouves) {
     runs.push(texte);
     positions.push(m.index + m[0].length - '</w:t>'.length);
   }
-  if (runs.length === 0 || runs.length > 400) return xml;
+  if (runs.length === 0) return { xml, restants: { ...champsNonTrouves } };
+  if (runs.length > 400) {
+    console.warn(`[bordereau-filler] Document trop volumineux pour le mapping IA (${runs.length} textes > 400) — champs non placés:`, Object.keys(champsNonTrouves).join(', '));
+    return { xml, restants: { ...champsNonTrouves } };
+  }
 
   let mapping;
   try {
     mapping = await mapperChampsBordereau(runs, champsNonTrouves);
   } catch (e) {
     console.error('[bordereau-filler] Mapping IA échoué:', e.message);
-    return xml;
+    return { xml, restants: { ...champsNonTrouves } };
   }
-  if (!mapping) return xml;
+  if (!mapping) {
+    console.warn('[bordereau-filler] Mapping IA n\'a retourné aucun résultat pour:', Object.keys(champsNonTrouves).join(', '));
+    return { xml, restants: { ...champsNonTrouves } };
+  }
 
   // Plusieurs champs peuvent partager le même libellé combiné (ex: "Devis
   // (section et article)" pour SECTION + ARTICLE) — on les regroupe pour ne
   // faire qu'une seule insertion par run.
   const valeursParRun = {};
-  for (const [champ, idxRun] of Object.entries(mapping)) {
-    if (idxRun === null || idxRun === undefined || !runs[idxRun]) continue;
-    if (!champsNonTrouves[champ]) continue;
+  const restants = {};
+  for (const champ of Object.keys(champsNonTrouves)) {
+    const idxRun = mapping[champ];
+    if (idxRun === null || idxRun === undefined || !runs[idxRun]) {
+      restants[champ] = champsNonTrouves[champ];
+      continue;
+    }
     (valeursParRun[idxRun] = valeursParRun[idxRun] || []).push(champsNonTrouves[champ]);
+  }
+  if (Object.keys(restants).length > 0) {
+    console.warn('[bordereau-filler] IA n\'a pas trouvé d\'emplacement pour:', Object.keys(restants).join(', '));
   }
 
   // Insertion en partant de la fin du document pour ne pas décaler les
@@ -153,7 +174,37 @@ async function placerChampsRestantsViaIA(xml, champsNonTrouves) {
     const { pos, inline } = resoudrePositionInsertion(xml, positions[idx]);
     xml = inserer(xml, pos, inline, valeurTexte);
   }
-  return xml;
+  return { xml, restants };
+}
+
+// Dernier filet de sécurité : un champ qui a une valeur mais qu'on n'a réussi
+// à placer nulle part (ni libellé exact, ni IA) ne doit JAMAIS disparaître en
+// silence — peu importe la mise en page du gabarit soumis. On l'ajoute en
+// texte visible juste avant la fin du corps du document.
+function ajouterChampsNonPlaces(xml, champsRestants) {
+  const entrees = Object.entries(champsRestants).filter(([, v]) => v);
+  if (entrees.length === 0) return xml;
+
+  const NOMS_LISIBLES = {
+    NOM_DU_PROJET: 'Nom du projet', NUMERO_DU_PROJET: 'Numéro du projet',
+    SPECIALITE: 'Spécialité', ADRESSE: 'Adresse', NOM: 'Nom (sous-traitant)',
+    TITRE: 'Titre', DESCRIPTION: 'Description', USAGE: 'Usage',
+    FOURNISSEUR: 'Fournisseur', FABRICANT: 'Fabricant', SECTION: 'Section',
+    ARTICLE: 'Article', REMARQUE: 'Remarque',
+  };
+  const texte = 'Renseignements complémentaires — ' + entrees
+    .map(([k, v]) => `${NOMS_LISIBLES[k] || k} : ${v}`)
+    .join(' | ');
+
+  const paragraphe = `<w:p><w:r><w:rPr><w:i/><w:sz w:val="16"/></w:rPr><w:t xml:space="preserve">${escapeXml(texte)}</w:t></w:r></w:p>`;
+  const bodyCloseIdx = xml.lastIndexOf('</w:body>');
+  if (bodyCloseIdx === -1) return xml;
+  // Inserer avant la derniere <w:sectPr> (proprietes de section, obligatoires
+  // en fin de corps) plutot que juste avant </w:body> pour ne pas casser le
+  // schema OOXML.
+  const sectPrIdx = xml.lastIndexOf('<w:sectPr', bodyCloseIdx);
+  const pos = sectPrIdx !== -1 ? sectPrIdx : bodyCloseIdx;
+  return xml.substring(0, pos) + paragraphe + xml.substring(pos);
 }
 
 // Coche la case à cocher Word (legacy FORMCHECKBOX) la plus proche d'un
@@ -264,7 +315,14 @@ async function remplirBordereau(champs, buf) {
 
   if (Object.keys(champsNonTrouves).length > 0) {
     console.log('[bordereau-filler] Libellés non trouvés, tentative IA pour:', Object.keys(champsNonTrouves).join(', '));
-    xml = await placerChampsRestantsViaIA(xml, champsNonTrouves);
+    const resultat = await placerChampsRestantsViaIA(xml, champsNonTrouves);
+    xml = resultat.xml;
+    if (Object.keys(resultat.restants).length > 0) {
+      // Filet de sécurité final : ce gabarit n'a ni le libellé exact ni un
+      // emplacement identifiable par l'IA pour ces champs — on les rend quand
+      // même visibles plutôt que de produire un bordereau qui semble vide.
+      xml = ajouterChampsNonPlaces(xml, resultat.restants);
+    }
   }
 
   zip.file('word/document.xml', xml);

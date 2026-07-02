@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const { parseDevis } = require('../services/document-parser');
 const { remplirBordereau } = require('../services/bordereau-filler');
 const { convertirDocxEnPdf } = require('../services/docx-to-pdf');
+const { convertirDocEnDocx, estDocLegacy, estDocxValide } = require('../services/doc-to-docx');
 const { PDFDocument } = require('pdf-lib');
 const JSZip = require('jszip');
 const { downloadBuffer, removeFile, listFiles, stripAccents, BUCKETS } = require('../services/storage');
@@ -405,9 +406,24 @@ router.post('/analyser', async (req, res) => {
     return res.status(400).send('Le devis semble vide ou illisible.');
   }
 
-  const bordereauBuffer = await downloadBuffer(BUCKETS.UPLOADS_TEMP, bordereauKey);
+  let bordereauBuffer = await downloadBuffer(BUCKETS.UPLOADS_TEMP, bordereauKey);
   await removeFile(BUCKETS.UPLOADS_TEMP, bordereauKey).catch(() => {});
   if (!bordereauBuffer) return res.status(400).send('Impossible de lire le bordereau .docx.');
+
+  // Certains gabarits d'architectes sont encore envoyes en .doc (Word 97-2003,
+  // format OLE binaire) plutot qu'en .docx (zip OOXML) — bordereau-filler.js ne
+  // sait lire que du .docx. On convertit automatiquement via LibreOffice pour
+  // que le bordereau soit quand meme rempli, peu importe le format soumis.
+  if (estDocLegacy(bordereauBuffer)) {
+    try {
+      bordereauBuffer = await convertirDocEnDocx(bordereauBuffer);
+    } catch (e) {
+      return res.status(400).send('Le bordereau est en ancien format .doc (Word 97-2003) et sa conversion automatique en .docx a échoué : ' + e.message + '. Réenregistrez-le en .docx depuis Word puis réessayez.');
+    }
+  }
+  if (!estDocxValide(bordereauBuffer)) {
+    return res.status(400).send('Le fichier de bordereau n\'est pas un .docx valide. Réenregistrez-le en .docx depuis Word (Fichier > Enregistrer sous > Word Document .docx) puis réessayez.');
+  }
 
   // Charger les matériaux EXACTEMENT choisis par l'utilisateur (source 100% fiable,
   // plus de devinage par l'IA pour TITRE/FABRICANT/FOURNISSEUR)

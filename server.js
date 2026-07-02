@@ -56,6 +56,33 @@ app.post('/internal/convertir-docx-pdf', express.raw({ type: '*/*', limit: '25mb
   }
 });
 
+// Meme principe que /internal/convertir-docx-pdf : convertit un .doc legacy
+// (Word 97-2003) en .docx via LibreOffice, pour les gabarits de bordereaux
+// d'architectes encore envoyes dans l'ancien format binaire.
+app.post('/internal/convertir-doc-docx', express.raw({ type: '*/*', limit: '25mb' }), async (req, res) => {
+  const secret = (process.env.CONVERT_SERVICE_SECRET || '').trim();
+  const fourni = typeof req.headers['x-convert-secret'] === 'string'
+    ? req.headers['x-convert-secret'].trim() : '';
+  const valide = secret.length > 0 && fourni.length > 0
+    && Buffer.byteLength(fourni) === Buffer.byteLength(secret)
+    && crypto.timingSafeEqual(Buffer.from(fourni), Buffer.from(secret));
+  if (!valide) {
+    console.error(`[convert-auth] refuse — secret configure: ${secret.length} caracteres, recu: ${fourni.length} caracteres`);
+    return res.status(403).send('Forbidden');
+  }
+
+  if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+    return res.status(400).send('Corps .doc manquant');
+  }
+  try {
+    const { convertirDocEnDocxLocal } = require('./src/services/doc-to-docx');
+    const docxBuf = await convertirDocEnDocxLocal(req.body);
+    res.type('application/vnd.openxmlformats-officedocument.wordprocessingml.document').send(docxBuf);
+  } catch (e) {
+    res.status(500).send('Conversion échouée: ' + e.message);
+  }
+});
+
 // Session signee (HMAC), sans etat serveur — necessaire car les fonctions
 // serverless (Vercel) ne partagent pas de memoire entre invocations/instances.
 function signSession() {
