@@ -326,8 +326,13 @@ Tu remplis un MANUEL DE FIN DE CHANTIER à partir du devis de toiture d'un proje
   7. Drains, évents, cols de cygne et autres accessoires mécaniques (quantité, type, emplacement)
   8. Joints d'expansion, joints de contrôle, cants/bandes de transition si mentionnés
   9. Adhésifs, primaires, produits d'étanchéité complémentaires mentionnés
-  10. Toute exigence particulière du devis (résistance au vent/soulèvement, cote de résistance au feu, méthode d'installation spécifique, séquence des travaux, essais/inspections requis)
-  N'INVENTE RIEN qui n'est pas dans l'extrait fourni, mais SOIS EXHAUSTIF sur tout ce qui s'y trouve — vise un texte LONG et COMPLET (plusieurs lignes détaillées par composante si le devis le permet), pas une liste minimaliste.
+  10. Éléments métalliques spécialisés et accessoires liés à la toiture (échelles d'accès, chaperons/collerettes d'évents, brides regroupant des sorties mécaniques, rampes autoportantes/garde-corps, plaques d'ancrage) — produit exact, calibre, finition, emplacement
+  11. Revêtement mural extérieur ou parement métallique connexe aux travaux de toiture (produit, calibre, fini, emplacement) si mentionné
+  12. Lanterneaux et murs-rideaux inclinés : remplacement, rénovation d'étanchéité, garnitures, bris thermiques (produits et portée exacte) si mentionnés
+  13. Protection et coupe-feu : ensembles coupe-feu/pare-fumée, protections de circulation, membranes liquides de renfort si mentionnés
+  14. Exigences de performance et essais (résistance au vent/soulèvement avec valeurs exactes en kPa/psf si données, norme d'essai citée, cote de résistance au feu, garanties spécifiques par produit/fabricant mentionnées dans le devis)
+  15. Échéancier contractuel du devis, si des dates ou délais y sont précisés (mobilisation/début des travaux, réception provisoire, correction des déficiences, acceptation finale, période de réalisation)
+  N'INVENTE RIEN qui n'est pas dans l'extrait fourni, mais SOIS EXHAUSTIF sur tout ce qui s'y trouve — vise un texte LONG et COMPLET (plusieurs lignes détaillées par composante si le devis le permet), pas une liste minimaliste. Ces 15 points sont un plancher, pas un plafond : si le devis décrit d'autres travaux connexes pertinents (structure, mécanique, électricité liés à la toiture), transcris-les aussi dans une ligne dédiée.
 - SURFACE_GARANTIE : superficie totale de la toiture couverte par les travaux (ex: "12 500 pi²"), si mentionnée dans le devis. Retourne "" si absente.
 - DUREE_GARANTIE : durée de la garantie T3E sur la main-d'œuvre/matériaux si le devis la précise (ex: "10 ans", "15 ans"). Ne confonds pas avec la garantie du fabricant. Retourne "" si absente du devis — ce champ sera alors rempli manuellement.
 
@@ -346,6 +351,16 @@ Tu remplis un MANUEL DE FIN DE CHANTIER à partir du devis de toiture d'un proje
 const MOTS_CLES_TOITURE = [
   'membrane', 'toiture', 'couverture', 'isolant', 'pare-vapeur', 'pare vapeur',
   'bardeau', 'soprema', 'sopra', 'bitume', 'étanchéité', 'etancheite', 'relevé', 'releve',
+  // Divisions connexes fréquemment décrites dans le même devis qu'un projet de
+  // toiture (métaux, lanterneaux, revêtement mural, coupe-feu, drainage) — sans
+  // ces mots-clés, extraireContextePourManuel() ignore ces sections et l'IA ne
+  // peut jamais les transcrire dans DESCRIPTION_TRAVAUX, même si le prompt les
+  // demande explicitement.
+  'solin', 'drain', 'évent', 'event', 'col-de-cygne', 'col de cygne', 'lanterneau',
+  'mur-rideau', 'mur rideau', 'parement métallique', 'parement metallique',
+  'revêtement métallique', 'revetement metallique', 'échelle', 'echelle',
+  'chaperon', 'rampe autoportante', 'garde-corps', 'coupe-feu', 'pare-fumée', 'pare-fumee',
+  'vicwest', 'murphco', 'rockwool',
 ];
 
 // Budget total (en caracteres) reserve au CONTENU du devis (hors page de
@@ -432,7 +447,7 @@ ${contexte}
 
 Retourne un JSON avec tous les champs demandés, en français.`;
 
-  return callOpenAI(SYSTEM_MANUEL, userContent, ANALYSE_MANUEL_SCHEMA, true, 8000);
+  return callOpenAI(SYSTEM_MANUEL, userContent, ANALYSE_MANUEL_SCHEMA, true, 10000);
 }
 
 function isConfigured() {
