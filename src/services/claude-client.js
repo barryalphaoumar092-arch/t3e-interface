@@ -284,13 +284,21 @@ const ANALYSE_MANUEL_SCHEMA = {
     ENTREPRENEUR_GENERAL:   { type: 'string' },
     FOURNISSEUR_1:          { type: 'string' },
     FOURNISSEUR_2:          { type: 'string' },
+    FOURNISSEUR_3:          { type: 'string' },
+    FOURNISSEUR_4:          { type: 'string' },
+    SOUS_TRAITANT_1:        { type: 'string' },
+    SOUS_TRAITANT_2:        { type: 'string' },
     DESCRIPTION_TRAVAUX:    { type: 'string' },
+    SURFACE_GARANTIE:       { type: 'string' },
+    DUREE_GARANTIE:         { type: 'string' },
     confiance:              { type: 'string' },
   },
   required: [
     'NOM_DU_PROJET', 'CLIENT', 'ADRESSE_PROJET',
     'PROPRIETAIRE', 'CONSULTANT', 'ENTREPRENEUR_GENERAL',
-    'FOURNISSEUR_1', 'FOURNISSEUR_2', 'DESCRIPTION_TRAVAUX', 'confiance',
+    'FOURNISSEUR_1', 'FOURNISSEUR_2', 'FOURNISSEUR_3', 'FOURNISSEUR_4',
+    'SOUS_TRAITANT_1', 'SOUS_TRAITANT_2',
+    'DESCRIPTION_TRAVAUX', 'SURFACE_GARANTIE', 'DUREE_GARANTIE', 'confiance',
   ],
   additionalProperties: false,
 };
@@ -305,7 +313,8 @@ Tu remplis un MANUEL DE FIN DE CHANTIER à partir du devis de toiture d'un proje
 - PROPRIETAIRE : nom de l'entreprise propriétaire + adresse + téléphone si mentionnés, sous la forme "Nom — Adresse — Téléphone" (compose ce que tu trouves, laisse vide ce qui manque)
 - CONSULTANT : nom de la firme d'architectes/ingénieurs qui a préparé le devis + coordonnées si mentionnées, même format "Nom — Adresse — Téléphone"
 - ENTREPRENEUR_GENERAL : nom de l'entrepreneur général du chantier s'il est mentionné (souvent absent des devis d'architecte — retourne "" si absent, ne jamais confondre avec T3E qui est l'entrepreneur COUVREUR, pas général)
-- FOURNISSEUR_1, FOURNISSEUR_2 : fournisseurs/fabricants des matériaux principaux mentionnés dans le devis (ex: "Soprema", "CGC"), sous la forme "Nom — Adresse — Téléphone" si ces coordonnées sont dans le devis, sinon juste le nom. Laisse FOURNISSEUR_2 vide s'il n'y a qu'un seul fournisseur principal.
+- FOURNISSEUR_1, FOURNISSEUR_2, FOURNISSEUR_3, FOURNISSEUR_4 : TOUS les fournisseurs/fabricants de matériaux distincts mentionnés dans le devis (ex: "Soprema" pour la membrane, "CGC" pour les panneaux, un fournisseur de bardeau/évents/mécanique s'il y en a un autre), sous la forme "Nom — Adresse — Téléphone" si ces coordonnées sont dans le devis, sinon juste le nom. Un fournisseur par champ, du plus important au moins important. Laisse les champs vides s'il y a moins de 4 fournisseurs distincts identifiables — n'invente rien et ne répète pas le même fournisseur dans deux champs.
+- SOUS_TRAITANT_1, SOUS_TRAITANT_2 : sous-traitants mentionnés dans le devis pour des travaux connexes à la couverture (ex: mécanique, électricité, maçonnerie, étanchéité de joints) si le devis en nomme explicitement. Retourne "" si aucun sous-traitant n'est mentionné — ne confonds jamais un fournisseur de matériaux avec un sous-traitant.
 - DESCRIPTION_TRAVAUX : la section LA PLUS IMPORTANTE du manuel. Tu dois TRANSCRIRE ET DÉVELOPPER, de façon EXHAUSTIVE, TOUT ce que l'extrait du devis fourni décrit sur la toiture — ne résume JAMAIS, ne raccourcis JAMAIS, n'omets AUCUN détail technique présent dans le texte fourni. Comporte-toi comme un chargé de projet senior qui relit chaque paragraphe pertinent du devis et le retranscrit fidèlement et intégralement dans le manuel, en l'organisant et le complétant du mieux possible.
   Format : une ligne par composante/sujet, séparées par des retours à la ligne (\\n), sous la forme "Nom de la composante : détail complet du devis". Couvre AU MINIMUM, si le devis en parle (n'omets une ligne QUE si le devis n'en parle vraiment pas du tout) :
   1. Pare-vapeur / coupe-vapeur (produit exact, méthode de pose, recouvrements)
@@ -319,6 +328,8 @@ Tu remplis un MANUEL DE FIN DE CHANTIER à partir du devis de toiture d'un proje
   9. Adhésifs, primaires, produits d'étanchéité complémentaires mentionnés
   10. Toute exigence particulière du devis (résistance au vent/soulèvement, cote de résistance au feu, méthode d'installation spécifique, séquence des travaux, essais/inspections requis)
   N'INVENTE RIEN qui n'est pas dans l'extrait fourni, mais SOIS EXHAUSTIF sur tout ce qui s'y trouve — vise un texte LONG et COMPLET (plusieurs lignes détaillées par composante si le devis le permet), pas une liste minimaliste.
+- SURFACE_GARANTIE : superficie totale de la toiture couverte par les travaux (ex: "12 500 pi²"), si mentionnée dans le devis. Retourne "" si absente.
+- DUREE_GARANTIE : durée de la garantie T3E sur la main-d'œuvre/matériaux si le devis la précise (ex: "10 ans", "15 ans"). Ne confonds pas avec la garantie du fabricant. Retourne "" si absente du devis — ce champ sera alors rempli manuellement.
 
 === RÈGLES ===
 - NE RETOURNE JAMAIS les coordonnées de T3E elle-même (7550 Rue Saint-Patrick, etc.) dans PROPRIETAIRE/CONSULTANT/ENTREPRENEUR_GENERAL — T3E est l'entrepreneur couvreur, pas un des rôles ci-dessus

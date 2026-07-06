@@ -9,7 +9,7 @@ const { remplirManuel } = require('../services/manuel-filler');
 const { convertirDocxEnPdf } = require('../services/docx-to-pdf');
 const { analyserDevisManuel } = require('../services/claude-client');
 const { PDFDocument } = require('pdf-lib');
-const { downloadBuffer, uploadBuffer, removeFile, listFiles, sanitizeKey, BUCKETS } = require('../services/storage');
+const { downloadBuffer, uploadBuffer, createSignedUrl, removeFile, listFiles, sanitizeKey, BUCKETS } = require('../services/storage');
 
 // Documents par defaut (reutilises sur tous les manuels, sauf remplacement
 // projet par projet) — a uploader une fois dans le bucket "documents" via la
@@ -174,11 +174,11 @@ router.post('/analyser', async (req, res) => {
     ENTREPRENEUR_COUVREUR: 'Toitures Trois Étoiles — 7550 Rue Saint-Patrick, Montréal, QC H8N 1V1 — 514-365-6600',
     FOURNISSEUR_1: ia.FOURNISSEUR_1 || '',
     FOURNISSEUR_2: ia.FOURNISSEUR_2 || '',
-    FOURNISSEUR_3: '', FOURNISSEUR_4: '',
-    SOUS_TRAITANT_1: '', SOUS_TRAITANT_2: '',
+    FOURNISSEUR_3: ia.FOURNISSEUR_3 || '', FOURNISSEUR_4: ia.FOURNISSEUR_4 || '',
+    SOUS_TRAITANT_1: ia.SOUS_TRAITANT_1 || '', SOUS_TRAITANT_2: ia.SOUS_TRAITANT_2 || '',
     DESCRIPTION_TRAVAUX: ia.DESCRIPTION_TRAVAUX || '',
     DETAILS_IMPREVUS: '',
-    NUMERO_GARANTIE: '', SURFACE_GARANTIE: '', DUREE_GARANTIE: '', DATE_FIN_GARANTIE: '',
+    NUMERO_GARANTIE: '', SURFACE_GARANTIE: ia.SURFACE_GARANTIE || '', DUREE_GARANTIE: ia.DUREE_GARANTIE || '', DATE_FIN_GARANTIE: '',
   };
   for (let i = 1; i <= 9; i++) champs['COMMENTAIRE_' + i] = '';
 
@@ -305,6 +305,7 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
   buffersAFusionner.push(...(await chargerAvecDefaut(documents.attestation_ccq, DEFAUTS.attestation_ccq)));
   buffersAFusionner.push(...(await chargerBuffersCategorie(documents.garantie_fabricant)));
   buffersAFusionner.push(...(await chargerBuffersCategorie(documents.dessins_atelier)));
+  buffersAFusionner.push(...(await chargerBuffersCategorie(documents.plan)));
   buffersAFusionner.push(...(await chargerBuffersCategorie(documents.fiches_techniques)));
   buffersAFusionner.push(...(await chargerBuffersCategorie(documents.plans_as_built)));
 
@@ -318,19 +319,24 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
     args: [JSON.stringify({ champs, documents, ia_erreur: data.ia_erreur || '' }), champs.NOM_DU_PROJET || row.titre, champs.NUMERO_DOSSIER || row.numero_dossier, id],
   });
 
-  const nomFichier = `Manuel_Fin_Chantier_${(champs.NUMERO_DOSSIER || id).toString().replace(/[^a-zA-Z0-9_-]/g, '-')}.pdf`;
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="${nomFichier}"`);
-  res.send(pdfFinal);
+  // Redirection vers une URL signee Supabase plutot que d'envoyer le buffer
+  // dans la reponse : un manuel avec beaucoup de fiches techniques/dessins
+  // depasse facilement les 4.5 Mo de limite de reponse d'une fonction
+  // serverless Vercel (meme limite que pour l'upload — voir storage.js).
+  res.redirect('/manuels/telecharger/' + id);
 });
 
 router.get('/telecharger/:id', async (req, res) => {
   const id = parseInt(req.params.id);
-  const buf = await downloadBuffer(BUCKETS.MANUELS, `${id}/manuel-final.pdf`);
-  if (!buf) return res.status(404).send('Manuel introuvable ou pas encore genere.');
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="Manuel_Fin_Chantier_${id}.pdf"`);
-  res.send(buf);
+  const r = await req.db.execute({ sql: 'SELECT numero_dossier FROM manuels WHERE id = ?', args: [id] });
+  const numeroDossier = r.rows[0] ? r.rows[0].numero_dossier : null;
+  const nomFichier = `Manuel_Fin_Chantier_${(numeroDossier || id).toString().replace(/[^a-zA-Z0-9_-]/g, '-')}.pdf`;
+  try {
+    const url = await createSignedUrl(BUCKETS.MANUELS, `${id}/manuel-final.pdf`, 300, nomFichier);
+    res.redirect(url);
+  } catch (e) {
+    res.status(404).send('Manuel introuvable ou pas encore genere.');
+  }
 });
 
 router.post('/supprimer/:id', async (req, res) => {

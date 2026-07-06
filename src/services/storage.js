@@ -67,6 +67,19 @@ async function createSignedUploadUrl(bucket, key) {
   return data; // { signedUrl, token, path }
 }
 
+// Genere une URL de telechargement signee : le navigateur recoit le fichier
+// DIRECTEMENT depuis Supabase Storage, sans passer par le corps de reponse de
+// la fonction serverless Vercel (meme limite de 4.5 Mo que pour l'upload —
+// voir createSignedUploadUrl). Indispensable pour les PDF fusionnes volumineux
+// (ex: manuel de fin de chantier avec de nombreuses fiches techniques).
+async function createSignedUrl(bucket, key, expiresIn = 300, nomTelechargement) {
+  const supabase = getClient();
+  const options = nomTelechargement ? { download: nomTelechargement } : undefined;
+  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(key, expiresIn, options);
+  if (error) throw error;
+  return data.signedUrl;
+}
+
 async function downloadBuffer(bucket, key) {
   const supabase = getClient();
   const { data, error } = await supabase.storage.from(bucket).download(key);
@@ -92,4 +105,4 @@ async function listFiles(bucket, prefix = '') {
   return data || [];
 }
 
-module.exports = { getClient, BUCKETS, ensureBucket, uploadBuffer, downloadBuffer, createSignedUploadUrl, removeFile, listFiles, sanitizeKey, stripAccents };
+module.exports = { getClient, BUCKETS, ensureBucket, uploadBuffer, downloadBuffer, createSignedUploadUrl, createSignedUrl, removeFile, listFiles, sanitizeKey, stripAccents };
