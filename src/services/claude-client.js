@@ -339,6 +339,8 @@ Tu remplis un MANUEL DE FIN DE CHANTIER à partir du devis de toiture d'un proje
 === RÈGLES ===
 - NE RETOURNE JAMAIS les coordonnées de T3E elle-même (7550 Rue Saint-Patrick, etc.) dans PROPRIETAIRE/CONSULTANT/ENTREPRENEUR_GENERAL — T3E est l'entrepreneur couvreur, pas un des rôles ci-dessus
 - Si une info n'est pas dans le devis, retourne une chaîne vide ""
+- INTERDICTION ABSOLUE d'écrire des réponses paresseuses comme "Voir section 07 21 16", "Voir section X", "Se référer au devis" ou toute autre forme de renvoi sans contenu — le manuel doit pouvoir être lu SEUL, sans avoir le devis sous les yeux. Si tu identifies la bonne section mais qu'elle ne fait que renvoyer à une autre section, VA CHERCHER le contenu réel dans cette autre section de l'extrait fourni et transcris-le. Si le contenu réel n'est vraiment nulle part dans l'extrait, écris "" pour cette ligne plutôt qu'un renvoi vide.
+- Pour DESCRIPTION_TRAVAUX, privilégie toujours le produit RÉELLEMENT installé en toiture (celui décrit dans la section technique principale de couverture, généralement la plus longue du devis, sous "PARTIE 2 PRODUITS") plutôt qu'un produit secondaire ou incidental mentionné dans une section annexe courte (ex: isolant en matelas des parapets, panneau de béton d'un muret) — ne confonds jamais les deux.
 - confiance : "haute", "moyenne" ou "basse" selon la clarté du devis fourni`;
 
 // Les devis font souvent plusieurs centaines de pages — envoyer le texte
@@ -372,7 +374,30 @@ const MOTS_CLES_TOITURE = [
 // laisse largement la place au system prompt + a une reponse tres detaillee
 // tout en restant sous la limite de 30 000 tokens/minute du compte T3E.
 const BUDGET_TOTAL_SECTIONS = 56000;
-const CAP_PAR_SECTION = 20000;
+const CAP_PAR_SECTION = 42000;
+
+// Les devis québécois type CCDC/AMCQ structurent chaque section en PARTIE 1
+// GÉNÉRALITÉS (qualité, garanties, transport, conditions de mise en œuvre —
+// JAMAIS les produits réellement installés) / PARTIE 2 PRODUITS (les produits
+// nommés — ce qui compte le plus pour le manuel) / PARTIE 3 EXÉCUTION (méthode
+// de pose). Constaté le 2026-07-06 sur un vrai devis (section 07 52 21, 29
+// pages) : PARTIE 1 seule dépasse déjà l'ancien plafond de 20 000 caractères,
+// donc l'IA ne voyait JAMAIS PARTIE 2 et inventait des réponses du type "Voir
+// section X" ou piochait des produits secondaires dans de petites sections
+// annexes plutôt que les produits réels (Sopraply Base 520, Sopra-ISO, drains
+// Murphco, etc., tous absents du résultat alors que présents au devis).
+function extraireSectionUtile(texteSection, capMax) {
+  const idxPartie2 = texteSection.search(/PARTIE\s*2\b/i);
+  if (idxPartie2 === -1 || idxPartie2 < 300) {
+    // Pas de structure PARTIE 1/2/3 détectée (section courte ou atypique) :
+    // comportement simple, on garde le début tel quel.
+    return texteSection.substring(0, capMax);
+  }
+  const prefixe = texteSection.substring(0, 300);
+  const budgetRestant = Math.max(0, capMax - prefixe.length);
+  const suite = texteSection.substring(idxPartie2, idxPartie2 + budgetRestant);
+  return prefixe + '\n[...PARTIE 1 GÉNÉRALITÉS omise (qualité/garanties/transport, non pertinente pour la composition installée)...]\n' + suite;
+}
 
 function extraireContextePourManuel(texteDevis) {
   const morceaux = ['=== PAGE DE GARDE / SCEAUX ===\n' + texteDevis.substring(0, 4000)];
@@ -430,7 +455,9 @@ function extraireContextePourManuel(texteDevis) {
   let budgetRestant = BUDGET_TOTAL_SECTIONS;
   for (const s of sectionsScorees) {
     if (budgetRestant <= 0) break;
-    const texteSection = texteDevis.substring(s.debut, s.fin).substring(0, Math.min(CAP_PAR_SECTION, budgetRestant));
+    const texteSectionComplet = texteDevis.substring(s.debut, s.fin);
+    const capSection = Math.min(CAP_PAR_SECTION, budgetRestant);
+    const texteSection = extraireSectionUtile(texteSectionComplet, capSection);
     morceaux.push(`=== SECTION ${s.numero} (toiture, score mots-clés: ${s.score}) ===\n` + texteSection);
     budgetRestant -= texteSection.length;
   }
