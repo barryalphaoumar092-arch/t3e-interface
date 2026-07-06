@@ -3,3 +3,4 @@ data/
 uploads/
 .env
 cloudflared.exe
+.claude/settings.local.json
