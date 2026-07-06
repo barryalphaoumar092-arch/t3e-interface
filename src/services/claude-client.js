@@ -10,6 +10,7 @@ async function callOpenAI(systemPrompt, userContent, jsonSchema, strictMode = tr
   const body = {
     model: MODEL,
     max_tokens: maxTokens,
+    temperature: 0.1,
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userContent },
