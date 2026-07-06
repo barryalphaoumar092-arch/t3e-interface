@@ -138,26 +138,6 @@
         </div>
       </div>
 
-      <!-- Documents deja uploades (lecture seule) -->
-      <div class="card mb-3">
-        <div class="card-header bg-light py-2"><h6 class="mb-0"><i class="bi bi-paperclip"></i> Documents déjà fournis</h6></div>
-        <div class="card-body">
-          <% var labelsDocs = { dessins_atelier: 'Dessins d\'atelier', fiches_techniques: 'Fiches techniques', plans_as_built: 'Plans tels que construits', plan: 'Plan(s) du projet', garantie_fabricant: 'Garantie fabricant', attestation_cnesst: 'Attestation CNESST', attestation_ccq: 'Attestation CCQ' }; %>
-          <% Object.keys(labelsDocs).forEach(function(cle) { %>
-          <div class="mb-1">
-            <strong><%= labelsDocs[cle] %> :</strong>
-            <% if (documents[cle] && documents[cle].length > 0) { %>
-              <% documents[cle].forEach(function(d) { %><span class="badge bg-success bg-opacity-75 me-1"><i class="bi bi-file-earmark-pdf"></i> <%= d.nom %></span><% }); %>
-            <% } else if (cle === 'attestation_cnesst' || cle === 'attestation_ccq') { %>
-              <span class="badge bg-secondary">Défaut T3E</span>
-            <% } else { %>
-              <span class="text-muted small">Aucun</span>
-            <% } %>
-          </div>
-          <% }); %>
-        </div>
-      </div>
-
       <div class="d-flex gap-3 mb-4">
         <button type="submit" class="btn btn-success btn-lg" id="btnGenerer">
           <i class="bi bi-file-earmark-pdf"></i> Générer le manuel (PDF)
@@ -166,14 +146,127 @@
       </div>
     </form>
 
+    <!-- Documents fournis + ajout (formulaire independant, ne touche pas aux champs ci-dessus) -->
+    <div class="card mb-4">
+      <div class="card-header bg-light py-2"><h6 class="mb-0"><i class="bi bi-paperclip"></i> Documents fournis</h6></div>
+      <div class="card-body">
+        <% var labelsDocs = { dessins_atelier: 'Dessins d\'atelier', fiches_techniques: 'Fiches techniques', plans_as_built: 'Plans tels que construits', plan: 'Plan(s) du projet', garantie_fabricant: 'Garantie fabricant', attestation_cnesst: 'Attestation CNESST', attestation_ccq: 'Attestation CCQ' }; %>
+        <% Object.keys(labelsDocs).forEach(function(cle) { %>
+        <div class="mb-1">
+          <strong><%= labelsDocs[cle] %> :</strong>
+          <% if (documents[cle] && documents[cle].length > 0) { %>
+            <% documents[cle].forEach(function(d) { %><span class="badge bg-success bg-opacity-75 me-1"><i class="bi bi-file-earmark-pdf"></i> <%= d.nom %></span><% }); %>
+          <% } else if (cle === 'attestation_cnesst' || cle === 'attestation_ccq') { %>
+            <span class="badge bg-secondary">Défaut T3E</span>
+          <% } else { %>
+            <span class="text-muted small">Aucun</span>
+          <% } %>
+        </div>
+        <% }); %>
+
+        <hr>
+        <p class="text-muted small mb-2"><i class="bi bi-plus-circle"></i> Ajouter des documents à ce manuel (aucune perte de ce qui est déjà rempli ci-dessus) :</p>
+        <form id="formAjoutDocs" action="/manuels/reviser/<%= manuel.id %>/documents" method="POST">
+          <div class="row g-2">
+            <div class="col-md-6"><label class="form-label small">Dessins d'atelier</label><input type="file" id="ajoutDessins" class="form-control form-control-sm" accept=".pdf" multiple></div>
+            <div class="col-md-6"><label class="form-label small">Fiches techniques</label><input type="file" id="ajoutFT" class="form-control form-control-sm" accept=".pdf" multiple></div>
+            <div class="col-md-6"><label class="form-label small">Plans tels que construits</label><input type="file" id="ajoutAsBuilt" class="form-control form-control-sm" accept=".pdf" multiple></div>
+            <div class="col-md-6"><label class="form-label small">Plan(s) du projet</label><input type="file" id="ajoutPlan" class="form-control form-control-sm" accept=".pdf" multiple></div>
+            <div class="col-md-4"><label class="form-label small">Garantie fabricant</label><input type="file" id="ajoutGarantieFab" class="form-control form-control-sm" accept=".pdf"></div>
+            <div class="col-md-4"><label class="form-label small">Attestation CNESST</label><input type="file" id="ajoutCnesst" class="form-control form-control-sm" accept=".pdf"></div>
+            <div class="col-md-4"><label class="form-label small">Attestation CCQ</label><input type="file" id="ajoutCcq" class="form-control form-control-sm" accept=".pdf"></div>
+          </div>
+          <button type="submit" class="btn btn-outline-primary btn-sm mt-3" id="btnAjoutDocs">
+            <i class="bi bi-upload"></i> Ajouter ces documents
+          </button>
+        </form>
+      </div>
+    </div>
+
   </div>
 </div>
 
+<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="/js/direct-upload.js"></script>
 <script>
+window.T3E_SUPABASE_URL = "<%= SUPABASE_URL %>";
+window.T3E_SUPABASE_ANON_KEY = "<%= SUPABASE_ANON_KEY %>";
+
 document.getElementById('formGenerer').addEventListener('submit', function() {
   var btn = document.getElementById('btnGenerer');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Génération en cours…';
+});
+
+var formAjoutDocs = document.getElementById('formAjoutDocs');
+var btnAjoutDocs = document.getElementById('btnAjoutDocs');
+
+function ajouterChampCache(form, name, value) {
+  var inp = document.createElement('input');
+  inp.type = 'hidden';
+  inp.name = name;
+  inp.value = value;
+  form.appendChild(inp);
+}
+
+formAjoutDocs.addEventListener('submit', function(e) {
+  e.preventDefault();
+
+  var inputsMultiples = {
+    dessins_atelier: document.getElementById('ajoutDessins'),
+    fiches_techniques: document.getElementById('ajoutFT'),
+    plans_as_built: document.getElementById('ajoutAsBuilt'),
+    plan: document.getElementById('ajoutPlan'),
+  };
+  var inputsUniques = {
+    garantie_fabricant: document.getElementById('ajoutGarantieFab'),
+    attestation_cnesst: document.getElementById('ajoutCnesst'),
+    attestation_ccq: document.getElementById('ajoutCcq'),
+  };
+
+  var taches = [];
+  var resultats = { multiples: {}, uniques: {} };
+
+  Object.keys(inputsMultiples).forEach(function(cle) {
+    resultats.multiples[cle] = [];
+    Array.prototype.slice.call(inputsMultiples[cle].files).forEach(function(f) {
+      taches.push(t3eDirectUpload.uploadDirect(f, 'temp').then(function(info) {
+        resultats.multiples[cle].push(info);
+      }));
+    });
+  });
+  Object.keys(inputsUniques).forEach(function(cle) {
+    var f = inputsUniques[cle].files[0];
+    if (f) {
+      taches.push(t3eDirectUpload.uploadDirect(f, 'temp').then(function(info) {
+        resultats.uniques[cle] = info;
+      }));
+    }
+  });
+
+  if (taches.length === 0) return;
+
+  btnAjoutDocs.disabled = true;
+  btnAjoutDocs.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Envoi…';
+
+  Promise.all(taches).then(function() {
+    Object.keys(resultats.multiples).forEach(function(cle) {
+      resultats.multiples[cle].forEach(function(info) {
+        ajouterChampCache(formAjoutDocs, cle + '_key', info.key);
+        ajouterChampCache(formAjoutDocs, cle + '_name', info.name);
+      });
+    });
+    Object.keys(resultats.uniques).forEach(function(cle) {
+      var info = resultats.uniques[cle];
+      ajouterChampCache(formAjoutDocs, cle + '_key', info.key);
+      ajouterChampCache(formAjoutDocs, cle + '_name', info.name);
+    });
+    formAjoutDocs.submit();
+  }).catch(function(err) {
+    alert('Erreur lors de l\'envoi des fichiers : ' + err.message);
+    btnAjoutDocs.disabled = false;
+    btnAjoutDocs.innerHTML = '<i class="bi bi-upload"></i> Ajouter ces documents';
+  });
 });
 </script>
 

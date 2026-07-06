@@ -236,6 +236,35 @@ router.get('/reviser/:id', async (req, res) => {
   });
 });
 
+// ── AJOUTER DES DOCUMENTS à un manuel existant (depuis la page de révision,
+//    sans avoir à refaire tout le flux d'upload initial) ──
+router.post('/reviser/:id/documents', async (req, res) => {
+  const db = req.db;
+  const id = parseInt(req.params.id);
+  const r = await db.execute({ sql: 'SELECT * FROM manuels WHERE id = ?', args: [id] });
+  if (r.rows.length === 0) return res.status(404).send('Manuel introuvable');
+
+  const row = r.rows[0];
+  let data;
+  try { data = JSON.parse(row.contenu); } catch (_) { data = {}; }
+  const documents = data.documents || {};
+
+  for (const { cle } of CATEGORIES_DOCUMENTS) {
+    const cles = [].concat(req.body[cle + '_key'] || []);
+    const noms = [].concat(req.body[cle + '_name'] || []);
+    if (cles.length === 0) continue;
+    const nouveaux = await persisterCategorie(id, cle, cles, noms);
+    documents[cle] = [...(documents[cle] || []), ...nouveaux];
+  }
+
+  await db.execute({
+    sql: `UPDATE manuels SET contenu = ? WHERE id = ?`,
+    args: [JSON.stringify({ ...data, documents }), id],
+  });
+
+  res.redirect('/manuels/reviser/' + id);
+});
+
 // ── GÉNÉRER — remplir le .docx, convertir en PDF, fusionner tous les documents ──
 router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, res) => {
   const db = req.db;
