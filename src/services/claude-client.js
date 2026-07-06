@@ -313,10 +313,78 @@ Tu remplis un MANUEL DE FIN DE CHANTIER à partir du devis de toiture d'un proje
 - Si une info n'est pas dans le devis, retourne une chaîne vide ""
 - confiance : "haute", "moyenne" ou "basse" selon la clarté du devis fourni`;
 
+// Les devis font souvent plusieurs centaines de pages — envoyer le texte
+// intégral dépasse systématiquement la limite OpenAI de 30 000 tokens/minute
+// du compte T3E (ex: un devis de 550 pages ≈ 132 000 tokens, refusé en 429).
+// Solution (même principe que extraireContextePertinent dans bordereaux.js) :
+// ne garder que la page de garde (infos projet/client/intervenants) + la
+// section de devis la plus pertinente pour la toiture (composition réelle),
+// détectée par mots-clés, plutôt que le document complet.
+const MOTS_CLES_TOITURE = [
+  'membrane', 'toiture', 'couverture', 'isolant', 'pare-vapeur', 'pare vapeur',
+  'bardeau', 'soprema', 'sopra', 'bitume', 'étanchéité', 'etancheite', 'relevé', 'releve',
+];
+
+function extraireContextePourManuel(texteDevis) {
+  const morceaux = ['=== PAGE DE GARDE / SCEAUX ===\n' + texteDevis.substring(0, 4000)];
+
+  // Marqueur fiable de DEBUT de section, observe dans les devis quebecois
+  // type CIMAISE/AMCQ : "Section 07 52 21 ... Page 1 de 29"
+  const debutSectionRegex = /Section\s+((?:0[5-9])\s?\d{2}\s?\d{2})[^\n]*\r?\n[^\n]*Page\s*1\s*de\s*\d+/gi;
+  const positions = [];
+  const vus = new Set();
+  let m;
+  while ((m = debutSectionRegex.exec(texteDevis))) {
+    const numero = m[1].replace(/\s/g, '');
+    if (vus.has(numero)) continue;
+    vus.add(numero);
+    positions.push({ numero, index: m.index });
+  }
+  positions.sort((a, b) => a.index - b.index);
+
+  if (positions.length === 0) {
+    // Format non standard : pas de sections detectees, on cherche juste la
+    // premiere occurrence d'un mot-cle toiture et on prend une fenetre autour.
+    const texteLower = texteDevis.toLowerCase();
+    let idxMotCle = -1;
+    for (const mot of MOTS_CLES_TOITURE) {
+      const idx = texteLower.indexOf(mot);
+      if (idx !== -1 && (idxMotCle === -1 || idx < idxMotCle)) idxMotCle = idx;
+    }
+    const debut = idxMotCle !== -1 ? Math.max(0, idxMotCle - 500) : 4000;
+    morceaux.push('=== EXTRAIT (mots-cles toiture) ===\n' + texteDevis.substring(debut, debut + 14000));
+    return morceaux.join('\n\n---\n\n');
+  }
+
+  // Score chaque section par densite de mots-cles toiture dans son debut
+  let meilleure = null;
+  let meilleurScore = 0;
+  for (let i = 0; i < positions.length; i++) {
+    const debut = positions[i].index;
+    const fin = i + 1 < positions.length ? positions[i + 1].index : texteDevis.length;
+    const apercu = texteDevis.substring(debut, Math.min(fin, debut + 3000)).toLowerCase();
+    const score = MOTS_CLES_TOITURE.reduce((acc, mot) => acc + (apercu.includes(mot) ? 1 : 0), 0);
+    if (score > meilleurScore) { meilleurScore = score; meilleure = { debut, fin, numero: positions[i].numero }; }
+  }
+
+  if (meilleure) {
+    const texteSection = texteDevis.substring(meilleure.debut, meilleure.fin).substring(0, 14000);
+    morceaux.push(`=== SECTION ${meilleure.numero} (toiture, détectée par mots-clés) ===\n` + texteSection);
+  } else {
+    // Aucune section ne matche des mots-cles toiture : on prend la 1ere section par defaut
+    const debut = positions[0].index;
+    const fin = positions.length > 1 ? positions[1].index : texteDevis.length;
+    morceaux.push('=== PREMIERE SECTION DU DEVIS (fallback) ===\n' + texteDevis.substring(debut, fin).substring(0, 14000));
+  }
+
+  return morceaux.join('\n\n---\n\n');
+}
+
 async function analyserDevisManuel(texteDevis) {
-  const userContent = `TEXTE DU DEVIS :
+  const contexte = extraireContextePourManuel(texteDevis || '');
+  const userContent = `EXTRAIT PERTINENT DU DEVIS (page de garde + section toiture — pas le texte intégral, trop volumineux) :
 ───────────────────────────────────────
-${texteDevis || 'Aucun devis fourni'}
+${contexte}
 ───────────────────────────────────────
 
 Retourne un JSON avec tous les champs demandés, en français.`;
