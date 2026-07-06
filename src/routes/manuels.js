@@ -58,23 +58,26 @@ async function persisterFichier(manuelId, categorie, tempKey, nomOriginal) {
   return { key, nom: nomOriginal || path.basename(tempKey) };
 }
 
+// Persiste tous les fichiers d'une categorie EN PARALLELE (Promise.all) plutot
+// qu'un par un : chaque fichier fait 3 aller-retours Supabase sequentiels
+// (download/upload/delete) dans persisterFichier(), et cette fonction tourne
+// dans la meme requete que le parsing du devis + l'appel OpenAI. Au-dela
+// d'une quinzaine de fichiers, la version sequentielle depassait le delai
+// maximal de la fonction (timeout Vercel/proxy Render) avant d'avoir fini de
+// tout persister. Le parallelisme ramene le temps total a celui du fichier le
+// plus lent plutot qu'a la somme de tous les fichiers.
 async function persisterCategorie(manuelId, categorie, cles, noms) {
-  const resultats = [];
-  for (let i = 0; i < cles.length; i++) {
-    if (!cleTempValide(cles[i])) continue;
-    const r = await persisterFichier(manuelId, categorie, cles[i], noms[i]);
-    if (r) resultats.push(r);
-  }
-  return resultats;
+  const taches = cles.map((cle, i) => {
+    if (!cleTempValide(cle)) return null;
+    return persisterFichier(manuelId, categorie, cle, noms[i]);
+  });
+  const resultats = await Promise.all(taches);
+  return resultats.filter(Boolean);
 }
 
 async function chargerBuffersCategorie(documents) {
-  const buffers = [];
-  for (const doc of (documents || [])) {
-    const buf = await downloadBuffer(BUCKETS.MANUELS, doc.key);
-    if (buf) buffers.push(buf);
-  }
-  return buffers;
+  const buffers = await Promise.all((documents || []).map((doc) => downloadBuffer(BUCKETS.MANUELS, doc.key)));
+  return buffers.filter(Boolean);
 }
 
 // Charge le PDF par defaut d'une categorie, sauf si l'utilisateur en a
