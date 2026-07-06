@@ -300,22 +300,45 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
     return res.status(500).send('Erreur lors de la conversion PDF du manuel (le .docx genere est disponible mais pas la fusion complete) : ' + e.message);
   }
 
-  // Fusion dans l'ordre du sommaire
+  // Fusion dans l'ordre du sommaire — tous les telechargements Supabase des
+  // differentes categories sont lances EN PARALLELE (Promise.all) plutot que
+  // les uns apres les autres : avec beaucoup de fiches techniques/dessins/
+  // plans, la somme des temps sequentiels depassait le delai maximal de la
+  // fonction avant meme d'arriver a la fusion. Voir aussi persisterCategorie
+  // ci-dessus, meme principe pour /analyser.
+  const [
+    manuelEntretienBuf,
+    attestationCnesstBufs,
+    attestationCcqBufs,
+    garantieFabricantBufs,
+    dessinsAtelierBufs,
+    planBufs,
+    fichesTechniquesBufs,
+    plansAsBuiltBufs,
+  ] = await Promise.all([
+    downloadBuffer(BUCKETS.DOCUMENTS, DEFAUTS.manuel_entretien),
+    chargerAvecDefaut(documents.attestation_cnesst, DEFAUTS.attestation_cnesst),
+    chargerAvecDefaut(documents.attestation_ccq, DEFAUTS.attestation_ccq),
+    chargerBuffersCategorie(documents.garantie_fabricant),
+    chargerBuffersCategorie(documents.dessins_atelier),
+    chargerBuffersCategorie(documents.plan),
+    chargerBuffersCategorie(documents.fiches_techniques),
+    chargerBuffersCategorie(documents.plans_as_built),
+  ]);
+
   const buffersAFusionner = [manuelPdfBuf];
-  const manuelEntretienBuf = await downloadBuffer(BUCKETS.DOCUMENTS, DEFAUTS.manuel_entretien);
   if (manuelEntretienBuf) buffersAFusionner.push(manuelEntretienBuf);
-  buffersAFusionner.push(...(await chargerAvecDefaut(documents.attestation_cnesst, DEFAUTS.attestation_cnesst)));
-  buffersAFusionner.push(...(await chargerAvecDefaut(documents.attestation_ccq, DEFAUTS.attestation_ccq)));
-  buffersAFusionner.push(...(await chargerBuffersCategorie(documents.garantie_fabricant)));
-  buffersAFusionner.push(...(await chargerBuffersCategorie(documents.dessins_atelier)));
-  buffersAFusionner.push(...(await chargerBuffersCategorie(documents.plan)));
-  buffersAFusionner.push(...(await chargerBuffersCategorie(documents.fiches_techniques)));
-  buffersAFusionner.push(...(await chargerBuffersCategorie(documents.plans_as_built)));
+  buffersAFusionner.push(...attestationCnesstBufs, ...attestationCcqBufs, ...garantieFabricantBufs,
+    ...dessinsAtelierBufs, ...planBufs, ...fichesTechniquesBufs, ...plansAsBuiltBufs);
 
   const pdfFinal = await fusionnerPdfBuffers(buffersAFusionner);
   if (!pdfFinal) return res.status(500).send('Aucune page generee — verifiez le template et les documents uploades.');
 
-  await uploadBuffer(BUCKETS.MANUELS, `${id}/manuel-final.pdf`, pdfFinal, 'application/pdf').catch(() => {});
+  try {
+    await uploadBuffer(BUCKETS.MANUELS, `${id}/manuel-final.pdf`, pdfFinal, 'application/pdf');
+  } catch (e) {
+    return res.status(500).send('Le manuel a ete genere et fusionne (' + pdfFinal.length + ' octets) mais son enregistrement dans le stockage a echoue : ' + e.message);
+  }
 
   await db.execute({
     sql: `UPDATE manuels SET statut = 'approuve', contenu = ?, titre = ?, numero_dossier = ? WHERE id = ?`,
