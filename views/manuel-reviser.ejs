@@ -1,0 +1,180 @@
+<%- include('partials/header', { title: 'Réviser le manuel', page: 'manuels' }) %>
+
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="/manuels">Manuels</a></li>
+    <li class="breadcrumb-item active">Réviser</li>
+  </ol>
+</nav>
+
+<div class="row justify-content-center">
+  <div class="col-md-11">
+
+    <div class="d-flex gap-2 mb-3">
+      <span class="badge bg-success fs-6"><i class="bi bi-check"></i> 1. Upload</span>
+      <span class="badge bg-primary fs-6">2. Révision</span>
+      <span class="badge bg-secondary fs-6">3. Téléchargement</span>
+    </div>
+
+    <% if (iaErreur) { %>
+    <div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> L'IA n'a pas pu analyser le devis (<%= iaErreur %>). Remplissez les champs manuellement.</div>
+    <% } else { %>
+    <div class="alert alert-info mb-3">
+      <i class="bi bi-robot"></i> L'IA a extrait ce qu'elle a pu du devis. Vérifiez et corrigez chaque champ, puis cliquez sur <strong>Générer</strong>.
+    </div>
+    <% } %>
+
+    <form method="POST" action="/manuels/generer/<%= manuel.id %>" id="formGenerer">
+
+      <!-- Couverture -->
+      <div class="card mb-3">
+        <div class="card-header bg-dark text-white py-2"><h6 class="mb-0"><i class="bi bi-file-earmark-richtext"></i> Couverture</h6></div>
+        <div class="card-body">
+          <div class="row g-2">
+            <div class="col-md-6">
+              <label class="form-label fw-bold">Nom du projet</label>
+              <input type="text" name="NOM_DU_PROJET" class="form-control" value="<%= champs.NOM_DU_PROJET || '' %>">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-bold">Client</label>
+              <input type="text" name="CLIENT" class="form-control" value="<%= champs.CLIENT || '' %>">
+            </div>
+            <div class="col-md-8">
+              <label class="form-label fw-bold">Adresse du projet</label>
+              <input type="text" name="ADRESSE_PROJET" class="form-control" value="<%= champs.ADRESSE_PROJET || '' %>">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label fw-bold">N° dossier TTE</label>
+              <input type="text" name="NUMERO_DOSSIER" class="form-control" value="<%= champs.NUMERO_DOSSIER || '' %>">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label fw-bold">Date</label>
+              <input type="text" name="DATE" class="form-control" value="<%= champs.DATE || '' %>">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Intervenants -->
+      <div class="card mb-3">
+        <div class="card-header bg-secondary text-white py-2"><h6 class="mb-0"><i class="bi bi-people"></i> Liste des intervenants</h6></div>
+        <div class="card-body">
+          <div class="row g-2">
+            <div class="col-md-6">
+              <label class="form-label">Propriétaire</label>
+              <input type="text" name="PROPRIETAIRE" class="form-control" value="<%= champs.PROPRIETAIRE || '' %>" placeholder="Nom — Adresse — Téléphone">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Consultant</label>
+              <input type="text" name="CONSULTANT" class="form-control" value="<%= champs.CONSULTANT || '' %>" placeholder="Firme d'architectes/ingénieurs">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Entrepreneur général</label>
+              <input type="text" name="ENTREPRENEUR_GENERAL" class="form-control" value="<%= champs.ENTREPRENEUR_GENERAL || '' %>">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Entrepreneur couvreur</label>
+              <input type="text" name="ENTREPRENEUR_COUVREUR" class="form-control" value="<%= champs.ENTREPRENEUR_COUVREUR || '' %>">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Fournisseurs et sous-traitants -->
+      <div class="card mb-3">
+        <div class="card-header bg-secondary text-white py-2"><h6 class="mb-0"><i class="bi bi-truck"></i> Fournisseurs et sous-traitants</h6></div>
+        <div class="card-body">
+          <div class="row g-2">
+            <div class="col-md-6"><label class="form-label">Fournisseur 1</label><input type="text" name="FOURNISSEUR_1" class="form-control" value="<%= champs.FOURNISSEUR_1 || '' %>"></div>
+            <div class="col-md-6"><label class="form-label">Fournisseur 2</label><input type="text" name="FOURNISSEUR_2" class="form-control" value="<%= champs.FOURNISSEUR_2 || '' %>"></div>
+            <div class="col-md-6"><label class="form-label">Fournisseur 3</label><input type="text" name="FOURNISSEUR_3" class="form-control" value="<%= champs.FOURNISSEUR_3 || '' %>"></div>
+            <div class="col-md-6"><label class="form-label">Fournisseur 4</label><input type="text" name="FOURNISSEUR_4" class="form-control" value="<%= champs.FOURNISSEUR_4 || '' %>"></div>
+            <div class="col-md-6"><label class="form-label">Sous-traitant 1</label><input type="text" name="SOUS_TRAITANT_1" class="form-control" value="<%= champs.SOUS_TRAITANT_1 || '' %>"></div>
+            <div class="col-md-6"><label class="form-label">Sous-traitant 2</label><input type="text" name="SOUS_TRAITANT_2" class="form-control" value="<%= champs.SOUS_TRAITANT_2 || '' %>"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Description des travaux -->
+      <div class="card mb-3">
+        <div class="card-header bg-secondary text-white py-2"><h6 class="mb-0"><i class="bi bi-card-text"></i> Description des travaux exécutés</h6></div>
+        <div class="card-body">
+          <textarea name="DESCRIPTION_TRAVAUX" class="form-control" rows="4" placeholder="Composition de toiture : coupe-vapeur, isolant, pente, panneaux de support, membrane, relevés…"><%= champs.DESCRIPTION_TRAVAUX || '' %></textarea>
+        </div>
+      </div>
+
+      <!-- Détails et imprévus -->
+      <div class="card mb-3">
+        <div class="card-header bg-secondary text-white py-2"><h6 class="mb-0"><i class="bi bi-exclamation-circle"></i> Détails et imprévus</h6></div>
+        <div class="card-body">
+          <textarea name="DETAILS_IMPREVUS" class="form-control" rows="3" placeholder="Précisions, particularités ou événements imprévus survenus en cours de chantier…"><%= champs.DETAILS_IMPREVUS || '' %></textarea>
+        </div>
+      </div>
+
+      <!-- Checklist d'entretien -->
+      <div class="card mb-3">
+        <div class="card-header bg-secondary text-white py-2"><h6 class="mb-0"><i class="bi bi-list-check"></i> Liste de contrôle d'entretien — commentaires</h6></div>
+        <div class="card-body">
+          <% checklistItems.forEach(function(item, idx) { %>
+          <div class="mb-2">
+            <label class="form-label small text-muted"><%= idx + 1 %>. <%= item %></label>
+            <input type="text" name="COMMENTAIRE_<%= idx + 1 %>" class="form-control form-control-sm" value="<%= champs['COMMENTAIRE_' + (idx + 1)] || '' %>" placeholder="Commentaire (optionnel)">
+          </div>
+          <% }); %>
+        </div>
+      </div>
+
+      <!-- Garanties -->
+      <div class="card mb-3">
+        <div class="card-header bg-secondary text-white py-2"><h6 class="mb-0"><i class="bi bi-shield-check"></i> Garanties — certificat T3E</h6></div>
+        <div class="card-body">
+          <div class="row g-2">
+            <div class="col-md-3"><label class="form-label">Numéro de garantie</label><input type="text" name="NUMERO_GARANTIE" class="form-control" value="<%= champs.NUMERO_GARANTIE || '' %>"></div>
+            <div class="col-md-3"><label class="form-label">Surface garantie</label><input type="text" name="SURFACE_GARANTIE" class="form-control" value="<%= champs.SURFACE_GARANTIE || '' %>"></div>
+            <div class="col-md-3"><label class="form-label">Durée de la garantie</label><input type="text" name="DUREE_GARANTIE" class="form-control" value="<%= champs.DUREE_GARANTIE || '' %>"></div>
+            <div class="col-md-3"><label class="form-label">Date de fin de garantie</label><input type="text" name="DATE_FIN_GARANTIE" class="form-control" value="<%= champs.DATE_FIN_GARANTIE || '' %>"></div>
+          </div>
+          <div class="form-text mt-2">La garantie du fabricant (document PDF uploadé) est fusionnée séparément dans le manuel final.</div>
+        </div>
+      </div>
+
+      <!-- Documents deja uploades (lecture seule) -->
+      <div class="card mb-3">
+        <div class="card-header bg-light py-2"><h6 class="mb-0"><i class="bi bi-paperclip"></i> Documents déjà fournis</h6></div>
+        <div class="card-body">
+          <% var labelsDocs = { dessins_atelier: 'Dessins d\'atelier', fiches_techniques: 'Fiches techniques', plans_as_built: 'Plans tels que construits', plan: 'Plan(s) du projet', garantie_fabricant: 'Garantie fabricant', attestation_cnesst: 'Attestation CNESST', attestation_ccq: 'Attestation CCQ' }; %>
+          <% Object.keys(labelsDocs).forEach(function(cle) { %>
+          <div class="mb-1">
+            <strong><%= labelsDocs[cle] %> :</strong>
+            <% if (documents[cle] && documents[cle].length > 0) { %>
+              <% documents[cle].forEach(function(d) { %><span class="badge bg-success bg-opacity-75 me-1"><i class="bi bi-file-earmark-pdf"></i> <%= d.nom %></span><% }); %>
+            <% } else if (cle === 'attestation_cnesst' || cle === 'attestation_ccq') { %>
+              <span class="badge bg-secondary">Défaut T3E</span>
+            <% } else { %>
+              <span class="text-muted small">Aucun</span>
+            <% } %>
+          </div>
+          <% }); %>
+        </div>
+      </div>
+
+      <div class="d-flex gap-3 mb-4">
+        <button type="submit" class="btn btn-success btn-lg" id="btnGenerer">
+          <i class="bi bi-file-earmark-pdf"></i> Générer le manuel (PDF)
+        </button>
+        <a href="/manuels" class="btn btn-outline-secondary btn-lg">Annuler</a>
+      </div>
+    </form>
+
+  </div>
+</div>
+
+<script>
+document.getElementById('formGenerer').addEventListener('submit', function() {
+  var btn = document.getElementById('btnGenerer');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Génération en cours…';
+});
+</script>
+
+<%- include('partials/footer', { scripts: [] }) %>

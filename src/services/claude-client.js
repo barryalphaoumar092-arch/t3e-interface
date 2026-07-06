@@ -270,8 +270,62 @@ ${cles.map(k => `- ${k} = "${champsAPlacer[k]}"`).join('\n')}`;
   }
 }
 
+// ══════════════════════════════════════════════════════════════
+//  MANUEL DE FIN DE CHANTIER — extraction depuis le devis du projet
+// ══════════════════════════════════════════════════════════════
+const ANALYSE_MANUEL_SCHEMA = {
+  type: 'object',
+  properties: {
+    NOM_DU_PROJET:          { type: 'string' },
+    CLIENT:                 { type: 'string' },
+    ADRESSE_PROJET:         { type: 'string' },
+    PROPRIETAIRE:           { type: 'string' },
+    CONSULTANT:             { type: 'string' },
+    ENTREPRENEUR_GENERAL:   { type: 'string' },
+    FOURNISSEUR_1:          { type: 'string' },
+    FOURNISSEUR_2:          { type: 'string' },
+    DESCRIPTION_TRAVAUX:    { type: 'string' },
+    confiance:              { type: 'string' },
+  },
+  required: [
+    'NOM_DU_PROJET', 'CLIENT', 'ADRESSE_PROJET',
+    'PROPRIETAIRE', 'CONSULTANT', 'ENTREPRENEUR_GENERAL',
+    'FOURNISSEUR_1', 'FOURNISSEUR_2', 'DESCRIPTION_TRAVAUX', 'confiance',
+  ],
+  additionalProperties: false,
+};
+
+const SYSTEM_MANUEL = `Tu es un chargé de projet SENIOR expert en couverture commerciale au Québec chez Toitures Trois Étoiles Inc. (T3E).
+Tu remplis un MANUEL DE FIN DE CHANTIER à partir du devis de toiture d'un projet déjà réalisé par T3E.
+
+=== OÙ CHERCHER CHAQUE INFO (le devis fourni) ===
+- NOM_DU_PROJET : page de garde, en-tête, "Projet :", "Objet :"
+- CLIENT : nom du propriétaire/établissement/entité qui a commandé les travaux (ex: "Cadillac Fairview", "Ontrea Inc", un nom d'école ou d'immeuble)
+- ADRESSE_PROJET : adresse du bâtiment/chantier (PAS l'adresse de T3E)
+- PROPRIETAIRE : nom de l'entreprise propriétaire + adresse + téléphone si mentionnés, sous la forme "Nom — Adresse — Téléphone" (compose ce que tu trouves, laisse vide ce qui manque)
+- CONSULTANT : nom de la firme d'architectes/ingénieurs qui a préparé le devis + coordonnées si mentionnées, même format "Nom — Adresse — Téléphone"
+- ENTREPRENEUR_GENERAL : nom de l'entrepreneur général du chantier s'il est mentionné (souvent absent des devis d'architecte — retourne "" si absent, ne jamais confondre avec T3E qui est l'entrepreneur COUVREUR, pas général)
+- FOURNISSEUR_1, FOURNISSEUR_2 : fournisseurs/fabricants des matériaux principaux mentionnés dans le devis (ex: "Soprema", "CGC"), sous la forme "Nom — Adresse — Téléphone" si ces coordonnées sont dans le devis, sinon juste le nom. Laisse FOURNISSEUR_2 vide s'il n'y a qu'un seul fournisseur principal.
+- DESCRIPTION_TRAVAUX : décris en 2-4 phrases la composition complète de la toiture installée telle que décrite au devis (coupe-vapeur, isolant et son épaisseur/pente, panneaux de support, membrane(s), relevés) — reste factuel, base-toi uniquement sur ce que le devis précise.
+
+=== RÈGLES ===
+- NE RETOURNE JAMAIS les coordonnées de T3E elle-même (7550 Rue Saint-Patrick, etc.) dans PROPRIETAIRE/CONSULTANT/ENTREPRENEUR_GENERAL — T3E est l'entrepreneur couvreur, pas un des rôles ci-dessus
+- Si une info n'est pas dans le devis, retourne une chaîne vide ""
+- confiance : "haute", "moyenne" ou "basse" selon la clarté du devis fourni`;
+
+async function analyserDevisManuel(texteDevis) {
+  const userContent = `TEXTE DU DEVIS :
+───────────────────────────────────────
+${texteDevis || 'Aucun devis fourni'}
+───────────────────────────────────────
+
+Retourne un JSON avec tous les champs demandés, en français.`;
+
+  return callOpenAI(SYSTEM_MANUEL, userContent, ANALYSE_MANUEL_SCHEMA, true);
+}
+
 function isConfigured() {
   return !!OPENAI_API_KEY;
 }
 
-module.exports = { analyserDevis, analyserDevisSoumission, mapperChampsBordereau, isConfigured };
+module.exports = { analyserDevis, analyserDevisSoumission, analyserDevisManuel, mapperChampsBordereau, isConfigured };

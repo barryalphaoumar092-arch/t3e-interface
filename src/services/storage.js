@@ -22,6 +22,7 @@ const BUCKETS = {
   TEMPLATES_SOUMISSION: 'templates-soumission',
   SOUMISSIONS_GENEREES: 'soumissions-generees',
   UPLOADS_TEMP: 'uploads-temp',
+  MANUELS: 'manuels-fin-chantier',
 };
 
 // Supabase Storage rejette les cles avec accents/caracteres speciaux.

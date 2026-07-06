@@ -30,5 +30,8 @@
     "pdfkit": "^0.19.1",
     "word-extractor": "^1.0.4",
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "docx": "^9.7.1"
   }
 }

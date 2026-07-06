@@ -43,6 +43,15 @@
       </div>
     </a>
   </div>
+  <div class="col-md-3">
+    <a href="/manuels" class="text-decoration-none">
+      <div class="card stat-card text-center p-4">
+        <div class="stat-icon text-info"><i class="bi bi-journal-richtext"></i></div>
+        <h3 class="mt-2"><%= stats.manuels || 0 %></h3>
+        <p class="text-muted mb-0">Manuels de fin de chantier</p>
+      </div>
+    </a>
+  </div>
 </div>
 
 <div class="row g-4">
@@ -70,6 +79,15 @@
         <h5 class="card-title"><i class="bi bi-file-earmark-ruled text-danger"></i> Soumissions</h5>
         <p class="card-text">Créez une soumission avec le bon template selon le système de toiture.</p>
         <a href="/soumissions/nouveau" class="btn btn-danger">Nouvelle soumission</a>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card h-100">
+      <div class="card-body">
+        <h5 class="card-title"><i class="bi bi-journal-richtext text-info"></i> Manuel de fin de chantier</h5>
+        <p class="card-text">Importez le devis et les documents du projet, l'IA extrait les champs, générez le manuel complet en PDF.</p>
+        <a href="/manuels/nouveau" class="btn btn-info text-white">Nouveau manuel</a>
       </div>
     </div>
   </div>

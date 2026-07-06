@@ -1,0 +1,180 @@
+<%- include('partials/header', { title: 'Nouveau manuel de fin de chantier', page: 'manuels' }) %>
+
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="/manuels">Manuels</a></li>
+    <li class="breadcrumb-item active">Nouveau</li>
+  </ol>
+</nav>
+
+<div class="row justify-content-center">
+  <div class="col-md-9">
+
+    <div class="d-flex gap-2 mb-3">
+      <span class="badge bg-primary fs-6">1. Upload</span>
+      <span class="badge bg-secondary fs-6">2. Révision</span>
+      <span class="badge bg-secondary fs-6">3. Téléchargement</span>
+    </div>
+
+    <div class="card shadow-sm">
+      <div class="card-header bg-warning text-dark">
+        <h5 class="mb-0"><i class="bi bi-magic"></i> Créer un manuel de fin de chantier avec l'IA</h5>
+      </div>
+      <div class="card-body">
+
+        <form method="POST" action="/manuels/analyser" id="formUpload">
+
+          <div class="mb-4">
+            <label class="form-label fw-bold">Numéro de dossier TTE <span class="text-danger">*</span></label>
+            <input type="text" name="numero_dossier" class="form-control" placeholder="ex: 25-006" required>
+          </div>
+
+          <div class="mb-4">
+            <label class="form-label fw-bold">
+              <span class="badge bg-warning text-dark me-1">1</span>
+              Devis du projet <span class="text-danger">*</span>
+            </label>
+            <input type="file" name="devis" id="inputDevis" class="form-control" accept=".pdf,.docx,.doc,.xlsx,.xls" required>
+            <div class="form-text">L'IA va lire le devis et en extraire : nom du projet, client, adresse, intervenants, fournisseurs, composition de la toiture.</div>
+          </div>
+
+          <hr class="my-4">
+          <p class="text-muted small mb-3"><i class="bi bi-info-circle"></i> Les documents suivants sont fusionnés tels quels dans le manuel final (aucune extraction IA). Tous optionnels à cette étape — vous pourrez les ajouter plus tard si besoin.</p>
+
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-bold">Dessins d'atelier</label>
+              <input type="file" name="dessins_atelier" id="inputDessins" class="form-control" accept=".pdf" multiple>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-bold">Fiches techniques</label>
+              <input type="file" name="fiches_techniques" id="inputFT" class="form-control" accept=".pdf" multiple>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-bold">Plans tels que construits (as-built)</label>
+              <input type="file" name="plans_as_built" id="inputAsBuilt" class="form-control" accept=".pdf" multiple>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-bold">Plan(s) du projet</label>
+              <input type="file" name="plan" id="inputPlan" class="form-control" accept=".pdf" multiple>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-bold">Garantie du fabricant</label>
+              <input type="file" name="garantie_fabricant" id="inputGarantieFab" class="form-control" accept=".pdf">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-bold">Attestation CNESST <small class="text-muted fw-normal">(sinon défaut T3E)</small></label>
+              <input type="file" name="attestation_cnesst" id="inputCnesst" class="form-control" accept=".pdf">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-bold">Attestation CCQ <small class="text-muted fw-normal">(sinon défaut T3E)</small></label>
+              <input type="file" name="attestation_ccq" id="inputCcq" class="form-control" accept=".pdf">
+            </div>
+          </div>
+
+          <div class="d-grid mt-4">
+            <button type="submit" class="btn btn-warning btn-lg" id="btnAnalyser">
+              <i class="bi bi-magic"></i> Analyser avec l'IA
+            </button>
+          </div>
+        </form>
+
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="/js/direct-upload.js"></script>
+<script>
+window.T3E_SUPABASE_URL = "<%= SUPABASE_URL %>";
+window.T3E_SUPABASE_ANON_KEY = "<%= SUPABASE_ANON_KEY %>";
+
+var formUpload = document.getElementById('formUpload');
+var btnAnalyser = document.getElementById('btnAnalyser');
+
+function ajouterChampCache(form, name, value) {
+  var inp = document.createElement('input');
+  inp.type = 'hidden';
+  inp.name = name;
+  inp.value = value;
+  form.appendChild(inp);
+}
+
+formUpload.addEventListener('submit', function(e) {
+  e.preventDefault();
+
+  var devisFile = document.getElementById('inputDevis').files[0];
+  if (!devisFile) return;
+
+  var taches = [];
+  var resultats = {};
+
+  taches.push(t3eDirectUpload.uploadDirect(devisFile, 'temp').then(function(info) {
+    resultats.devis = info;
+  }));
+
+  var inputsMultiples = {
+    dessins_atelier: document.getElementById('inputDessins'),
+    fiches_techniques: document.getElementById('inputFT'),
+    plans_as_built: document.getElementById('inputAsBuilt'),
+    plan: document.getElementById('inputPlan'),
+  };
+  var inputsUniques = {
+    garantie_fabricant: document.getElementById('inputGarantieFab'),
+    attestation_cnesst: document.getElementById('inputCnesst'),
+    attestation_ccq: document.getElementById('inputCcq'),
+  };
+
+  resultats.multiples = {};
+  Object.keys(inputsMultiples).forEach(function(cle) {
+    var files = Array.prototype.slice.call(inputsMultiples[cle].files);
+    resultats.multiples[cle] = [];
+    files.forEach(function(f) {
+      taches.push(t3eDirectUpload.uploadDirect(f, 'temp').then(function(info) {
+        resultats.multiples[cle].push(info);
+      }));
+    });
+  });
+
+  resultats.uniques = {};
+  Object.keys(inputsUniques).forEach(function(cle) {
+    var f = inputsUniques[cle].files[0];
+    if (f) {
+      taches.push(t3eDirectUpload.uploadDirect(f, 'temp').then(function(info) {
+        resultats.uniques[cle] = info;
+      }));
+    }
+  });
+
+  btnAnalyser.disabled = true;
+  btnAnalyser.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Envoi des fichiers…';
+
+  Promise.all(taches).then(function() {
+    ajouterChampCache(formUpload, 'devis_key', resultats.devis.key);
+    ajouterChampCache(formUpload, 'devis_name', resultats.devis.name);
+
+    Object.keys(resultats.multiples).forEach(function(cle) {
+      resultats.multiples[cle].forEach(function(info) {
+        ajouterChampCache(formUpload, cle + '_key', info.key);
+        ajouterChampCache(formUpload, cle + '_name', info.name);
+      });
+    });
+    Object.keys(resultats.uniques).forEach(function(cle) {
+      var info = resultats.uniques[cle];
+      ajouterChampCache(formUpload, cle + '_key', info.key);
+      ajouterChampCache(formUpload, cle + '_name', info.name);
+    });
+
+    btnAnalyser.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>L\'IA analyse le devis…';
+    formUpload.submit();
+  }).catch(function(err) {
+    alert('Erreur lors de l\'envoi des fichiers : ' + err.message);
+    btnAnalyser.disabled = false;
+    btnAnalyser.innerHTML = '<i class="bi bi-magic"></i> Analyser avec l\'IA';
+  });
+});
+</script>
+
+<%- include('partials/footer', { scripts: [] }) %>

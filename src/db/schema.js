@@ -106,6 +106,17 @@ CREATE TABLE IF NOT EXISTS architectes (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS manuels (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  numero_dossier TEXT,
+  titre TEXT NOT NULL,
+  contenu JSON,
+  statut TEXT DEFAULT 'brouillon' CHECK(statut IN ('brouillon', 'revise', 'approuve', 'session', 'genere')),
+  cree_par TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_documents_categorie ON documents(categorie_id);
 CREATE INDEX IF NOT EXISTS idx_documents_statut ON documents(statut);
 CREATE INDEX IF NOT EXISTS idx_documents_titre ON documents(titre);
@@ -113,6 +124,7 @@ CREATE INDEX IF NOT EXISTS idx_bordereaux_statut ON bordereaux(statut);
 CREATE INDEX IF NOT EXISTS idx_bordereaux_projet ON bordereaux(numero_projet);
 CREATE INDEX IF NOT EXISTS idx_materiaux_nom ON materiaux(nom);
 CREATE INDEX IF NOT EXISTS idx_materiaux_fabricant ON materiaux(fabricant);
+CREATE INDEX IF NOT EXISTS idx_manuels_dossier ON manuels(numero_dossier);
 `;
 
 module.exports = SCHEMA;

@@ -11,9 +11,11 @@ router.get('/', async (req, res) => {
 
   let soum = 0;
   try { soum = (await db.execute('SELECT COUNT(*) as c FROM soumissions')).rows[0].c; } catch(e) {}
+  let manuels = 0;
+  try { manuels = (await db.execute('SELECT COUNT(*) as c FROM manuels')).rows[0].c; } catch(e) {}
 
   res.render('accueil', {
-    stats: { documents: docs, materiaux: mats, fichestechniques: ft, bordereaux: bord, architectes: arch, soumissions: soum }
+    stats: { documents: docs, materiaux: mats, fichestechniques: ft, bordereaux: bord, architectes: arch, soumissions: soum, manuels: manuels }
   });
 });
 
