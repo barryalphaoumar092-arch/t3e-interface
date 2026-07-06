@@ -76,6 +76,17 @@ async function initDb() {
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     )`,
+    `CREATE TABLE IF NOT EXISTS manuels (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      numero_dossier TEXT,
+      titre TEXT NOT NULL,
+      contenu JSON,
+      statut TEXT DEFAULT 'brouillon' CHECK(statut IN ('brouillon', 'revise', 'approuve', 'session', 'genere')),
+      cree_par TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    )`,
+    'CREATE INDEX IF NOT EXISTS idx_manuels_dossier ON manuels(numero_dossier)',
   ];
 
   const alterMigrations = [
