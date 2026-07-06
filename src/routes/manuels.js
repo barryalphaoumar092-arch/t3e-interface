@@ -9,7 +9,7 @@ const { remplirManuel } = require('../services/manuel-filler');
 const { convertirDocxEnPdf } = require('../services/docx-to-pdf');
 const { analyserDevisManuel } = require('../services/claude-client');
 const { PDFDocument } = require('pdf-lib');
-const { downloadBuffer, uploadBuffer, removeFile, listFiles, BUCKETS } = require('../services/storage');
+const { downloadBuffer, uploadBuffer, removeFile, listFiles, sanitizeKey, BUCKETS } = require('../services/storage');
 
 // Documents par defaut (reutilises sur tous les manuels, sauf remplacement
 // projet par projet) — a uploader une fois dans le bucket "documents" via la
@@ -52,7 +52,7 @@ function cleTempValide(key) {
 async function persisterFichier(manuelId, categorie, tempKey, nomOriginal) {
   const buf = await downloadBuffer(BUCKETS.UPLOADS_TEMP, tempKey);
   if (!buf) return null;
-  const key = `${manuelId}/${categorie}/${Date.now()}-${crypto.randomBytes(4).toString('hex')}-${path.basename(nomOriginal || tempKey)}`;
+  const key = sanitizeKey(`${manuelId}/${categorie}/${Date.now()}-${crypto.randomBytes(4).toString('hex')}-${path.basename(nomOriginal || tempKey)}`);
   await uploadBuffer(BUCKETS.MANUELS, key, buf);
   await removeFile(BUCKETS.UPLOADS_TEMP, tempKey).catch(() => {});
   return { key, nom: nomOriginal || path.basename(tempKey) };
