@@ -306,7 +306,15 @@ Tu remplis un MANUEL DE FIN DE CHANTIER à partir du devis de toiture d'un proje
 - CONSULTANT : nom de la firme d'architectes/ingénieurs qui a préparé le devis + coordonnées si mentionnées, même format "Nom — Adresse — Téléphone"
 - ENTREPRENEUR_GENERAL : nom de l'entrepreneur général du chantier s'il est mentionné (souvent absent des devis d'architecte — retourne "" si absent, ne jamais confondre avec T3E qui est l'entrepreneur COUVREUR, pas général)
 - FOURNISSEUR_1, FOURNISSEUR_2 : fournisseurs/fabricants des matériaux principaux mentionnés dans le devis (ex: "Soprema", "CGC"), sous la forme "Nom — Adresse — Téléphone" si ces coordonnées sont dans le devis, sinon juste le nom. Laisse FOURNISSEUR_2 vide s'il n'y a qu'un seul fournisseur principal.
-- DESCRIPTION_TRAVAUX : décris en 2-4 phrases la composition complète de la toiture installée telle que décrite au devis (coupe-vapeur, isolant et son épaisseur/pente, panneaux de support, membrane(s), relevés) — reste factuel, base-toi uniquement sur ce que le devis précise.
+- DESCRIPTION_TRAVAUX : liste DÉTAILLÉE et STRUCTURÉE de la composition complète de la toiture installée, telle que décrite au devis. Format OBLIGATOIRE : une ligne par composante, séparées par des retours à la ligne (\\n), sous la forme "Nom de la composante : détail exact du devis (produit, épaisseur, pente, méthode de fixation, etc.)". Couvre systématiquement, dans cet ordre, CHAQUE composante mentionnée au devis (omets une ligne seulement si le devis n'en parle vraiment pas) :
+  1. Pare-vapeur / coupe-vapeur (produit, méthode de pose)
+  2. Isolant (produit, épaisseur totale, nombre de rangs, pente)
+  3. Panneau de support / substrat (produit, épaisseur, méthode de fixation)
+  4. Membrane de base (produit, méthode de pose : collée/soudée/mécanique)
+  5. Membrane de finition (produit, couleur, méthode de pose)
+  6. Relevés et solins (produit, emplacements)
+  7. Drains, évents et autres accessoires si mentionnés
+  Sois aussi PRÉCIS et COMPLET que le devis le permet (noms de produits exacts, dimensions, pourcentages) — c'est la section la plus importante du manuel, elle ne doit JAMAIS être vague ou raccourcie.
 
 === RÈGLES ===
 - NE RETOURNE JAMAIS les coordonnées de T3E elle-même (7550 Rue Saint-Patrick, etc.) dans PROPRIETAIRE/CONSULTANT/ENTREPRENEUR_GENERAL — T3E est l'entrepreneur couvreur, pas un des rôles ci-dessus

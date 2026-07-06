@@ -80,11 +80,22 @@ function trouverCelluleDeSaisie(xml, depart) {
   return -1;
 }
 
+// Insere un texte multi-lignes (\n) a un point de coupure MID-RUN : `pos` est
+// juste avant un `</w:t></w:r>` deja present dans le xml, donc on continue le
+// <w:t> ouvert pour la 1ere ligne, puis on ferme/rouvre run+texte pour chaque
+// ligne suivante (un <w:t> ne peut pas contenir de <w:br/>, seul un <w:r> le
+// peut) — le `</w:t></w:r>` d'origine, juste apres `pos`, referme le dernier
+// <w:t> ouvert ici.
 function inserer(xml, pos, inline, valeur) {
-  const texte = escapeXml(String(valeur));
-  return inline
-    ? xml.substring(0, pos) + ' ' + texte + xml.substring(pos)
-    : xml.substring(0, pos) + `<w:r><w:t xml:space="preserve">${texte}</w:t></w:r>` + xml.substring(pos);
+  const lignes = String(valeur).split('\n').map(l => escapeXml(l));
+  if (inline) {
+    const contenu = ' ' + lignes.join('</w:t></w:r><w:r><w:br/></w:r><w:r><w:t xml:space="preserve">');
+    return xml.substring(0, pos) + contenu + xml.substring(pos);
+  }
+  // Hors-ligne (cellule de saisie separee) : construction de runs autonomes,
+  // ne depend pas du contexte XML environnant.
+  const runs = lignes.map(l => `<w:r><w:t xml:space="preserve">${l}</w:t></w:r>`).join('<w:r><w:br/></w:r>');
+  return xml.substring(0, pos) + runs + xml.substring(pos);
 }
 
 function remplirChampDansXml(xml, label, valeur) {
