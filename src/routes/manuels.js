@@ -403,8 +403,11 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
       'Détails et imprévus',
       "Directives d'exploitation et d'entretien",
     ];
+    // La page 2 (sommaire placeholder) contient déjà les mêmes titres de
+    // section — la recherche doit commencer à la page 3 pour éviter de s'y
+    // arrêter au lieu de trouver la vraie page du contenu.
     const sections = HEADINGS_BASE.map((label, i) => {
-      const idx = pagesTexteBase.findIndex((t) => t.includes(label));
+      const idx = pagesTexteBase.findIndex((t, pageIdx) => pageIdx >= 2 && t.includes(label));
       return { label, pageDebut: idx === -1 ? (3 + i) : idx + 1 };
     });
 
