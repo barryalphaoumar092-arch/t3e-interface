@@ -411,6 +411,23 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
       return { label, pageDebut: idx === -1 ? (3 + i) : idx + 1 };
     });
 
+    // Garde-fou : les pages des sections 1 a 5 doivent toujours etre
+    // strictement croissantes (chaque section commence forcement apres la
+    // precedente). Si ce n'est pas le cas — ex: un champ texte contient par
+    // coincidence le titre d'une autre section, ou toute autre defaillance
+    // de detection non prevue — on ne livre jamais un sommaire avec des
+    // numeros de page faux : on retombe sur la numerotation sequentielle par
+    // defaut et on logue l'anomalie pour qu'elle soit visible dans les
+    // journaux serveur (voir piege corrige le 2026-07-07 : la recherche
+    // trouvait le titre dans le sommaire statique de la page 2 au lieu de la
+    // vraie page de contenu).
+    const sectionsCroissantes = sections.every((s, i) => i === 0 || s.pageDebut > sections[i - 1].pageDebut);
+    if (!sectionsCroissantes) {
+      console.error('[manuels] ANOMALIE sommaire : pages des sections 1-5 non croissantes (%s) - repli sur la numerotation sequentielle par defaut.',
+        JSON.stringify(sections));
+      sections.forEach((s, i) => { s.pageDebut = 3 + i; });
+    }
+
     // Sections 6+ : presence variable d'un manuel a l'autre — une page de
     // titre + entree de sommaire n'est ajoutee que si du contenu existe.
     async function ajouterSection(label, buffers, { tamponner = false } = {}) {
