@@ -226,19 +226,15 @@ const doc = new Document({
       texte('Limitez l’accès au personnel autorisé uniquement. N’utilisez pas la toiture comme terrasse ou patio sans protection adéquate.'),
       sousTitre('Liste de contrôle d’entretien', { spacing: { before: 300, after: 150 } }),
       tableChecklist,
-      new Paragraph({ children: [new PageBreak()] }),
-
-      // ── 6. GARANTIES ──
-      titre(6, 'Garanties'),
-      sousTitre('Certificat de garantie — Toitures Trois Étoiles Inc.'),
-      new Paragraph({ children: [labelRun('Numéro de garantie')], spacing: { after: 150 } }),
-      new Paragraph({ children: [labelRun('Surface garantie')], spacing: { after: 150 } }),
-      new Paragraph({ children: [labelRun('Durée de la garantie')], spacing: { after: 150 } }),
-      new Paragraph({ children: [labelRun('Date de fin de garantie')], spacing: { after: 300 } }),
-      texte('Cette garantie couvre les défauts de matériaux et de main-d’œuvre relatifs aux travaux de couverture décrits au présent document, pour la durée indiquée ci-dessus à compter de la date de fin des travaux. Elle s’annule automatiquement en cas de modifications, réparations ou ouvertures non autorisées apportées à la toiture, au pontage ou à l’entretoit sans approbation écrite préalable de Toitures Trois Étoiles Inc.'),
-      texte('La responsabilité financière en vertu de la présente garantie est limitée au coût des travaux de couverture prévu au contrat original. Cette garantie n’est ni négociable ni transférable sans le consentement écrit de Toitures Trois Étoiles Inc.'),
-      texte('[NOTE INTERNE T3E : ce texte est un gabarit générique — à faire valider par la direction avant usage officiel, notamment au regard du libellé légal habituel de T3E.]', { spacing: { before: 200 } }),
-      texte('La garantie du fabricant des matériaux, lorsqu’applicable, est jointe en annexe du présent manuel (voir section Garantie fabricant).'),
+      // Le document s'arrête ici volontairement : les sections 6 et suivantes
+      // (Garanties, Manuel d'entretien préventif, Attestation CNESST/CCQ,
+      // Dessins d'atelier, Fiches techniques, Plans tels que construits) ne
+      // sont plus rédigées dans le .docx — leur présence/absence varie d'un
+      // manuel à l'autre, et leur page de titre + numérotation + entrée de
+      // sommaire sont générées dynamiquement par pdf-lib après assemblage
+      // (voir src/services/pdf-manuel-assembleur.js). La section Garanties
+      // ne doit contenir QUE le(s) PDF réel(s) du certificat, jamais de texte
+      // généré — c'est pourquoi elle n'existe plus ici du tout.
     ],
   }],
 });

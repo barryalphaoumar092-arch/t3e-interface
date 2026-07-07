@@ -107,7 +107,8 @@
       <div class="card mb-3">
         <div class="card-header bg-secondary text-white py-2"><h6 class="mb-0"><i class="bi bi-exclamation-circle"></i> Détails et imprévus</h6></div>
         <div class="card-body">
-          <textarea name="DETAILS_IMPREVUS" class="form-control" rows="3" placeholder="Précisions, particularités ou événements imprévus survenus en cours de chantier…"><%= champs.DETAILS_IMPREVUS || '' %></textarea>
+          <div class="form-text mb-2">Restez bref — uniquement l'essentiel (ex. : « Avenant signé le [date] pour [raison] (+/- montant) ; déficiences mineures corrigées avant réception. »).</div>
+          <textarea name="DETAILS_IMPREVUS" class="form-control" rows="2" placeholder="Ex. : avenant signé le [date] pour [raison] (+/- montant) ; déficiences mineures corrigées avant réception."><%= champs.DETAILS_IMPREVUS || '' %></textarea>
         </div>
       </div>
 
@@ -126,15 +127,15 @@
 
       <!-- Garanties -->
       <div class="card mb-3">
-        <div class="card-header bg-secondary text-white py-2"><h6 class="mb-0"><i class="bi bi-shield-check"></i> Garanties — certificat T3E</h6></div>
+        <div class="card-header bg-secondary text-white py-2"><h6 class="mb-0"><i class="bi bi-shield-check"></i> Garanties — référence interne</h6></div>
         <div class="card-body">
+          <div class="alert alert-warning py-2 small mb-3"><i class="bi bi-info-circle"></i> Ces 4 champs ne sont <strong>jamais imprimés</strong> dans le manuel — la section Garanties ne contient que les PDF des certificats uploadés (voir « Documents fournis » ci-dessous). Ils servent uniquement de repère pour vous/l'équipe.</div>
           <div class="row g-2">
             <div class="col-md-3"><label class="form-label">Numéro de garantie</label><input type="text" name="NUMERO_GARANTIE" class="form-control" value="<%= champs.NUMERO_GARANTIE || '' %>"></div>
             <div class="col-md-3"><label class="form-label">Surface garantie</label><input type="text" name="SURFACE_GARANTIE" class="form-control" value="<%= champs.SURFACE_GARANTIE || '' %>"></div>
             <div class="col-md-3"><label class="form-label">Durée de la garantie</label><input type="text" name="DUREE_GARANTIE" class="form-control" value="<%= champs.DUREE_GARANTIE || '' %>"></div>
             <div class="col-md-3"><label class="form-label">Date de fin de garantie</label><input type="text" name="DATE_FIN_GARANTIE" class="form-control" value="<%= champs.DATE_FIN_GARANTIE || '' %>"></div>
           </div>
-          <div class="form-text mt-2">La garantie du fabricant (document PDF uploadé) est fusionnée séparément dans le manuel final.</div>
         </div>
       </div>
 
@@ -150,19 +151,20 @@
     <div class="card mb-4">
       <div class="card-header bg-light py-2"><h6 class="mb-0"><i class="bi bi-paperclip"></i> Documents fournis</h6></div>
       <div class="card-body">
-        <% var labelsDocs = { dessins_atelier: 'Dessins d\'atelier', fiches_techniques: 'Fiches techniques', plans_as_built: 'Plans tels que construits', plan: 'Plan(s) du projet', garantie_fabricant: 'Garantie fabricant', attestation_cnesst: 'Attestation CNESST', attestation_ccq: 'Attestation CCQ' }; %>
+        <% var labelsDocs = { dessins_atelier: 'Dessins d\'atelier', fiches_techniques: 'Fiches techniques', plans_as_built: 'Plans tels que construits', plan: 'Plan(s) du projet (repli si pas d\'as-built)', garantie_fabricant: 'Certificats de garantie (T3E + fabricant)', attestation_cnesst: 'Attestation CNESST', attestation_ccq: 'Attestation CCQ', brochure_marketing: 'Brochure marketing' }; %>
         <% Object.keys(labelsDocs).forEach(function(cle) { %>
         <div class="mb-1">
           <strong><%= labelsDocs[cle] %> :</strong>
           <% if (documents[cle] && documents[cle].length > 0) { %>
             <% documents[cle].forEach(function(d) { %><span class="badge bg-success bg-opacity-75 me-1"><i class="bi bi-file-earmark-pdf"></i> <%= d.nom %></span><% }); %>
-          <% } else if (cle === 'attestation_cnesst' || cle === 'attestation_ccq') { %>
+          <% } else if (cle === 'attestation_cnesst' || cle === 'attestation_ccq' || cle === 'brochure_marketing') { %>
             <span class="badge bg-secondary">Défaut T3E</span>
           <% } else { %>
             <span class="text-muted small">Aucun</span>
           <% } %>
         </div>
         <% }); %>
+        <p class="text-muted small mt-2 mb-0"><i class="bi bi-info-circle"></i> Si « Plans tels que construits » est vide, « Plan(s) du projet » sert de repli pour cette section (jamais les deux en même temps, pour éviter les dessins en double).</p>
 
         <hr>
         <p class="text-muted small mb-2"><i class="bi bi-plus-circle"></i> Ajouter des documents à ce manuel (aucune perte de ce qui est déjà rempli ci-dessus) :</p>
@@ -172,9 +174,10 @@
             <div class="col-md-6"><label class="form-label small">Fiches techniques</label><input type="file" id="ajoutFT" class="form-control form-control-sm" accept=".pdf" multiple></div>
             <div class="col-md-6"><label class="form-label small">Plans tels que construits</label><input type="file" id="ajoutAsBuilt" class="form-control form-control-sm" accept=".pdf" multiple></div>
             <div class="col-md-6"><label class="form-label small">Plan(s) du projet</label><input type="file" id="ajoutPlan" class="form-control form-control-sm" accept=".pdf" multiple></div>
-            <div class="col-md-4"><label class="form-label small">Garantie fabricant</label><input type="file" id="ajoutGarantieFab" class="form-control form-control-sm" accept=".pdf"></div>
-            <div class="col-md-4"><label class="form-label small">Attestation CNESST</label><input type="file" id="ajoutCnesst" class="form-control form-control-sm" accept=".pdf"></div>
-            <div class="col-md-4"><label class="form-label small">Attestation CCQ</label><input type="file" id="ajoutCcq" class="form-control form-control-sm" accept=".pdf"></div>
+            <div class="col-md-6"><label class="form-label small">Certificats de garantie</label><input type="file" id="ajoutGarantieFab" class="form-control form-control-sm" accept=".pdf" multiple></div>
+            <div class="col-md-6"><label class="form-label small">Brochure marketing</label><input type="file" id="ajoutBrochure" class="form-control form-control-sm" accept=".pdf"></div>
+            <div class="col-md-6"><label class="form-label small">Attestation CNESST</label><input type="file" id="ajoutCnesst" class="form-control form-control-sm" accept=".pdf"></div>
+            <div class="col-md-6"><label class="form-label small">Attestation CCQ</label><input type="file" id="ajoutCcq" class="form-control form-control-sm" accept=".pdf"></div>
           </div>
           <button type="submit" class="btn btn-outline-primary btn-sm mt-3" id="btnAjoutDocs">
             <i class="bi bi-upload"></i> Ajouter ces documents
@@ -217,9 +220,10 @@ formAjoutDocs.addEventListener('submit', function(e) {
     fiches_techniques: document.getElementById('ajoutFT'),
     plans_as_built: document.getElementById('ajoutAsBuilt'),
     plan: document.getElementById('ajoutPlan'),
+    garantie_fabricant: document.getElementById('ajoutGarantieFab'),
   };
   var inputsUniques = {
-    garantie_fabricant: document.getElementById('ajoutGarantieFab'),
+    brochure_marketing: document.getElementById('ajoutBrochure'),
     attestation_cnesst: document.getElementById('ajoutCnesst'),
     attestation_ccq: document.getElementById('ajoutCcq'),
   };

@@ -316,24 +316,8 @@ Tu remplis un MANUEL DE FIN DE CHANTIER à partir du devis de toiture d'un proje
 - ENTREPRENEUR_GENERAL : nom de l'entrepreneur général du chantier s'il est mentionné (souvent absent des devis d'architecte — retourne "" si absent, ne jamais confondre avec T3E qui est l'entrepreneur COUVREUR, pas général)
 - FOURNISSEUR_1, FOURNISSEUR_2, FOURNISSEUR_3, FOURNISSEUR_4 : TOUS les fournisseurs/fabricants de matériaux distincts mentionnés dans le devis (ex: "Soprema" pour la membrane, "CGC" pour les panneaux, un fournisseur de bardeau/évents/mécanique s'il y en a un autre), sous la forme "Nom — Adresse — Téléphone" si ces coordonnées sont dans le devis, sinon juste le nom. Un fournisseur par champ, du plus important au moins important. Laisse les champs vides s'il y a moins de 4 fournisseurs distincts identifiables — n'invente rien et ne répète pas le même fournisseur dans deux champs.
 - SOUS_TRAITANT_1, SOUS_TRAITANT_2 : sous-traitants mentionnés dans le devis pour des travaux connexes à la couverture (ex: mécanique, électricité, maçonnerie, étanchéité de joints) si le devis en nomme explicitement. Retourne "" si aucun sous-traitant n'est mentionné — ne confonds jamais un fournisseur de matériaux avec un sous-traitant.
-- DESCRIPTION_TRAVAUX : la section LA PLUS IMPORTANTE du manuel. Tu dois TRANSCRIRE ET DÉVELOPPER, de façon EXHAUSTIVE, TOUT ce que l'extrait du devis fourni décrit sur la toiture — ne résume JAMAIS, ne raccourcis JAMAIS, n'omets AUCUN détail technique présent dans le texte fourni. Comporte-toi comme un chargé de projet senior qui relit chaque paragraphe pertinent du devis et le retranscrit fidèlement et intégralement dans le manuel, en l'organisant et le complétant du mieux possible.
-  Format : une ligne par composante/sujet, séparées par des retours à la ligne (\\n), sous la forme "Nom de la composante : détail complet du devis". Couvre AU MINIMUM, si le devis en parle (n'omets une ligne QUE si le devis n'en parle vraiment pas du tout) :
-  1. Pare-vapeur / coupe-vapeur (produit exact, méthode de pose, recouvrements)
-  2. Isolant (produit exact, épaisseur totale, nombre de rangs, pente, méthode de fixation/adhésif utilisé, valeur RSI si mentionnée)
-  3. Panneau de support / substrat (produit exact, épaisseur, méthode de fixation, quantité de fixations si mentionnée)
-  4. Membrane de base (produit exact, méthode de pose : collée/soudée/mécanique, recouvrements)
-  5. Membrane de finition (produit exact, couleur, méthode de pose, granulat si applicable)
-  6. Relevés et solins (produit exact, hauteur, emplacements précis, matériau et calibre des solins métalliques)
-  7. Drains, évents, cols de cygne et autres accessoires mécaniques (quantité, type, emplacement)
-  8. Joints d'expansion, joints de contrôle, cants/bandes de transition si mentionnés
-  9. Adhésifs, primaires, produits d'étanchéité complémentaires mentionnés
-  10. Éléments métalliques spécialisés et accessoires liés à la toiture (échelles d'accès, chaperons/collerettes d'évents, brides regroupant des sorties mécaniques, rampes autoportantes/garde-corps, plaques d'ancrage) — produit exact, calibre, finition, emplacement
-  11. Revêtement mural extérieur ou parement métallique connexe aux travaux de toiture (produit, calibre, fini, emplacement) si mentionné
-  12. Lanterneaux et murs-rideaux inclinés : remplacement, rénovation d'étanchéité, garnitures, bris thermiques (produits et portée exacte) si mentionnés
-  13. Protection et coupe-feu : ensembles coupe-feu/pare-fumée, protections de circulation, membranes liquides de renfort si mentionnés
-  14. Exigences de performance et essais (résistance au vent/soulèvement avec valeurs exactes en kPa/psf si données, norme d'essai citée, cote de résistance au feu, garanties spécifiques par produit/fabricant mentionnées dans le devis)
-  15. Échéancier contractuel du devis, si des dates ou délais y sont précisés (mobilisation/début des travaux, réception provisoire, correction des déficiences, acceptation finale, période de réalisation)
-  N'INVENTE RIEN qui n'est pas dans l'extrait fourni, mais SOIS EXHAUSTIF sur tout ce qui s'y trouve — vise un texte LONG et COMPLET (plusieurs lignes détaillées par composante si le devis le permet), pas une liste minimaliste. Ces 15 points sont un plancher, pas un plafond : si le devis décrit d'autres travaux connexes pertinents (structure, mécanique, électricité liés à la toiture), transcris-les aussi dans une ligne dédiée.
+- DESCRIPTION_TRAVAUX : résumé BREF de la portée des travaux de toiture réalisés — 3 à 6 phrases maximum, un seul paragraphe (pas de liste à puces, pas de retours à la ligne), dans le style d'un manuel de référence concis. Exemple de longueur/ton attendu : "Réfection complète de la toiture en bardeaux d'asphalte de couleur gris ardoise de la Résidence X, incluant les membranes de sous-couche et d'étanchéité, les solins et gouttières en tôle, ainsi que les travaux d'étanchéité connexes."
+  Nomme uniquement : (1) le type de système de toiture installé (ex. bardeaux d'asphalte, membrane élastomère, TPO, BUR), (2) les 2-3 produits/composantes principales réellement posés, (3) la portée générale (réfection complète ou partielle). NE TRANSCRIS PAS le devis phrase par phrase et NE DÉTAILLE PAS chaque composante une par une (pare-vapeur, isolant, solins, drains, etc., produit par produit) — ce niveau de détail appartient aux fiches techniques jointes au manuel, pas à ce résumé. Privilégie toujours le produit RÉELLEMENT installé en toiture (section technique principale de couverture, généralement la plus longue du devis, sous "PARTIE 2 PRODUITS") plutôt qu'un produit secondaire ou incidental mentionné dans une section annexe courte (ex: isolant en matelas des parapets, panneau de béton d'un muret) — ne confonds jamais les deux.
 - SURFACE_GARANTIE : superficie totale de la toiture couverte par les travaux (ex: "12 500 pi²"), si mentionnée dans le devis. Retourne "" si absente.
 - DUREE_GARANTIE : durée de la garantie T3E sur la main-d'œuvre/matériaux si le devis la précise (ex: "10 ans", "15 ans"). Ne confonds pas avec la garantie du fabricant. Retourne "" si absente du devis — ce champ sera alors rempli manuellement.
 
@@ -341,7 +325,6 @@ Tu remplis un MANUEL DE FIN DE CHANTIER à partir du devis de toiture d'un proje
 - NE RETOURNE JAMAIS les coordonnées de T3E elle-même (7550 Rue Saint-Patrick, etc.) dans PROPRIETAIRE/CONSULTANT/ENTREPRENEUR_GENERAL — T3E est l'entrepreneur couvreur, pas un des rôles ci-dessus
 - Si une info n'est pas dans le devis, retourne une chaîne vide ""
 - INTERDICTION ABSOLUE d'écrire des réponses paresseuses comme "Voir section 07 21 16", "Voir section X", "Se référer au devis" ou toute autre forme de renvoi sans contenu — le manuel doit pouvoir être lu SEUL, sans avoir le devis sous les yeux. Si tu identifies la bonne section mais qu'elle ne fait que renvoyer à une autre section, VA CHERCHER le contenu réel dans cette autre section de l'extrait fourni et transcris-le. Si le contenu réel n'est vraiment nulle part dans l'extrait, écris "" pour cette ligne plutôt qu'un renvoi vide.
-- Pour DESCRIPTION_TRAVAUX, privilégie toujours le produit RÉELLEMENT installé en toiture (celui décrit dans la section technique principale de couverture, généralement la plus longue du devis, sous "PARTIE 2 PRODUITS") plutôt qu'un produit secondaire ou incidental mentionné dans une section annexe courte (ex: isolant en matelas des parapets, panneau de béton d'un muret) — ne confonds jamais les deux.
 - confiance : "haute", "moyenne" ou "basse" selon la clarté du devis fourni`;
 
 // Les devis font souvent plusieurs centaines de pages — envoyer le texte
@@ -395,9 +378,25 @@ function extraireSectionUtile(texteSection, capMax) {
     return texteSection.substring(0, capMax);
   }
   const prefixe = texteSection.substring(0, 300);
-  const budgetRestant = Math.max(0, capMax - prefixe.length);
+  const partie1 = texteSection.substring(300, idxPartie2);
+
+  // La durée/portée de la garantie est presque toujours nommée dans PARTIE 1
+  // GÉNÉRALITÉS (ex: "garantie de 10 ans", "warranty period") — avant ce
+  // correctif, PARTIE 1 était supprimée en bloc, ce qui rendait SURFACE_GARANTIE
+  // et DUREE_GARANTIE systématiquement vides même quand le devis les précisait.
+  // On extrait maintenant un court passage autour de la première mention de
+  // garantie avant d'omettre le reste (qualité/transport, non pertinent).
+  let extraitGarantie = '';
+  const idxGarantie = partie1.search(/garantie|warranty/i);
+  if (idxGarantie !== -1) {
+    const debut = Math.max(0, idxGarantie - 100);
+    const fin = Math.min(partie1.length, idxGarantie + 700);
+    extraitGarantie = '\n[EXTRAIT GARANTIE (PARTIE 1 GÉNÉRALITÉS)]\n' + partie1.substring(debut, fin).trim() + '\n';
+  }
+
+  const budgetRestant = Math.max(0, capMax - prefixe.length - extraitGarantie.length);
   const suite = texteSection.substring(idxPartie2, idxPartie2 + budgetRestant);
-  return prefixe + '\n[...PARTIE 1 GÉNÉRALITÉS omise (qualité/garanties/transport, non pertinente pour la composition installée)...]\n' + suite;
+  return prefixe + extraitGarantie + '\n[...reste de PARTIE 1 GÉNÉRALITÉS omis (qualité/transport, non pertinent pour la composition installée)...]\n' + suite;
 }
 
 function extraireContextePourManuel(texteDevis) {
@@ -478,8 +477,73 @@ Retourne un JSON avec tous les champs demandés, en français.`;
   return callOpenAI(SYSTEM_MANUEL, userContent, ANALYSE_MANUEL_SCHEMA, true, 10000);
 }
 
+// ── Fournisseurs à partir des fiches techniques (FT) ──
+// Le devis liste parfois des matériaux prévus qui ne sont finalement pas
+// installés (produit remplacé en chantier, substitution acceptée par
+// l'architecte) — les FICHES TECHNIQUES réellement approuvées et jointes au
+// manuel sont la source fiable de "qu'est-ce qui a vraiment été posé". Cette
+// fonction en extrait le(s) fabricant(s), à privilégier sur FOURNISSEUR_1..4
+// issus du devis quand des fiches techniques sont disponibles.
+const ANALYSE_FOURNISSEURS_FT_SCHEMA = {
+  type: 'object',
+  properties: {
+    FOURNISSEUR_1: { type: 'string' },
+    FOURNISSEUR_2: { type: 'string' },
+    FOURNISSEUR_3: { type: 'string' },
+    FOURNISSEUR_4: { type: 'string' },
+  },
+  required: ['FOURNISSEUR_1', 'FOURNISSEUR_2', 'FOURNISSEUR_3', 'FOURNISSEUR_4'],
+  additionalProperties: false,
+};
+
+const SYSTEM_FOURNISSEURS_FT = `Tu es un chargé de projet SENIOR en couverture commerciale chez Toitures Trois Étoiles Inc. (T3E).
+On te donne le texte extrait de plusieurs FICHES TECHNIQUES (fiches d'identification/dessins d'atelier approuvés) d'un même chantier de toiture. Ces fiches représentent les produits RÉELLEMENT installés — contrairement au devis, qui liste parfois des produits finalement remplacés ou non utilisés en chantier.
+
+=== TÂCHE ===
+Identifie jusqu'à 4 fournisseurs/fabricants DISTINCTS parmi ces fiches (ex: Soprema, BP, Adfast, Rust-Oleum, Condor Chimiques, IKO, GAF, etc.).
+Pour chacun, retourne "Nom du fabricant — Adresse — Téléphone" si ces coordonnées apparaissent dans l'en-tête/pied de page de la fiche, sinon juste "Nom du fabricant — Nom du produit principal".
+Un fournisseur par champ, du plus important (matériau principal de toiture : membrane/bardeau) au moins important (accessoires : scellants, clous, apprêts).
+Si deux fiches viennent du même fabricant, regroupe-les sous un seul champ (ex: "BP Canada — bardeaux Mystique, membrane WeatherTex") plutôt que de répéter le fabricant.
+Laisse les champs vides ("") s'il y a moins de 4 fabricants distincts identifiables — n'invente rien.
+Ignore les fiches qui ne sont pas de vraies fiches techniques de produit (pages d'identification vides sans données du fabricant, pages appartenant visiblement à un autre projet).`;
+
+async function extraireFournisseursDesFT(fiches) {
+  const vide = { FOURNISSEUR_1: '', FOURNISSEUR_2: '', FOURNISSEUR_3: '', FOURNISSEUR_4: '' };
+  if (!Array.isArray(fiches) || fiches.length === 0) return vide;
+
+  const CAP_PAR_FICHE = 6000;
+  const BUDGET_TOTAL_FT = 48000;
+  let budgetRestant = BUDGET_TOTAL_FT;
+  const morceaux = [];
+  for (const f of fiches) {
+    if (budgetRestant <= 0) break;
+    const texte = (f.texte || '').substring(0, Math.min(CAP_PAR_FICHE, budgetRestant));
+    if (!texte.trim()) continue;
+    morceaux.push(`=== FICHE : ${f.nom || 'sans nom'} ===\n${texte}`);
+    budgetRestant -= texte.length;
+  }
+  if (morceaux.length === 0) return vide;
+
+  const userContent = `FICHES TECHNIQUES DU CHANTIER :
+───────────────────────────────────────
+${morceaux.join('\n\n---\n\n')}
+───────────────────────────────────────
+
+Retourne un JSON avec les 4 champs demandés, en français.`;
+
+  const result = await callOpenAI(SYSTEM_FOURNISSEURS_FT, userContent, ANALYSE_FOURNISSEURS_FT_SCHEMA, true, 4096);
+  if (result.error) {
+    console.error('[claude-client] Extraction fournisseurs FT échouée:', result.error);
+    return vide;
+  }
+  return result;
+}
+
 function isConfigured() {
   return !!OPENAI_API_KEY;
 }
 
-module.exports = { analyserDevis, analyserDevisSoumission, analyserDevisManuel, mapperChampsBordereau, isConfigured };
+module.exports = {
+  analyserDevis, analyserDevisSoumission, analyserDevisManuel,
+  extraireFournisseursDesFT, mapperChampsBordereau, isConfigured,
+};

@@ -33,8 +33,15 @@ async function parseTemplate(filePath, originalName) {
 }
 
 async function parsePdf(filePath) {
-  const pdfParse = require('pdf-parse');
   const buffer = fs.readFileSync(filePath);
+  return parsePdfBuffer(buffer);
+}
+
+// Variante sans fichier temporaire — pour parser un PDF déjà en mémoire
+// (ex: une fiche technique téléchargée depuis Supabase Storage), cohérent
+// avec la contrainte "disque éphémère" du projet (voir CLAUDE.md).
+async function parsePdfBuffer(buffer) {
+  const pdfParse = require('pdf-parse');
   const data = await pdfParse(buffer);
   return {
     text: data.text || '',
@@ -129,4 +136,33 @@ function extractProjectInfo(text) {
   return info;
 }
 
-module.exports = { parseDevis, parseTemplate, extractProjectInfo };
+// Texte par page (tableau, dans l'ordre) d'un PDF déjà en mémoire — utilisé
+// pour localiser de façon fiable une page précise dans un PDF assemblé dont
+// certaines sections ont une longueur variable (ex: retrouver la page de
+// début de chaque section du manuel de fin de chantier en cherchant son
+// titre exact, plutôt que de supposer un nombre de pages fixe par section).
+async function texteParPage(buffer) {
+  const pdfParse = require('pdf-parse');
+  const pages = [];
+  const pagerender = (pageData) => {
+    return pageData.getTextContent({ normalizeWhitespace: false, disableCombineTextItems: false })
+      .then((textContent) => {
+        let lastY;
+        let text = '';
+        for (const item of textContent.items) {
+          if (lastY === item.transform[5] || lastY === undefined) {
+            text += item.str;
+          } else {
+            text += '\n' + item.str;
+          }
+          lastY = item.transform[5];
+        }
+        pages.push(text);
+        return text;
+      });
+  };
+  await pdfParse(buffer, { pagerender });
+  return pages;
+}
+
+module.exports = { parseDevis, parseTemplate, parsePdfBuffer, texteParPage, extractProjectInfo };

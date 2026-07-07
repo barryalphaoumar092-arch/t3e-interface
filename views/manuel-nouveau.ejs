@@ -39,7 +39,7 @@
           </div>
 
           <hr class="my-4">
-          <p class="text-muted small mb-3"><i class="bi bi-info-circle"></i> Les documents suivants sont fusionnés tels quels dans le manuel final (aucune extraction IA). Tous optionnels à cette étape — vous pourrez les ajouter plus tard si besoin.</p>
+          <p class="text-muted small mb-3"><i class="bi bi-info-circle"></i> Les documents suivants sont fusionnés tels quels dans le manuel final. Tous optionnels à cette étape — vous pourrez les ajouter plus tard si besoin. <strong>Fiches techniques :</strong> leurs fabricants remplacent automatiquement les fournisseurs déduits du devis (plus fiable, car certains matériaux prévus au devis ne sont finalement pas installés).</p>
 
           <div class="row g-3">
             <div class="col-md-6">
@@ -58,15 +58,19 @@
               <label class="form-label fw-bold">Plan(s) du projet</label>
               <input type="file" name="plan" id="inputPlan" class="form-control" accept=".pdf" multiple>
             </div>
-            <div class="col-md-4">
-              <label class="form-label fw-bold">Garantie du fabricant</label>
-              <input type="file" name="garantie_fabricant" id="inputGarantieFab" class="form-control" accept=".pdf">
+            <div class="col-md-6">
+              <label class="form-label fw-bold">Certificats de garantie <small class="text-muted fw-normal">(T3E + fabricant — le manuel n'inclut que ces PDF, aucun texte généré)</small></label>
+              <input type="file" name="garantie_fabricant" id="inputGarantieFab" class="form-control" accept=".pdf" multiple>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-6">
+              <label class="form-label fw-bold">Brochure marketing <small class="text-muted fw-normal">(sinon défaut BP "Guide des toitures")</small></label>
+              <input type="file" name="brochure_marketing" id="inputBrochure" class="form-control" accept=".pdf">
+            </div>
+            <div class="col-md-6">
               <label class="form-label fw-bold">Attestation CNESST <small class="text-muted fw-normal">(sinon défaut T3E)</small></label>
               <input type="file" name="attestation_cnesst" id="inputCnesst" class="form-control" accept=".pdf">
             </div>
-            <div class="col-md-4">
+            <div class="col-md-6">
               <label class="form-label fw-bold">Attestation CCQ <small class="text-muted fw-normal">(sinon défaut T3E)</small></label>
               <input type="file" name="attestation_ccq" id="inputCcq" class="form-control" accept=".pdf">
             </div>
@@ -120,9 +124,10 @@ formUpload.addEventListener('submit', function(e) {
     fiches_techniques: document.getElementById('inputFT'),
     plans_as_built: document.getElementById('inputAsBuilt'),
     plan: document.getElementById('inputPlan'),
+    garantie_fabricant: document.getElementById('inputGarantieFab'),
   };
   var inputsUniques = {
-    garantie_fabricant: document.getElementById('inputGarantieFab'),
+    brochure_marketing: document.getElementById('inputBrochure'),
     attestation_cnesst: document.getElementById('inputCnesst'),
     attestation_ccq: document.getElementById('inputCcq'),
   };

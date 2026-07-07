@@ -4,11 +4,15 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
-const { parseDevis } = require('../services/document-parser');
+const { parseDevis, parsePdfBuffer, texteParPage } = require('../services/document-parser');
 const { remplirManuel } = require('../services/manuel-filler');
 const { convertirDocxEnPdf } = require('../services/docx-to-pdf');
-const { analyserDevisManuel } = require('../services/claude-client');
+const { analyserDevisManuel, extraireFournisseursDesFT } = require('../services/claude-client');
 const { PDFDocument } = require('pdf-lib');
+const {
+  preparerPolices, ajouterBufferAuDocument, creerPageTitre,
+  estamperPagesAsBuilt, construireSommaireEtNumeroter,
+} = require('../services/pdf-manuel-assembleur');
 const { downloadBuffer, uploadBuffer, createSignedUrl, removeFile, listFiles, sanitizeKey, BUCKETS } = require('../services/storage');
 
 // Documents par defaut (reutilises sur tous les manuels, sauf remplacement
@@ -18,19 +22,59 @@ const DEFAUTS = {
   manuel_entretien: 'manuels-defauts/manuel-entretien-preventif.pdf',
   attestation_cnesst: 'manuels-defauts/attestation-cnesst.pdf',
   attestation_ccq: 'manuels-defauts/attestation-ccq.pdf',
+  brochure_marketing: 'manuels-defauts/guide-toitures-bp.pdf',
 };
 
-// Categories de documents uploades par l'utilisateur, dans l'ORDRE de fusion
-// du sommaire (voir plan). "multiple: true" = plusieurs fichiers possibles.
+// Categories de documents uploades par l'utilisateur. "multiple: true" =
+// plusieurs fichiers possibles. L'ORDRE de fusion réel n'est plus dérivé de
+// ce tableau (voir assemblage dynamique dans POST /generer/:id) — il ne sert
+// plus qu'à générer les champs d'upload et la persistance générique.
 const CATEGORIES_DOCUMENTS = [
   { cle: 'dessins_atelier', multiple: true },
   { cle: 'fiches_techniques', multiple: true },
   { cle: 'plans_as_built', multiple: true },
-  { cle: 'garantie_fabricant', multiple: false },
+  { cle: 'garantie_fabricant', multiple: true },
   { cle: 'attestation_cnesst', multiple: false },
   { cle: 'attestation_ccq', multiple: false },
   { cle: 'plan', multiple: true },
+  { cle: 'brochure_marketing', multiple: false },
 ];
+
+// Champs de garantie conservés en base pour référence interne (affichés sur
+// la page de révision) mais jamais imprimés dans le manuel — la section
+// Garanties ne doit contenir QUE les PDF réels des certificats (voir
+// scripts/generer-manuel-template.js, qui ne contient plus cette section).
+const CHAMPS_GARANTIE_NON_IMPRIMES = ['NUMERO_GARANTIE', 'SURFACE_GARANTIE', 'DUREE_GARANTIE', 'DATE_FIN_GARANTIE'];
+
+// Les fiches techniques réellement approuvées sont la source fiable de "qu'est
+// ce qui a vraiment été installé" — contrairement au devis, qui liste parfois
+// des matériaux finalement remplacés/non utilisés en chantier. Quand des FT
+// sont disponibles, leurs fabricants remplacent FOURNISSEUR_1..4 issus du devis.
+async function extraireFournisseursDepuisFT(fichesTechniquesDocs) {
+  if (!fichesTechniquesDocs || fichesTechniquesDocs.length === 0) return null;
+  const fiches = [];
+  for (const doc of fichesTechniquesDocs) {
+    const buf = await downloadBuffer(BUCKETS.MANUELS, doc.key);
+    if (!buf) continue;
+    try {
+      const { text } = await parsePdfBuffer(buf);
+      if (text && text.trim()) fiches.push({ nom: doc.nom, texte: text });
+    } catch (e) {
+      console.error('[manuels] Lecture FT échouée pour extraction fournisseurs:', doc.nom, e.message);
+    }
+  }
+  if (fiches.length === 0) return null;
+
+  try {
+    const result = await extraireFournisseursDesFT(fiches);
+    const nonVide = ['FOURNISSEUR_1', 'FOURNISSEUR_2', 'FOURNISSEUR_3', 'FOURNISSEUR_4']
+      .some((k) => (result[k] || '').trim());
+    return nonVide ? result : null;
+  } catch (e) {
+    console.error('[manuels] Extraction fournisseurs FT échouée:', e.message);
+    return null;
+  }
+}
 
 async function telechargerVersFichierTemp(bucket, key, nomOriginal) {
   const buf = await downloadBuffer(bucket, key);
@@ -88,19 +132,6 @@ async function chargerAvecDefaut(documents, cleDefaut) {
   if (!cleDefaut) return [];
   const buf = await downloadBuffer(BUCKETS.DOCUMENTS, cleDefaut);
   return buf ? [buf] : [];
-}
-
-async function fusionnerPdfBuffers(buffers) {
-  const merged = await PDFDocument.create();
-  for (const buf of buffers) {
-    try {
-      const doc = await PDFDocument.load(buf, { ignoreEncryption: true });
-      (await merged.copyPages(doc, doc.getPageIndices())).forEach(pg => merged.addPage(pg));
-    } catch (e) {
-      console.error('[manuels] Erreur fusion PDF:', e.message);
-    }
-  }
-  return merged.getPageCount() > 0 ? Buffer.from(await merged.save()) : null;
 }
 
 // Supprime tous les fichiers Supabase Storage stockes sous {manuelId}/ (toutes
@@ -201,6 +232,11 @@ router.post('/analyser', async (req, res) => {
     documents[cle] = await persisterCategorie(manuelId, cle, cles, noms);
   }
 
+  // Les fiches techniques réellement approuvées priment sur le devis pour les
+  // fournisseurs (voir extraireFournisseursDepuisFT ci-dessus).
+  const fournisseursFT = await extraireFournisseursDepuisFT(documents.fiches_techniques);
+  if (fournisseursFT) Object.assign(champs, fournisseursFT);
+
   await db.execute({
     sql: `UPDATE manuels SET contenu = ? WHERE id = ?`,
     args: [JSON.stringify({ champs, documents, ia_erreur: iaErreur }), manuelId],
@@ -251,6 +287,8 @@ router.post('/reviser/:id/documents', async (req, res) => {
   let data;
   try { data = JSON.parse(row.contenu); } catch (_) { data = {}; }
   const documents = data.documents || {};
+  let champs = data.champs || {};
+  let ftAjoutees = false;
 
   for (const { cle } of CATEGORIES_DOCUMENTS) {
     const cles = [].concat(req.body[cle + '_key'] || []);
@@ -258,11 +296,19 @@ router.post('/reviser/:id/documents', async (req, res) => {
     if (cles.length === 0) continue;
     const nouveaux = await persisterCategorie(id, cle, cles, noms);
     documents[cle] = [...(documents[cle] || []), ...nouveaux];
+    if (cle === 'fiches_techniques') ftAjoutees = true;
+  }
+
+  // Nouvelle(s) fiche(s) technique(s) ajoutée(s) : recalcule les fournisseurs
+  // à partir de l'ensemble des FT désormais disponibles (voir /analyser).
+  if (ftAjoutees) {
+    const fournisseursFT = await extraireFournisseursDepuisFT(documents.fiches_techniques);
+    if (fournisseursFT) champs = { ...champs, ...fournisseursFT };
   }
 
   await db.execute({
     sql: `UPDATE manuels SET contenu = ? WHERE id = ?`,
-    args: [JSON.stringify({ ...data, documents }), id],
+    args: [JSON.stringify({ ...data, champs, documents }), id],
   });
 
   res.redirect('/manuels/reviser/' + id);
@@ -286,9 +332,15 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
     champs[cleChamp] = (req.body[cleChamp] || '').trim();
   }
 
+  // Les 4 champs de garantie restent en base pour reference interne mais ne
+  // doivent jamais etre imprimes (la section Garanties du .docx ne contient
+  // plus que le titre — voir CHAMPS_GARANTIE_NON_IMPRIMES).
+  const champsPourDocx = { ...champs };
+  for (const k of CHAMPS_GARANTIE_NON_IMPRIMES) delete champsPourDocx[k];
+
   let docxBuf;
   try {
-    docxBuf = await remplirManuel(champs);
+    docxBuf = await remplirManuel(champsPourDocx);
   } catch (e) {
     return res.status(500).send('Erreur lors du remplissage du manuel : ' + e.message);
   }
@@ -300,39 +352,92 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
     return res.status(500).send('Erreur lors de la conversion PDF du manuel (le .docx genere est disponible mais pas la fusion complete) : ' + e.message);
   }
 
-  // Fusion dans l'ordre du sommaire — tous les telechargements Supabase des
-  // differentes categories sont lances EN PARALLELE (Promise.all) plutot que
-  // les uns apres les autres : avec beaucoup de fiches techniques/dessins/
-  // plans, la somme des temps sequentiels depassait le delai maximal de la
-  // fonction avant meme d'arriver a la fusion. Voir aussi persisterCategorie
-  // ci-dessus, meme principe pour /analyser.
+  // Telechargements Supabase de toutes les categories EN PARALLELE (Promise.all)
+  // plutot que les uns apres les autres : avec beaucoup de fiches techniques/
+  // dessins/plans, la somme des temps sequentiels depassait le delai maximal
+  // de la fonction. Voir aussi persisterCategorie ci-dessus, meme principe
+  // pour /analyser.
+  //
+  // Plans tels que construits : dedoublonnage — si des plans as-built ont ete
+  // uploades, ils font foi ; sinon on retombe sur les plans du projet (meme
+  // dessins, aucun changement structurel constate) plutot que d'afficher les
+  // deux sections avec les memes images (voir feedback utilisateur, projet 26-009).
+  const plansSourceDocs = (documents.plans_as_built && documents.plans_as_built.length > 0)
+    ? documents.plans_as_built
+    : (documents.plan || []);
+
   const [
     manuelEntretienBuf,
     attestationCnesstBufs,
     attestationCcqBufs,
-    garantieFabricantBufs,
+    garantieBufs,
     dessinsAtelierBufs,
-    planBufs,
     fichesTechniquesBufs,
     plansAsBuiltBufs,
+    brochureBufs,
   ] = await Promise.all([
     downloadBuffer(BUCKETS.DOCUMENTS, DEFAUTS.manuel_entretien),
     chargerAvecDefaut(documents.attestation_cnesst, DEFAUTS.attestation_cnesst),
     chargerAvecDefaut(documents.attestation_ccq, DEFAUTS.attestation_ccq),
     chargerBuffersCategorie(documents.garantie_fabricant),
     chargerBuffersCategorie(documents.dessins_atelier),
-    chargerBuffersCategorie(documents.plan),
     chargerBuffersCategorie(documents.fiches_techniques),
-    chargerBuffersCategorie(documents.plans_as_built),
+    chargerBuffersCategorie(plansSourceDocs),
+    chargerAvecDefaut(documents.brochure_marketing, DEFAUTS.brochure_marketing),
   ]);
 
-  const buffersAFusionner = [manuelPdfBuf];
-  if (manuelEntretienBuf) buffersAFusionner.push(manuelEntretienBuf);
-  buffersAFusionner.push(...attestationCnesstBufs, ...attestationCcqBufs, ...garantieFabricantBufs,
-    ...dessinsAtelierBufs, ...planBufs, ...fichesTechniquesBufs, ...plansAsBuiltBufs);
+  let pdfFinal;
+  try {
+    const pdfDoc = await PDFDocument.load(manuelPdfBuf);
+    const fonts = await preparerPolices(pdfDoc);
+    const tailleStandard = pdfDoc.getPage(0).getSize();
 
-  const pdfFinal = await fusionnerPdfBuffers(buffersAFusionner);
-  if (!pdfFinal) return res.status(500).send('Aucune page generee — verifiez le template et les documents uploades.');
+    // Sections 1 a 5 deja dans le .docx : leur page de depart reelle est
+    // localisee par titre exact (pdf-parse) plutot que supposee fixe, car
+    // Description/Details/Directives ont une longueur variable.
+    const pagesTexteBase = await texteParPage(manuelPdfBuf);
+    const HEADINGS_BASE = [
+      'Liste des intervenants',
+      'Liste des fournisseurs et sous-traitants',
+      'Description des travaux exécutés',
+      'Détails et imprévus',
+      "Directives d'exploitation et d'entretien",
+    ];
+    const sections = HEADINGS_BASE.map((label, i) => {
+      const idx = pagesTexteBase.findIndex((t) => t.includes(label));
+      return { label, pageDebut: idx === -1 ? (3 + i) : idx + 1 };
+    });
+
+    // Sections 6+ : presence variable d'un manuel a l'autre — une page de
+    // titre + entree de sommaire n'est ajoutee que si du contenu existe.
+    async function ajouterSection(label, buffers, { tamponner = false } = {}) {
+      if (!buffers || buffers.length === 0) return;
+      sections.push({ label, pageDebut: pdfDoc.getPageCount() + 1 });
+      creerPageTitre(pdfDoc, fonts, label, tailleStandard);
+      for (const buf of buffers) {
+        const pagesAjoutees = await ajouterBufferAuDocument(pdfDoc, buf);
+        if (tamponner) estamperPagesAsBuilt(fonts, pagesAjoutees);
+      }
+    }
+
+    // Brochure marketing : materiel accessoire, sans titre ni entree de
+    // sommaire, toujours juste apres Directives d'exploitation et d'entretien.
+    for (const buf of brochureBufs) await ajouterBufferAuDocument(pdfDoc, buf);
+
+    await ajouterSection('Garanties', garantieBufs);
+    await ajouterSection("Manuel d'entretien préventif", manuelEntretienBuf ? [manuelEntretienBuf] : []);
+    await ajouterSection('Attestation de conformité CNESST', attestationCnesstBufs);
+    await ajouterSection('Attestation de conformité CCQ', attestationCcqBufs);
+    await ajouterSection("Dessins d'atelier", dessinsAtelierBufs);
+    await ajouterSection('Fiches techniques', fichesTechniquesBufs);
+    await ajouterSection('Plans tels que construits (as-built)', plansAsBuiltBufs, { tamponner: true });
+
+    await construireSommaireEtNumeroter(pdfDoc, sections);
+
+    pdfFinal = Buffer.from(await pdfDoc.save());
+  } catch (e) {
+    return res.status(500).send('Erreur lors de l\'assemblage final du manuel : ' + e.message);
+  }
 
   try {
     await uploadBuffer(BUCKETS.MANUELS, `${id}/manuel-final.pdf`, pdfFinal, 'application/pdf');
