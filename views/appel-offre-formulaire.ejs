@@ -21,8 +21,13 @@
       Statut : <strong><%= formulaire.statut %></strong>
     </div>
     <div class="d-flex gap-2">
+      <% if ((formulaire.format || '').toLowerCase() !== 'docx') { %>
+      <a href="/appels-offres/<%= appel.id %>/formulaire/<%= formulaire.id %>/editeur" class="btn btn-outline-primary">
+        <i class="bi bi-cursor"></i> Positionner les champs manuellement
+      </a>
+      <% } %>
       <form method="POST" action="/appels-offres/<%= appel.id %>/formulaire/<%= formulaire.id %>/remplir">
-        <button type="submit" class="btn btn-warning"><i class="bi bi-magic"></i> Pré-remplir avec l'IA</button>
+        <button type="submit" class="btn btn-warning"><i class="bi bi-magic"></i> <%= formulaire.positions && formulaire.positions !== '{}' ? 'Générer avec les positions placées' : "Pré-remplir avec l'IA" %></button>
       </form>
       <% if (formulaire.cle_storage_rempli) { %>
       <a href="/appels-offres/<%= appel.id %>/formulaire/<%= formulaire.id %>/telecharger" class="btn btn-success">
@@ -32,6 +37,12 @@
     </div>
   </div>
 </div>
+
+<% if ((formulaire.format || '').toLowerCase() !== 'docx') { %>
+<p class="text-muted small">
+  <i class="bi bi-lightbulb"></i> Astuce : sur un vrai formulaire SEAO (souvent des lignes à blanc répétées sans champs de formulaire réels), le placement automatique par IA peut se tromper d'endroit si un libellé apparaît plusieurs fois. <a href="/appels-offres/<%= appel.id %>/formulaire/<%= formulaire.id %>/editeur">Positionner les champs manuellement</a> une fois est plus fiable.
+</p>
+<% } %>
 
 <% if (formulaire.cle_storage_rempli) { %>
 <div class="row">

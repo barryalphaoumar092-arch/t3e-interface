@@ -146,6 +146,11 @@ async function initDb() {
     'ALTER TABLE soumissions ADD COLUMN type_fibre TEXT',
     'ALTER TABLE soumissions ADD COLUMN materiau_solins TEXT',
     'ALTER TABLE soumissions ADD COLUMN cols_cygne_type TEXT',
+    // Positions x/y/page (%) placees manuellement par l'utilisateur sur le PDF
+    // du formulaire SEAO (editeur visuel type "glisser-deposer"), en JSON :
+    // { NEQ: {x,y,page,size}, RBQ: {...}, ... }. Absente/vide tant que
+    // l'utilisateur n'a pas encore utilise l'editeur pour ce formulaire.
+    'ALTER TABLE appels_offres_formulaires ADD COLUMN positions JSON',
   ];
 
   for (const sql of migrations) {

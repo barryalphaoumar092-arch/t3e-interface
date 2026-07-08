@@ -1,0 +1,215 @@
+<%- include('partials/header', { title: 'Éditeur de formulaire', page: 'appels-offres' }) %>
+
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="/appels-offres">Appels d'offres SEAO</a></li>
+    <li class="breadcrumb-item"><a href="/appels-offres/<%= appel.id %>"><%= appel.numero_seao %></a></li>
+    <li class="breadcrumb-item"><a href="/appels-offres/<%= appel.id %>/formulaire/<%= formulaire.id %>">Formulaire</a></li>
+    <li class="breadcrumb-item active">Éditeur</li>
+  </ol>
+</nav>
+
+<div class="alert alert-info py-2 small">
+  <i class="bi bi-info-circle"></i>
+  Faites glisser chaque champ (à gauche) à l'endroit exact où sa valeur doit être écrite sur le PDF. Une fois placé, vous pouvez le redéplacer en le faisant glisser directement sur la page. Naviguez entre les pages avec les flèches — les champs déjà placés restent mémorisés même si vous changez de page.
+</div>
+
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <div class="d-flex align-items-center gap-2">
+    <button type="button" id="btnPagePrec" class="btn btn-outline-secondary btn-sm"><i class="bi bi-chevron-left"></i></button>
+    <span id="labelPage" class="small">Page 1 / 1</span>
+    <button type="button" id="btnPageSuiv" class="btn btn-outline-secondary btn-sm"><i class="bi bi-chevron-right"></i></button>
+  </div>
+  <div class="d-flex gap-2">
+    <button type="button" id="btnEnregistrer" class="btn btn-outline-primary btn-sm"><i class="bi bi-save"></i> Enregistrer les positions</button>
+    <form method="POST" action="/appels-offres/<%= appel.id %>/formulaire/<%= formulaire.id %>/remplir" id="formGenerer">
+      <button type="submit" class="btn btn-warning btn-sm"><i class="bi bi-magic"></i> Générer le PDF rempli</button>
+    </form>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-md-3">
+    <div class="card">
+      <div class="card-header bg-light py-2"><i class="bi bi-grip-vertical"></i> Champs à placer</div>
+      <div class="card-body p-2" id="listeChamps">
+        <% champsDisponibles.forEach(function(c) { %>
+        <div class="champ-chip mb-2 p-2 border rounded bg-white" draggable="true" data-cle="<%= c.cle %>" style="cursor:grab;">
+          <div class="fw-bold small"><%= c.label %></div>
+          <div class="text-muted small text-truncate" title="<%= c.valeur %>"><%= c.valeur || '(valeur inconnue)' %></div>
+          <div class="small text-success placement-info" style="display:none;"></div>
+        </div>
+        <% }) %>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-9">
+    <div id="canvasWrapper" style="position:relative; display:inline-block; border:1px solid #ccc;">
+      <canvas id="pdfCanvas"></canvas>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+
+var URL_FICHIER = '/appels-offres/<%= appel.id %>/formulaire/<%= formulaire.id %>/fichier';
+var URL_POSITIONS = '/appels-offres/<%= appel.id %>/formulaire/<%= formulaire.id %>/positions';
+var positions = <%- JSON.stringify(positions || {}) %>;
+
+var pdfDoc = null;
+var pageActuelle = 1; // 1-based pour l'affichage
+var totalPages = 1;
+var canvas = document.getElementById('pdfCanvas');
+var ctx = canvas.getContext('2d');
+var wrapper = document.getElementById('canvasWrapper');
+
+function majListeChamps() {
+  document.querySelectorAll('.champ-chip').forEach(function (chip) {
+    var cle = chip.getAttribute('data-cle');
+    var infoEl = chip.querySelector('.placement-info');
+    if (positions[cle]) {
+      infoEl.style.display = 'block';
+      infoEl.textContent = 'Placé — page ' + (positions[cle].page + 1);
+    } else {
+      infoEl.style.display = 'none';
+    }
+  });
+}
+
+function supprimerOverlays() {
+  wrapper.querySelectorAll('.champ-overlay').forEach(function (el) { el.remove(); });
+}
+
+function creerOverlay(cle, xPct, yPct) {
+  var label = document.querySelector('.champ-chip[data-cle="' + cle + '"] .fw-bold').textContent;
+  var el = document.createElement('div');
+  el.className = 'champ-overlay';
+  el.setAttribute('data-cle', cle);
+  el.style.position = 'absolute';
+  el.style.left = xPct + '%';
+  el.style.top = yPct + '%';
+  el.style.transform = 'translate(0, -100%)';
+  el.style.background = 'rgba(200,16,46,0.85)';
+  el.style.color = '#fff';
+  el.style.fontSize = '11px';
+  el.style.padding = '2px 5px';
+  el.style.borderRadius = '3px';
+  el.style.cursor = 'move';
+  el.style.whiteSpace = 'nowrap';
+  el.style.zIndex = 10;
+  el.textContent = label;
+  el.addEventListener('mousedown', demarrerDeplacement);
+  wrapper.appendChild(el);
+}
+
+function rafraichirOverlaysPagesCourante() {
+  supprimerOverlays();
+  Object.keys(positions).forEach(function (cle) {
+    var p = positions[cle];
+    if (p.page === pageActuelle - 1) creerOverlay(cle, p.x, p.y);
+  });
+  majListeChamps();
+}
+
+function rendrePage(num) {
+  pdfDoc.getPage(num).then(function (page) {
+    var viewport = page.getViewport({ scale: 1.3 });
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    wrapper.style.width = viewport.width + 'px';
+    wrapper.style.height = viewport.height + 'px';
+    page.render({ canvasContext: ctx, viewport: viewport }).promise.then(function () {
+      rafraichirOverlaysPagesCourante();
+    });
+  });
+  document.getElementById('labelPage').textContent = 'Page ' + num + ' / ' + totalPages;
+}
+
+pdfjsLib.getDocument(URL_FICHIER).promise.then(function (pdf) {
+  pdfDoc = pdf;
+  totalPages = pdf.numPages;
+  rendrePage(pageActuelle);
+}).catch(function (e) {
+  wrapper.innerHTML = '<div class="alert alert-danger">Impossible de charger le PDF : ' + e.message + '</div>';
+});
+
+document.getElementById('btnPagePrec').addEventListener('click', function () {
+  if (pageActuelle > 1) { pageActuelle--; rendrePage(pageActuelle); }
+});
+document.getElementById('btnPageSuiv').addEventListener('click', function () {
+  if (pageActuelle < totalPages) { pageActuelle++; rendrePage(pageActuelle); }
+});
+
+// Glisser depuis la liste de gauche vers le PDF
+document.querySelectorAll('.champ-chip').forEach(function (chip) {
+  chip.addEventListener('dragstart', function (e) {
+    e.dataTransfer.setData('text/plain', chip.getAttribute('data-cle'));
+  });
+});
+wrapper.addEventListener('dragover', function (e) { e.preventDefault(); });
+wrapper.addEventListener('drop', function (e) {
+  e.preventDefault();
+  var cle = e.dataTransfer.getData('text/plain');
+  if (!cle) return;
+  var rect = wrapper.getBoundingClientRect();
+  var xPct = ((e.clientX - rect.left) / rect.width) * 100;
+  var yPct = ((e.clientY - rect.top) / rect.height) * 100;
+  positions[cle] = { x: xPct, y: yPct, page: pageActuelle - 1, size: 9 };
+  rafraichirOverlaysPagesCourante();
+});
+
+// Redeplacer un champ deja place directement sur le PDF
+var overlayEnDeplacement = null;
+function demarrerDeplacement(e) {
+  overlayEnDeplacement = e.currentTarget;
+  e.preventDefault();
+}
+document.addEventListener('mousemove', function (e) {
+  if (!overlayEnDeplacement) return;
+  var rect = wrapper.getBoundingClientRect();
+  var xPct = ((e.clientX - rect.left) / rect.width) * 100;
+  var yPct = ((e.clientY - rect.top) / rect.height) * 100;
+  overlayEnDeplacement.style.left = xPct + '%';
+  overlayEnDeplacement.style.top = yPct + '%';
+  var cle = overlayEnDeplacement.getAttribute('data-cle');
+  if (positions[cle]) { positions[cle].x = xPct; positions[cle].y = yPct; }
+});
+document.addEventListener('mouseup', function () {
+  overlayEnDeplacement = null;
+});
+
+document.getElementById('btnEnregistrer').addEventListener('click', function () {
+  var btn = this;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Enregistrement…';
+  fetch(URL_POSITIONS, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(positions),
+  }).then(function (r) { return r.json(); }).then(function () {
+    btn.innerHTML = '<i class="bi bi-check"></i> Enregistré';
+    setTimeout(function () { btn.disabled = false; btn.innerHTML = '<i class="bi bi-save"></i> Enregistrer les positions'; }, 1500);
+  }).catch(function (e) {
+    alert('Erreur : ' + e.message);
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-save"></i> Enregistrer les positions';
+  });
+});
+
+// Toujours enregistrer les positions avant de generer, pour ne jamais generer
+// avec des positions deplacees mais pas encore sauvegardees.
+document.getElementById('formGenerer').addEventListener('submit', function (e) {
+  e.preventDefault();
+  var form = this;
+  fetch(URL_POSITIONS, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(positions),
+  }).finally(function () { form.submit(); });
+});
+</script>
+
+<%- include('partials/footer', { scripts: [] }) %>

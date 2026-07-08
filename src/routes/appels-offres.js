@@ -5,7 +5,11 @@ const crypto = require('crypto');
 const { PDFDocument } = require('pdf-lib');
 const { synchroniser } = require('../services/seao-sync');
 const { obtenirInfosEntreprise } = require('../services/seao-autofill');
-const { remplirFormulaireDocx, remplirFormulairePdfAcroForm, remplirFormulairePdfPlat } = require('../services/seao-formulaire');
+const {
+  remplirFormulaireDocx, remplirFormulairePdfAcroForm, remplirFormulairePdfPlat,
+  aplatirInfosEntreprise, NOMS_LISIBLES,
+} = require('../services/seao-formulaire');
+const { fillTemplatePdf } = require('../services/pdf-filler');
 const { downloadBuffer, uploadBuffer, removeFile, createSignedUrl, sanitizeKey, BUCKETS } = require('../services/storage');
 
 const STATUTS = ['a_analyser', 'interessant', 'a_soumissionner', 'refuse', 'depose', 'perdu', 'gagne'];
@@ -136,8 +140,72 @@ router.get('/:id/formulaire/:formId', async (req, res) => {
   });
 });
 
+// Sert le PDF ORIGINAL (vierge) — utilise par PDF.js dans l'editeur visuel
+// pour l'afficher en canvas (voir /editeur ci-dessous). Jamais le fichier
+// rempli : l'editeur sert a POSITIONNER les champs sur le formulaire vide.
+router.get('/:id/formulaire/:formId/fichier', async (req, res) => {
+  const db = req.db;
+  const { id, formId } = req.params;
+  const r = await db.execute({ sql: 'SELECT cle_storage_original FROM appels_offres_formulaires WHERE id = ? AND appel_offre_id = ?', args: [formId, id] });
+  if (r.rows.length === 0) return res.status(404).send('Formulaire introuvable.');
+  const buf = await downloadBuffer(BUCKETS.SEAO, r.rows[0].cle_storage_original);
+  if (!buf) return res.status(404).send('Fichier introuvable dans le stockage.');
+  res.setHeader('Content-Type', 'application/pdf');
+  res.send(buf);
+});
+
+// Editeur visuel : meme principe que l'editeur drag-and-drop des bordereaux
+// (PDF affiche en canvas via PDF.js, l'utilisateur positionne chaque champ
+// lui-meme) — plus fiable que le placement devine par l'IA sur un formulaire
+// SEAO typique (lignes a blanc repetees, ex. "Nom du representant :" a
+// plusieurs endroits differents du document). Les valeurs sont deja connues
+// (base de connaissances) ; l'utilisateur ne fait que choisir OU les ecrire.
+router.get('/:id/formulaire/:formId/editeur', async (req, res) => {
+  const db = req.db;
+  const { id, formId } = req.params;
+  const r = await db.execute({ sql: 'SELECT * FROM appels_offres_formulaires WHERE id = ? AND appel_offre_id = ?', args: [formId, id] });
+  if (r.rows.length === 0) return res.redirect('/appels-offres/' + id);
+  const formulaire = r.rows[0];
+
+  if ((formulaire.format || '').toLowerCase() === 'docx') {
+    // L'editeur visuel ne s'applique qu'aux PDF (le .docx a deja son propre
+    // pipeline fiable par libelle exact + IA, voir remplirFormulaireDocx).
+    return res.redirect(`/appels-offres/${id}/formulaire/${formId}?erreur=${encodeURIComponent("L'éditeur visuel ne s'applique qu'aux formulaires PDF.")}`);
+  }
+
+  const appelR = await db.execute({ sql: 'SELECT * FROM appels_offres_seao WHERE id = ?', args: [id] });
+  if (appelR.rows.length === 0) return res.redirect('/appels-offres');
+
+  const infos = await obtenirInfosEntreprise(db);
+  const valeursConnues = infos.error ? {} : aplatirInfosEntreprise(infos);
+
+  let positions = {};
+  try { positions = JSON.parse(formulaire.positions || '{}'); } catch (_) {}
+
+  res.render('appel-offre-formulaire-editeur', {
+    appel: appelR.rows[0], formulaire,
+    champsDisponibles: Object.keys(NOMS_LISIBLES).map((cle) => ({ cle, label: NOMS_LISIBLES[cle], valeur: valeursConnues[cle] || '' })),
+    positions,
+  });
+});
+
+// Sauvegarde les positions choisies par l'utilisateur (appel fetch JSON
+// depuis l'editeur, pas un formulaire classique).
+router.post('/:id/formulaire/:formId/positions', async (req, res) => {
+  const db = req.db;
+  const { id, formId } = req.params;
+  const positions = req.body && typeof req.body === 'object' ? req.body : {};
+  await db.execute({
+    sql: `UPDATE appels_offres_formulaires SET positions = ? WHERE id = ? AND appel_offre_id = ?`,
+    args: [JSON.stringify(positions), formId, id],
+  });
+  res.json({ ok: true });
+});
+
 // Pre-remplit le formulaire avec les infos d'entreprise de la base de
-// connaissances — detecte automatiquement .docx / PDF AcroForm / PDF plat.
+// connaissances. Si des positions ont ete placees manuellement via l'editeur
+// visuel, elles priment TOUJOURS (bien plus fiable) — sinon, retombe sur la
+// detection automatique (.docx / PDF AcroForm / PDF plat par IA).
 router.post('/:id/formulaire/:formId/remplir', async (req, res) => {
   const db = req.db;
   const { id, formId } = req.params;
@@ -153,8 +221,25 @@ router.post('/:id/formulaire/:formId/remplir', async (req, res) => {
     if (infos.error) throw new Error(infos.error);
 
     const ext = (formulaire.format || '').toLowerCase();
+    let positionsSauvegardees = {};
+    try { positionsSauvegardees = JSON.parse(formulaire.positions || '{}'); } catch (_) {}
+
     let resultat, formatDetecte;
-    if (ext === 'docx') {
+    if (ext !== 'docx' && Object.keys(positionsSauvegardees).length > 0) {
+      // Positionnement manuel (editeur visuel) : le plus fiable, toujours prioritaire.
+      const valeursConnues = aplatirInfosEntreprise(infos);
+      const positionsAvecValeurs = {};
+      const champsPlaces = [], champsNonPlaces = [];
+      for (const cle of Object.keys(positionsSauvegardees)) {
+        const valeur = valeursConnues[cle];
+        if (!valeur) { champsNonPlaces.push(NOMS_LISIBLES[cle] || cle); continue; }
+        positionsAvecValeurs[cle] = { ...positionsSauvegardees[cle], val: valeur };
+        champsPlaces.push(NOMS_LISIBLES[cle] || cle);
+      }
+      const pdfDoc = await fillTemplatePdf(buf, positionsAvecValeurs);
+      resultat = { buffer: Buffer.from(await pdfDoc.save()), champsPlaces, champsNonPlaces };
+      formatDetecte = 'pdf_positions_manuelles';
+    } else if (ext === 'docx') {
       resultat = await remplirFormulaireDocx(buf, infos);
       formatDetecte = 'docx';
     } else {
