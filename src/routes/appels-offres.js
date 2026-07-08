@@ -52,6 +52,32 @@ router.get('/', async (req, res) => {
   });
 });
 
+router.get('/nouveau', (req, res) => {
+  res.render('appel-offre-nouveau', { erreur: '' });
+});
+
+// Creation manuelle — necessaire car la synchronisation automatique ne
+// capture que les avis correspondant aux mots-cles toiture ; un appel
+// d'offres trouve autrement (hors mots-cles, ou avant la prochaine
+// synchronisation hebdomadaire) doit pouvoir etre ajoute a la main.
+router.post('/nouveau', async (req, res) => {
+  const db = req.db;
+  const { numero_seao, titre, donneur_ouvrage, lieu_travaux, date_fermeture, date_visite_obligatoire, url_seao } = req.body;
+  if (!numero_seao || !titre) {
+    return res.render('appel-offre-nouveau', { erreur: 'Le numéro SEAO et le titre sont obligatoires.' });
+  }
+  try {
+    const r = await db.execute({
+      sql: `INSERT INTO appels_offres_seao (numero_seao, titre, donneur_ouvrage, lieu_travaux, date_publication, date_fermeture, date_visite_obligatoire, url_seao, mots_cles_matches)
+            VALUES (?, ?, ?, ?, datetime('now'), ?, ?, ?, 'ajout manuel')`,
+      args: [numero_seao, titre, donneur_ouvrage || null, lieu_travaux || null, date_fermeture || null, date_visite_obligatoire || null, url_seao || null],
+    });
+    res.redirect('/appels-offres/' + r.lastInsertRowid);
+  } catch (e) {
+    res.render('appel-offre-nouveau', { erreur: e.message.includes('UNIQUE') ? 'Ce numéro SEAO existe déjà.' : e.message });
+  }
+});
+
 router.post('/actualiser', async (req, res) => {
   try {
     const resultat = await synchroniser(req.db);
@@ -253,7 +279,11 @@ router.post('/:id/formulaire/:formId/remplir', async (req, res) => {
       for (const cle of Object.keys(positionsSauvegardees)) {
         const valeur = valeursConnues[cle];
         if (!valeur) { champsNonPlaces.push(NOMS_LISIBLES[cle] || cle); continue; }
-        positionsAvecValeurs[cle] = { ...positionsSauvegardees[cle], val: valeur };
+        // Un meme champ peut etre place a plusieurs endroits (ex. nom de
+        // l'entreprise repete en page couverture ET en page d'identification
+        // d'un vrai formulaire SEAO) — positions[cle] est toujours un tableau.
+        const placements = Array.isArray(positionsSauvegardees[cle]) ? positionsSauvegardees[cle] : [positionsSauvegardees[cle]];
+        placements.forEach((p, i) => { positionsAvecValeurs[`${cle}#${i}`] = { ...p, val: valeur }; });
         champsPlaces.push(NOMS_LISIBLES[cle] || cle);
       }
       const pdfDoc = await fillTemplatePdf(buf, positionsAvecValeurs);

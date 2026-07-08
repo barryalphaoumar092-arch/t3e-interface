@@ -1,0 +1,53 @@
+<%- include('partials/header', { title: 'Nouvel appel d\'offres', page: 'appels-offres' }) %>
+
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="/appels-offres">Appels d'offres SEAO</a></li>
+    <li class="breadcrumb-item active">Ajouter manuellement</li>
+  </ol>
+</nav>
+
+<h2><i class="bi bi-plus-lg"></i> Ajouter un appel d'offres manuellement</h2>
+<p class="text-muted small">
+  À utiliser pour un appel d'offres trouvé ailleurs que dans la synchronisation automatique (ex. hors mots-clés toiture, ou avant la prochaine synchronisation hebdomadaire).
+</p>
+
+<% if (erreur) { %>
+<div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> <%= erreur %></div>
+<% } %>
+
+<form method="POST" action="/appels-offres/nouveau" class="card card-body" style="max-width:700px">
+  <div class="mb-3">
+    <label class="form-label">Numéro SEAO *</label>
+    <input type="text" name="numero_seao" class="form-control" required placeholder="Ex. APP-260327-01">
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Titre *</label>
+    <input type="text" name="titre" class="form-control" required>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Donneur d'ouvrage</label>
+    <input type="text" name="donneur_ouvrage" class="form-control">
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Lieu des travaux</label>
+    <input type="text" name="lieu_travaux" class="form-control">
+  </div>
+  <div class="row">
+    <div class="col-md-6 mb-3">
+      <label class="form-label">Date de fermeture</label>
+      <input type="datetime-local" name="date_fermeture" class="form-control">
+    </div>
+    <div class="col-md-6 mb-3">
+      <label class="form-label">Date de visite obligatoire</label>
+      <input type="text" name="date_visite_obligatoire" class="form-control" placeholder="Optionnel">
+    </div>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">URL de l'avis SEAO</label>
+    <input type="url" name="url_seao" class="form-control">
+  </div>
+  <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Créer</button>
+</form>
+
+<%- include('partials/footer', { scripts: [] }) %>

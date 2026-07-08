@@ -66,13 +66,23 @@ var canvas = document.getElementById('pdfCanvas');
 var ctx = canvas.getContext('2d');
 var wrapper = document.getElementById('canvasWrapper');
 
+// positions[cle] est toujours un tableau de placements {x,y,page,size} — un
+// meme champ peut apparaitre a plusieurs endroits du PDF (ex. nom de
+// l'entreprise en page couverture ET en page d'identification).
+function placementsDe(cle) {
+  if (!positions[cle]) return [];
+  return Array.isArray(positions[cle]) ? positions[cle] : [positions[cle]];
+}
+
 function majListeChamps() {
   document.querySelectorAll('.champ-chip').forEach(function (chip) {
     var cle = chip.getAttribute('data-cle');
     var infoEl = chip.querySelector('.placement-info');
-    if (positions[cle]) {
+    var placements = placementsDe(cle);
+    if (placements.length > 0) {
       infoEl.style.display = 'block';
-      infoEl.textContent = 'Placé — page ' + (positions[cle].page + 1);
+      var pages = placements.map(function (p) { return p.page + 1; }).join(', ');
+      infoEl.textContent = 'Placé ' + placements.length + '× (page' + (placements.length > 1 ? 's' : '') + ' ' + pages + ')';
     } else {
       infoEl.style.display = 'none';
     }
@@ -83,14 +93,14 @@ function supprimerOverlays() {
   wrapper.querySelectorAll('.champ-overlay').forEach(function (el) { el.remove(); });
 }
 
-function creerOverlay(cle, xPct, yPct) {
+function creerOverlay(cle, placement) {
   var label = document.querySelector('.champ-chip[data-cle="' + cle + '"] .fw-bold').textContent;
   var el = document.createElement('div');
   el.className = 'champ-overlay';
   el.setAttribute('data-cle', cle);
   el.style.position = 'absolute';
-  el.style.left = xPct + '%';
-  el.style.top = yPct + '%';
+  el.style.left = placement.x + '%';
+  el.style.top = placement.y + '%';
   el.style.transform = 'translate(0, -100%)';
   el.style.background = 'rgba(200,16,46,0.85)';
   el.style.color = '#fff';
@@ -101,6 +111,22 @@ function creerOverlay(cle, xPct, yPct) {
   el.style.whiteSpace = 'nowrap';
   el.style.zIndex = 10;
   el.textContent = label;
+  var btnSuppr = document.createElement('span');
+  btnSuppr.textContent = ' ×';
+  btnSuppr.style.cursor = 'pointer';
+  btnSuppr.style.fontWeight = 'bold';
+  btnSuppr.title = 'Retirer ce placement';
+  btnSuppr.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+  btnSuppr.addEventListener('click', function (e) {
+    e.stopPropagation();
+    var arr = placementsDe(cle);
+    var idx = arr.indexOf(placement);
+    if (idx > -1) arr.splice(idx, 1);
+    positions[cle] = arr;
+    rafraichirOverlaysPagesCourante();
+  });
+  el.appendChild(btnSuppr);
+  el._placement = placement;
   el.addEventListener('mousedown', demarrerDeplacement);
   wrapper.appendChild(el);
 }
@@ -108,8 +134,9 @@ function creerOverlay(cle, xPct, yPct) {
 function rafraichirOverlaysPagesCourante() {
   supprimerOverlays();
   Object.keys(positions).forEach(function (cle) {
-    var p = positions[cle];
-    if (p.page === pageActuelle - 1) creerOverlay(cle, p.x, p.y);
+    placementsDe(cle).forEach(function (p) {
+      if (p.page === pageActuelle - 1) creerOverlay(cle, p);
+    });
   });
   majListeChamps();
 }
@@ -157,7 +184,9 @@ wrapper.addEventListener('drop', function (e) {
   var rect = wrapper.getBoundingClientRect();
   var xPct = ((e.clientX - rect.left) / rect.width) * 100;
   var yPct = ((e.clientY - rect.top) / rect.height) * 100;
-  positions[cle] = { x: xPct, y: yPct, page: pageActuelle - 1, size: 9 };
+  var arr = placementsDe(cle);
+  arr.push({ x: xPct, y: yPct, page: pageActuelle - 1, size: 9 });
+  positions[cle] = arr;
   rafraichirOverlaysPagesCourante();
 });
 
@@ -174,8 +203,8 @@ document.addEventListener('mousemove', function (e) {
   var yPct = ((e.clientY - rect.top) / rect.height) * 100;
   overlayEnDeplacement.style.left = xPct + '%';
   overlayEnDeplacement.style.top = yPct + '%';
-  var cle = overlayEnDeplacement.getAttribute('data-cle');
-  if (positions[cle]) { positions[cle].x = xPct; positions[cle].y = yPct; }
+  overlayEnDeplacement._placement.x = xPct;
+  overlayEnDeplacement._placement.y = yPct;
 });
 document.addEventListener('mouseup', function () {
   overlayEnDeplacement = null;
