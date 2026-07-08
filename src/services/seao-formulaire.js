@@ -13,15 +13,23 @@ const { mapperChampsFormulairePdf, mapperChampsBordereau } = require('./claude-c
 const NOMS_LISIBLES = {
   NEQ: 'NEQ', RBQ: 'Numéro de licence RBQ', NOM_ENTREPRISE: "Nom de l'entreprise",
   ADRESSE_ENTREPRISE: 'Adresse', TELEPHONE_ENTREPRISE: 'Téléphone',
+  TELECOPIEUR_ENTREPRISE: 'Télécopieur', SITE_WEB: 'Site internet',
   ASSURANCE_RESPONSABILITE_CIVILE: 'Assurance responsabilité civile',
   ASSURANCE_AUTOMOBILE: 'Assurance automobile', CAUTIONNEMENT: 'Cautionnement',
-  SIGNATAIRE_AUTORISE: 'Signataire autorisé', CERTIFICATIONS: 'Certifications',
+  SIGNATAIRE_AUTORISE: 'Signataire autorisé', REPRESENTANT_TITRE: 'Titre du représentant',
+  FORME_JURIDIQUE: 'Forme juridique', NOMBRE_EMPLOYES_QUEBEC: 'Nombre d\'employés au Québec',
+  CNESST_STATUT: 'Statut de conformité CNESST', FRANCISATION_STATUT: 'Statut de francisation',
+  AMP_NUMERO_CLIENT: 'Numéro de client AMP', AMP_ECHEANCE: 'Échéance autorisation AMP',
+  CERTIFICATIONS: 'Certifications',
 };
 
+// AVERTISSEMENTS n'est jamais un champ a placer sur le formulaire (ni via
+// l'IA, ni via l'editeur visuel) — c'est une liste de mises en garde pour
+// l'utilisateur, consommee separement par genererPageNotePreparation().
 function aplatirInfosEntreprise(infosEntreprise) {
   const champs = {};
   for (const [cle, valeur] of Object.entries(infosEntreprise || {})) {
-    if (cle === 'confiance' || cle === 'error') continue;
+    if (cle === 'confiance' || cle === 'error' || cle === 'AVERTISSEMENTS') continue;
     if (cle === 'CERTIFICATIONS') {
       if (Array.isArray(valeur) && valeur.length > 0) champs.CERTIFICATIONS = valeur.join(', ');
       continue;
@@ -29,6 +37,42 @@ function aplatirInfosEntreprise(infosEntreprise) {
     if (valeur) champs[cle] = valeur;
   }
   return champs;
+}
+
+// Page de synthese inseree en tete du PDF final lorsque l'IA a des mises en
+// garde a communiquer (donnee trouvee pour une entite differente, attestation
+// manquante...) — plutot que d'annoter le formulaire officiel lui-meme avec
+// du texte visible (repere comme peu pro par l'utilisateur), on regroupe tout
+// sur UNE page a part, clairement etiquetee comme a retirer avant depot.
+async function genererPageNotePreparation(pdfDoc, avertissements) {
+  if (!avertissements || avertissements.length === 0) return;
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const PAGE_W = 612, PAGE_H = 792;
+  const memo = pdfDoc.insertPage(0, [PAGE_W, PAGE_H]);
+  let y = PAGE_H - 60;
+  memo.drawText('NOTE DE PRÉPARATION — À RETIRER AVANT DÉPÔT', { x: 50, y, size: 14, font: fontBold });
+  y -= 26;
+  const lignes = [
+    'Ce formulaire a été pré-rempli automatiquement à partir de la base de',
+    'connaissances de Toitures Trois Étoiles Inc. Vérifiez chaque champ, en',
+    'particulier les points ci-dessous, avant tout dépôt réel.',
+  ];
+  lignes.forEach((l) => { memo.drawText(l, { x: 50, y, size: 10, font }); y -= 16; });
+  y -= 10;
+  avertissements.forEach((av, i) => {
+    const mots = av.split(' ');
+    let ligne = `${i + 1}. `;
+    for (const mot of mots) {
+      if (font.widthOfTextAtSize(ligne + mot, 10) > PAGE_W - 100) {
+        memo.drawText(ligne, { x: 50, y, size: 10, font }); y -= 15;
+        ligne = '   ' + mot + ' ';
+      } else {
+        ligne += mot + ' ';
+      }
+    }
+    memo.drawText(ligne, { x: 50, y, size: 10, font }); y -= 24;
+  });
 }
 
 // .docx — réutilise le moteur partagé docx-xml-utils.js en mode "tout en
@@ -193,5 +237,5 @@ async function remplirFormulairePdfPlat(buf, infosEntreprise) {
 
 module.exports = {
   remplirFormulaireDocx, remplirFormulairePdfAcroForm, remplirFormulairePdfPlat,
-  aplatirInfosEntreprise, NOMS_LISIBLES,
+  aplatirInfosEntreprise, NOMS_LISIBLES, genererPageNotePreparation,
 };

@@ -6,7 +6,10 @@ const { downloadBuffer, BUCKETS } = require('./storage');
 const { parsePdfBuffer } = require('./document-parser');
 const { analyserInfosEntreprise } = require('./claude-client');
 
-const CLE_CACHE = 'seao_infos_entreprise';
+// v2 : schema d'extraction elargi (telecopieur, site web, forme juridique,
+// statuts CNESST/francisation/AMP, avertissements d'entite...) — le suffixe
+// invalide automatiquement tout cache calcule avec l'ancien schema plus pauvre.
+const CLE_CACHE = 'seao_infos_entreprise_v2';
 const CACHE_MAX_AGE_JOURS = 30;
 
 // Documents les plus denses en information pour le pré-remplissage — évite de
@@ -20,6 +23,10 @@ const TITRES_PERTINENTS = [
   'ISO', 'AMCQ', 'APECQ', 'ARQ', 'Conformite CNESST', 'NRCA', 'CRCA', 'Safe Contractor',
   'Trois Étoiles - 10M', 'Trois Étoiles - 15M', 'Trois Étoiles - 5M',
   'Résolution de compagnie', 'AUTOMOBILE INSURANCE',
+  // AMP et francisation — auparavant absents du filtre (bug corrigé) : sans
+  // eux, l'IA ne pouvait jamais renseigner AMP_NUMERO_CLIENT/ECHEANCE ni
+  // FRANCISATION_STATUT, meme si les documents etaient deja dans la base.
+  'AMP', 'francisation',
 ];
 
 async function chargerDocumentsPertinents(db) {

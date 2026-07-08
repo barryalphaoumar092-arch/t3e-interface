@@ -7,7 +7,7 @@ const { synchroniser } = require('../services/seao-sync');
 const { obtenirInfosEntreprise } = require('../services/seao-autofill');
 const {
   remplirFormulaireDocx, remplirFormulairePdfAcroForm, remplirFormulairePdfPlat,
-  aplatirInfosEntreprise, NOMS_LISIBLES,
+  aplatirInfosEntreprise, NOMS_LISIBLES, genererPageNotePreparation,
 } = require('../services/seao-formulaire');
 const { fillTemplatePdf } = require('../services/pdf-filler');
 const { downloadBuffer, uploadBuffer, removeFile, createSignedUrl, sanitizeKey, BUCKETS } = require('../services/storage');
@@ -301,6 +301,19 @@ router.post('/:id/formulaire/:formId/remplir', async (req, res) => {
       } else {
         resultat = await remplirFormulairePdfPlat(buf, infos);
         formatDetecte = 'pdf_plat';
+      }
+    }
+
+    // Mises en garde de l'IA (donnee trouvee pour une entite differente,
+    // attestation manquante...) — regroupees sur UNE page ajoutee en tete du
+    // PDF final plutot que d'annoter le formulaire officiel lui-meme.
+    if (formatDetecte !== 'docx' && Array.isArray(infos.AVERTISSEMENTS) && infos.AVERTISSEMENTS.length > 0) {
+      try {
+        const pdfAvecNote = await PDFDocument.load(resultat.buffer);
+        await genererPageNotePreparation(pdfAvecNote, infos.AVERTISSEMENTS);
+        resultat.buffer = Buffer.from(await pdfAvecNote.save());
+      } catch (e) {
+        console.error('[appels-offres] Ajout page de préparation échoué:', e.message);
       }
     }
 
