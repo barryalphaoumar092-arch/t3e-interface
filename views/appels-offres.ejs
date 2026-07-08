@@ -1,0 +1,89 @@
+<%- include('partials/header', { title: "Appels d'offres SEAO", page: 'appels-offres' }) %>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2><i class="bi bi-clipboard-check"></i> Appels d'offres SEAO</h2>
+  <form method="POST" action="/appels-offres/actualiser">
+    <button type="submit" class="btn btn-warning"><i class="bi bi-arrow-repeat"></i> Actualiser maintenant</button>
+  </form>
+</div>
+
+<% if (syncMsg === 'ok') { %>
+<div class="alert alert-success"><i class="bi bi-check-circle"></i> Synchronisation terminée — <%= syncMatches %> appel(s) d'offres pertinent(s) trouvé(s)/mis à jour.</div>
+<% } else if (syncMsg === 'erreur') { %>
+<div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> Erreur de synchronisation : <%= syncErreur %></div>
+<% } %>
+
+<div class="alert alert-info py-2 small">
+  <i class="bi bi-info-circle"></i>
+  Ces données proviennent des données ouvertes officielles du SEAO (Données Québec), publiées <strong>une fois par semaine</strong> — pas en temps réel.
+  <% if (derniereSync) { %>Dernière mise à jour de la base : <strong><%= derniereSync.replace('T',' ').substring(0,16) %></strong> (UTC).<% } else { %>Aucune synchronisation effectuée pour l'instant — cliquez sur "Actualiser maintenant".<% } %>
+</div>
+
+<form class="row g-2 mb-3" method="GET" action="/appels-offres">
+  <div class="col-md-3">
+    <select name="filtre" class="form-select" onchange="this.form.submit()">
+      <option value="aujourdhui" <%= filtre === 'aujourdhui' ? 'selected' : '' %>>Aujourd'hui</option>
+      <option value="24h" <%= filtre === '24h' ? 'selected' : '' %>>Dernières 24h</option>
+      <option value="7j" <%= filtre === '7j' ? 'selected' : '' %>>7 derniers jours</option>
+      <option value="14j" <%= filtre === '14j' ? 'selected' : '' %>>14 derniers jours</option>
+    </select>
+  </div>
+  <div class="col-md-3">
+    <select name="tri" class="form-select" onchange="this.form.submit()">
+      <option value="pertinence" <%= tri === 'pertinence' ? 'selected' : '' %>>Trier par pertinence</option>
+      <option value="fermeture" <%= tri === 'fermeture' ? 'selected' : '' %>>Trier par date de fermeture</option>
+    </select>
+  </div>
+  <div class="col-md-3 form-check pt-2">
+    <input type="checkbox" class="form-check-input" id="visite" name="visite" value="1" <%= (typeof visite !== 'undefined' && visite) ? 'checked' : '' %> onchange="this.form.submit()">
+    <label class="form-check-label" for="visite">Visite obligatoire seulement</label>
+  </div>
+</form>
+
+<div class="table-responsive">
+  <table class="table table-hover align-middle">
+    <thead class="table-light">
+      <tr>
+        <th>Titre</th>
+        <th>Donneur d'ouvrage</th>
+        <th>Lieu</th>
+        <th>Publication</th>
+        <th>Fermeture</th>
+        <th>Mots-clés</th>
+        <th>Statut</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% appels.forEach(function(a) { %>
+      <tr style="cursor:pointer" onclick="window.location='/appels-offres/<%= a.id %>'">
+        <td><strong><%= a.titre %></strong><br><small class="text-muted"><%= a.numero_seao %></small></td>
+        <td><%= a.donneur_ouvrage || '-' %></td>
+        <td><%= a.lieu_travaux || '-' %></td>
+        <td><small><%= (a.date_publication || '').substring(0,10) %></small></td>
+        <td><small><%= (a.date_fermeture || '').substring(0,10) %></small></td>
+        <td>
+          <% (a.mots_cles_matches || '').split(',').filter(Boolean).forEach(function(m) { %>
+          <span class="badge bg-secondary bg-opacity-75"><%= m.trim() %></span>
+          <% }) %>
+        </td>
+        <td>
+          <span class="badge <%= a.statut_interne === 'gagne' ? 'bg-success' : (a.statut_interne === 'refuse' || a.statut_interne === 'perdu' ? 'bg-danger' : 'bg-warning text-dark') %>">
+            <%= a.statut_interne.replace('_',' ') %>
+          </span>
+        </td>
+      </tr>
+      <% }) %>
+      <% if (appels.length === 0) { %>
+      <tr><td colspan="7" class="text-center text-muted py-5">
+        <i class="bi bi-inbox" style="font-size:3rem;display:block;margin-bottom:.5rem;"></i>
+        Aucun appel d'offres dans cette période.<br>
+        <form method="POST" action="/appels-offres/actualiser" class="d-inline">
+          <button type="submit" class="btn btn-warning mt-3"><i class="bi bi-arrow-repeat"></i> Actualiser maintenant</button>
+        </form>
+      </td></tr>
+      <% } %>
+    </tbody>
+  </table>
+</div>
+
+<%- include('partials/footer', { scripts: [] }) %>

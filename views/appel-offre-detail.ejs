@@ -1,0 +1,140 @@
+<%- include('partials/header', { title: appel.titre, page: 'appels-offres' }) %>
+
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="/appels-offres">Appels d'offres SEAO</a></li>
+    <li class="breadcrumb-item active"><%= appel.numero_seao %></li>
+  </ol>
+</nav>
+
+<div class="row">
+  <div class="col-md-8">
+    <div class="card mb-3">
+      <div class="card-header bg-dark text-white"><h5 class="mb-0"><%= appel.titre %></h5></div>
+      <div class="card-body">
+        <table class="table table-sm">
+          <tr><th style="width:220px">Numéro SEAO</th><td><%= appel.numero_seao %></td></tr>
+          <tr><th>Donneur d'ouvrage</th><td><%= appel.donneur_ouvrage || '-' %></td></tr>
+          <tr><th>Lieu des travaux</th><td><%= appel.lieu_travaux || '-' %></td></tr>
+          <tr><th>Date de publication</th><td><%= (appel.date_publication || '-').replace('T',' ').substring(0,16) %></td></tr>
+          <tr><th>Date et heure de fermeture</th><td><strong><%= (appel.date_fermeture || '-').replace('T',' ').substring(0,16) %></strong></td></tr>
+          <tr><th>Visite obligatoire</th><td><%= appel.date_visite_obligatoire || 'Non précisée dans les données SEAO' %></td></tr>
+          <tr><th>Type de projet</th><td><%= appel.type_projet || '-' %></td></tr>
+          <tr><th>Mots-clés détectés</th><td>
+            <% (appel.mots_cles_matches || '').split(',').filter(Boolean).forEach(function(m) { %>
+            <span class="badge bg-secondary bg-opacity-75"><%= m.trim() %></span>
+            <% }) %>
+          </td></tr>
+          <% if (appel.url_seao) { %>
+          <tr><th>Avis complet sur SEAO</th><td><a href="<%= appel.url_seao %>" target="_blank" rel="noopener"><%= appel.url_seao %> <i class="bi bi-box-arrow-up-right"></i></a></td></tr>
+          <% } %>
+        </table>
+      </div>
+    </div>
+
+    <div class="card mb-3">
+      <div class="card-header bg-light"><i class="bi bi-paperclip"></i> Documents disponibles</div>
+      <div class="card-body">
+        <% if (documents.length === 0) { %>
+        <p class="text-muted small mb-0">Aucun document (devis, plans, addenda, formulaire) importé pour cet appel d'offres pour l'instant.</p>
+        <% } else { %>
+        <ul class="list-group mb-3">
+          <% documents.forEach(function(d) { %>
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+            <span><span class="badge bg-secondary me-2"><%= d.categorie %></span><%= d.nom_fichier %></span>
+          </li>
+          <% }) %>
+        </ul>
+        <% } %>
+
+        <hr>
+        <p class="text-muted small mb-2"><i class="bi bi-plus-circle"></i> Ajouter un document :</p>
+        <form id="formAjoutDoc">
+          <div class="row g-2">
+            <div class="col-md-5">
+              <select id="categorieDoc" class="form-select form-select-sm">
+                <option value="devis">Devis</option>
+                <option value="plans">Plans</option>
+                <option value="addenda">Addenda</option>
+                <option value="formulaire_soumission">Formulaire de soumission</option>
+              </select>
+            </div>
+            <div class="col-md-5">
+              <input type="file" id="fichierDoc" class="form-control form-control-sm" accept=".pdf,.docx,.doc">
+            </div>
+            <div class="col-md-2">
+              <button type="submit" id="btnAjoutDoc" class="btn btn-sm btn-outline-primary w-100"><i class="bi bi-upload"></i> Ajouter</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="card mb-3">
+      <div class="card-header bg-light"><i class="bi bi-file-earmark-text"></i> Formulaire de soumission</div>
+      <div class="card-body">
+        <% if (formulaires.length === 0) { %>
+        <p class="text-muted small mb-0">Aucun formulaire de soumission identifié pour cet appel d'offres.</p>
+        <% } else { %>
+        <% formulaires.forEach(function(f) { %>
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <span><span class="badge bg-info text-dark me-2"><%= f.format || '?' %></span>Statut : <%= f.statut %></span>
+          <a href="/appels-offres/<%= appel.id %>/formulaire/<%= f.id %>" class="btn btn-sm btn-primary"><i class="bi bi-magic"></i> Ouvrir / Remplir</a>
+        </div>
+        <% }) %>
+        <% } %>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-4">
+    <div class="card">
+      <div class="card-header bg-light"><i class="bi bi-flag"></i> Statut interne</div>
+      <div class="card-body">
+        <form method="POST" action="/appels-offres/<%= appel.id %>/statut">
+          <select name="statut" class="form-select mb-2" onchange="this.form.submit()">
+            <% statuts.forEach(function(s) { %>
+            <option value="<%= s %>" <%= appel.statut_interne === s ? 'selected' : '' %>><%= labelsStatut[s] %></option>
+            <% }) %>
+          </select>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="/js/direct-upload.js"></script>
+<script>
+window.T3E_SUPABASE_URL = "<%= SUPABASE_URL %>";
+window.T3E_SUPABASE_ANON_KEY = "<%= SUPABASE_ANON_KEY %>";
+
+document.getElementById('formAjoutDoc').addEventListener('submit', function (e) {
+  e.preventDefault();
+  var fichier = document.getElementById('fichierDoc').files[0];
+  if (!fichier) return;
+  var categorie = document.getElementById('categorieDoc').value;
+  var btn = document.getElementById('btnAjoutDoc');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+  t3eDirectUpload.uploadDirect(fichier, 'temp').then(function (info) {
+    var form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/appels-offres/<%= appel.id %>/documents';
+    [['categorie', categorie], ['fichier_key', info.key], ['fichier_name', info.name]].forEach(function (pair) {
+      var inp = document.createElement('input');
+      inp.type = 'hidden'; inp.name = pair[0]; inp.value = pair[1];
+      form.appendChild(inp);
+    });
+    document.body.appendChild(form);
+    form.submit();
+  }).catch(function (err) {
+    alert("Erreur lors de l'envoi du fichier : " + err.message);
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-upload"></i> Ajouter';
+  });
+});
+</script>
+
+<%- include('partials/footer', { scripts: [] }) %>

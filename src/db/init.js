@@ -87,6 +87,51 @@ async function initDb() {
       updated_at TEXT DEFAULT (datetime('now'))
     )`,
     'CREATE INDEX IF NOT EXISTS idx_manuels_dossier ON manuels(numero_dossier)',
+    `CREATE TABLE IF NOT EXISTS appels_offres_seao (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      numero_seao TEXT UNIQUE NOT NULL,
+      titre TEXT NOT NULL,
+      donneur_ouvrage TEXT,
+      lieu_travaux TEXT,
+      date_publication TEXT,
+      date_fermeture TEXT,
+      date_visite_obligatoire TEXT,
+      type_projet TEXT,
+      mots_cles_matches TEXT,
+      url_seao TEXT,
+      statut_interne TEXT DEFAULT 'a_analyser' CHECK(statut_interne IN ('a_analyser','interessant','a_soumissionner','refuse','depose','perdu','gagne')),
+      donnees_brutes JSON,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    )`,
+    'CREATE INDEX IF NOT EXISTS idx_appels_offres_fermeture ON appels_offres_seao(date_fermeture)',
+    'CREATE INDEX IF NOT EXISTS idx_appels_offres_statut ON appels_offres_seao(statut_interne)',
+    `CREATE TABLE IF NOT EXISTS appels_offres_documents (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      appel_offre_id INTEGER NOT NULL,
+      categorie TEXT NOT NULL,
+      cle_storage TEXT,
+      nom_fichier TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (appel_offre_id) REFERENCES appels_offres_seao(id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS configuration (
+      cle TEXT PRIMARY KEY,
+      valeur JSON,
+      updated_at TEXT DEFAULT (datetime('now'))
+    )`,
+    `CREATE TABLE IF NOT EXISTS appels_offres_formulaires (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      appel_offre_id INTEGER NOT NULL,
+      cle_storage_original TEXT NOT NULL,
+      cle_storage_rempli TEXT,
+      format TEXT,
+      champs_detectes JSON,
+      champs_non_places JSON,
+      statut TEXT DEFAULT 'a_remplir' CHECK(statut IN ('a_remplir','pre_rempli','valide','genere')),
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (appel_offre_id) REFERENCES appels_offres_seao(id)
+    )`,
   ];
 
   const alterMigrations = [

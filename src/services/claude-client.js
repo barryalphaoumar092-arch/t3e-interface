@@ -539,11 +539,110 @@ Retourne un JSON avec les 4 champs demandés, en français.`;
   return result;
 }
 
+// ══════════════════════════════════════════════════════════════
+//  APPELS D'OFFRES SEAO — infos entreprise + mapping de formulaire PDF
+// ══════════════════════════════════════════════════════════════
+
+// Extrait les informations d'entreprise T3E (NEQ, RBQ, assurances,
+// certifications...) à partir d'extraits de certificats de la base de
+// connaissances — calculé une fois puis mis en cache (voir seao-autofill.js),
+// pas ré-analysé à chaque formulaire.
+const ANALYSE_INFOS_ENTREPRISE_SCHEMA = {
+  type: 'object',
+  properties: {
+    NEQ: { type: 'string' },
+    RBQ: { type: 'string' },
+    NOM_ENTREPRISE: { type: 'string' },
+    ADRESSE_ENTREPRISE: { type: 'string' },
+    TELEPHONE_ENTREPRISE: { type: 'string' },
+    ASSURANCE_RESPONSABILITE_CIVILE: { type: 'string' },
+    ASSURANCE_AUTOMOBILE: { type: 'string' },
+    CAUTIONNEMENT: { type: 'string' },
+    CERTIFICATIONS: { type: 'array', items: { type: 'string' } },
+    SIGNATAIRE_AUTORISE: { type: 'string' },
+    confiance: { type: 'string' },
+  },
+  required: [
+    'NEQ', 'RBQ', 'NOM_ENTREPRISE', 'ADRESSE_ENTREPRISE', 'TELEPHONE_ENTREPRISE',
+    'ASSURANCE_RESPONSABILITE_CIVILE', 'ASSURANCE_AUTOMOBILE', 'CAUTIONNEMENT',
+    'CERTIFICATIONS', 'SIGNATAIRE_AUTORISE', 'confiance',
+  ],
+  additionalProperties: false,
+};
+
+const SYSTEM_INFOS_ENTREPRISE = `Tu extrais les informations d'entreprise de Toitures Trois Étoiles Inc. (T3E) à partir d'extraits de certificats/documents corporatifs, pour pré-remplir des formulaires de soumission d'appels d'offres publics (SEAO).
+
+=== CHAMPS ===
+- NEQ : Numéro d'Entreprise du Québec (10 chiffres), cherche "Registre des entreprises" / "NEQ"
+- RBQ : numéro de licence RBQ (Régie du bâtiment du Québec), cherche "Licence RBQ" / "RBQ"
+- NOM_ENTREPRISE, ADRESSE_ENTREPRISE, TELEPHONE_ENTREPRISE : coordonnées officielles de T3E (jamais celles d'un client ou d'un tiers)
+- ASSURANCE_RESPONSABILITE_CIVILE : montant de couverture + assureur si mentionné (ex: "15 000 000 $ — [assureur]")
+- ASSURANCE_AUTOMOBILE : idem pour l'assurance automobile
+- CAUTIONNEMENT : information de cautionnement d'exécution si disponible, sinon ""
+- CERTIFICATIONS : liste courte des certifications/memberships pertinents trouvés (ex: "ISO 9001", "AMCQ", "APECQ", "NRCA", "CRCA", "Safe Contractor")
+- SIGNATAIRE_AUTORISE : nom et titre de la personne autorisée à signer, si trouvé dans une résolution de compagnie
+
+=== RÈGLES ===
+- N'INVENTE RIEN — si une info n'est pas clairement présente dans les extraits fournis, retourne "" (ou [] pour CERTIFICATIONS)
+- confiance : "haute", "moyenne" ou "basse" selon la clarté des extraits fournis`;
+
+async function analyserInfosEntreprise(texteCertificats) {
+  const userContent = `EXTRAITS DE CERTIFICATS/DOCUMENTS CORPORATIFS T3E :
+───────────────────────────────────────
+${texteCertificats}
+───────────────────────────────────────
+
+Retourne un JSON avec tous les champs demandés, en français.`;
+
+  return callOpenAI(SYSTEM_INFOS_ENTREPRISE, userContent, ANALYSE_INFOS_ENTREPRISE_SCHEMA, true, 4096);
+}
+
+// Associe les champs nommés d'un formulaire PDF (AcroForm) aux informations
+// d'entreprise disponibles. Contrairement à mapperChampsBordereau() (qui
+// pointe vers un INDEX de texte dans un .docx de structure inconnue), les
+// champs AcroForm ont déjà un nom technique généralement semantique — on
+// demande donc directement la VALEUR à inscrire (ou null), pas une position.
+async function mapperChampsFormulairePdf(nomsChamps, donneesDisponibles) {
+  if (!OPENAI_API_KEY) return null;
+  if (!Array.isArray(nomsChamps) || nomsChamps.length === 0) return null;
+
+  const schema = {
+    type: 'object',
+    properties: Object.fromEntries(nomsChamps.map((n) => [n, { type: ['string', 'null'] }])),
+    required: nomsChamps,
+    additionalProperties: false,
+  };
+
+  const systemPrompt = `Tu remplis un formulaire PDF de soumission (appel d'offres public au Québec) pour Toitures Trois Étoiles Inc. (T3E), à partir des informations d'entreprise disponibles ci-dessous.
+Pour CHAQUE champ du formulaire (identifié par son nom technique PDF, qui reflète généralement son intitulé), retourne soit la valeur exacte à inscrire (tirée UNIQUEMENT des informations fournies, jamais inventée), soit null si aucune information disponible ne correspond clairement à ce champ (ex: prix, exclusions, dates de dépôt — à remplir manuellement).
+Ne remplis JAMAIS un champ avec une valeur incertaine ou approximative — null est toujours préférable à une mauvaise réponse sur un document officiel.`;
+
+  const userContent = `INFORMATIONS D'ENTREPRISE DISPONIBLES :
+${JSON.stringify(donneesDisponibles, null, 2)}
+
+CHAMPS DU FORMULAIRE PDF À REMPLIR :
+${nomsChamps.map((n, i) => `${i + 1}. ${n}`).join('\n')}`;
+
+  try {
+    const result = await callOpenAI(systemPrompt, userContent, schema, true, 4096);
+    if (result.error) {
+      console.error('[claude-client] Mapping formulaire PDF échoué:', result.error);
+      return null;
+    }
+    return result;
+  } catch (e) {
+    console.error('[claude-client] Mapping formulaire PDF échoué:', e.message);
+    return null;
+  }
+}
+
 function isConfigured() {
   return !!OPENAI_API_KEY;
 }
 
 module.exports = {
   analyserDevis, analyserDevisSoumission, analyserDevisManuel,
-  extraireFournisseursDesFT, mapperChampsBordereau, isConfigured,
+  extraireFournisseursDesFT, mapperChampsBordereau,
+  analyserInfosEntreprise, mapperChampsFormulairePdf,
+  isConfigured,
 };

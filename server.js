@@ -83,6 +83,34 @@ app.post('/internal/convertir-doc-docx', express.raw({ type: '*/*', limit: '25mb
   }
 });
 
+// Synchronisation hebdomadaire des appels d'offres SEAO (voir vercel.json,
+// section "crons"). Vercel ajoute automatiquement l'en-tete
+// "Authorization: Bearer $CRON_SECRET" sur les appels cron declenches par sa
+// plateforme (convention officielle Vercel Cron Jobs) — a definir dans les
+// variables d'environnement du projet. Place avant le middleware d'auth par
+// cookie (l'appel cron n'a pas de session) ; initialise la DB soi-meme
+// (le middleware partage qui pose req.db tourne plus bas, apres l'auth).
+app.get('/api/cron/seao-sync', async (req, res) => {
+  const secret = (process.env.CRON_SECRET || '').trim();
+  const fourni = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '').trim();
+  const valide = secret.length > 0 && fourni.length > 0
+    && Buffer.byteLength(fourni) === Buffer.byteLength(secret)
+    && crypto.timingSafeEqual(Buffer.from(fourni), Buffer.from(secret));
+  if (!valide) return res.status(403).json({ error: 'Forbidden' });
+
+  try {
+    await initDb();
+    const db = getDb();
+    const { synchroniser } = require('./src/services/seao-sync');
+    const resultat = await synchroniser(db);
+    console.log('[seao-sync]', JSON.stringify(resultat));
+    res.json({ ok: true, ...resultat });
+  } catch (e) {
+    console.error('[seao-sync] echec:', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // Session signee (HMAC), sans etat serveur — necessaire car les fonctions
 // serverless (Vercel) ne partagent pas de memoire entre invocations/instances.
 function signSession() {
@@ -154,6 +182,7 @@ app.use('/connaissances', require('./src/routes/connaissances'));
 app.use('/bordereaux', require('./src/routes/bordereaux'));
 app.use('/soumissions', require('./src/routes/soumissions'));
 app.use('/manuels', require('./src/routes/manuels'));
+app.use('/appels-offres', require('./src/routes/appels-offres'));
 
 app.use('/recherche', require('./src/routes/recherche'));
 app.use('/api', require('./src/routes/api'));
