@@ -214,15 +214,43 @@ async function remplirFormulairePdfPlat(buf, infosEntreprise) {
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const ROUGE = rgb(0.784, 0.063, 0.180); // texte ajoute visuellement distinct de l'original
 
+  // Un vrai formulaire SEAO separe souvent le libelle ("Adresse :") de sa
+  // ligne a blanc ("________") — parfois sur la MEME ligne (le blanc suit le
+  // libelle), parfois sur la ligne SUIVANTE (le libelle seul, le blanc en
+  // dessous). Ecrire naivement juste apres le TEXTE ENTIER de la ligne
+  // choisie par l'IA place la valeur au mauvais endroit dans les deux cas
+  // (soit collee au libelle si le blanc est plus bas, soit tres loin a
+  // droite du blanc puisque son propre texte inclut deja les "_____").
+  // On cherche donc explicitement ou commence le blanc (suite de "_").
+  function trouverDebutBlanc(texte) {
+    const m = texte.match(/_{3,}/);
+    return m ? m.index : -1;
+  }
+
   for (const cle of Object.keys(champs)) {
     const idx = mapping ? mapping[cle] : null;
     const entree = (idx !== null && idx !== undefined) ? entriesLimitees[idx] : null;
     if (!entree) { champsNonPlaces.push(NOMS_LISIBLES[cle] || cle); continue; }
     try {
       const page = pdfDoc.getPage(entree.page);
-      const largeurLigne = font.widthOfTextAtSize(entree.ligne.texte, 9);
+      let ligneCible = entree.ligne;
+      let decalageX;
+      const posBlancMemeLigne = trouverDebutBlanc(entree.ligne.texte);
+      if (posBlancMemeLigne >= 0) {
+        decalageX = font.widthOfTextAtSize(entree.ligne.texte.substring(0, posBlancMemeLigne), 9) + 3;
+      } else {
+        const suivante = entriesLimitees[idx + 1];
+        const posBlancSuivante = suivante ? trouverDebutBlanc(suivante.texte) : -1;
+        if (suivante && suivante.page === entree.page && posBlancSuivante >= 0) {
+          ligneCible = suivante.ligne;
+          decalageX = font.widthOfTextAtSize(suivante.texte.substring(0, posBlancSuivante), 9) + 3;
+        } else {
+          // Repli : aucune ligne a blanc identifiee, comportement precedent.
+          decalageX = font.widthOfTextAtSize(entree.ligne.texte, 9) + 12;
+        }
+      }
       page.drawText(String(champs[cle]), {
-        x: entree.ligne.x + largeurLigne + 12, y: entree.ligne.y, size: 9, font, color: ROUGE,
+        x: ligneCible.x + decalageX, y: ligneCible.y, size: 9, font, color: ROUGE,
       });
       champsPlaces.push(cle);
     } catch (e) {
