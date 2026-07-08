@@ -237,13 +237,13 @@ async function remplirFormulairePdfPlat(buf, infosEntreprise) {
       let decalageX;
       const posBlancMemeLigne = trouverDebutBlanc(entree.ligne.texte);
       if (posBlancMemeLigne >= 0) {
-        decalageX = font.widthOfTextAtSize(entree.ligne.texte.substring(0, posBlancMemeLigne), 9) + 3;
+        decalageX = font.widthOfTextAtSize(entree.ligne.texte.substring(0, posBlancMemeLigne), 9) + 6;
       } else {
         const suivante = entriesLimitees[idx + 1];
         const posBlancSuivante = suivante ? trouverDebutBlanc(suivante.texte) : -1;
         if (suivante && suivante.page === entree.page && posBlancSuivante >= 0) {
           ligneCible = suivante.ligne;
-          decalageX = font.widthOfTextAtSize(suivante.texte.substring(0, posBlancSuivante), 9) + 3;
+          decalageX = font.widthOfTextAtSize(suivante.texte.substring(0, posBlancSuivante), 9) + 6;
         } else {
           // Repli : aucune ligne a blanc identifiee, comportement precedent.
           decalageX = font.widthOfTextAtSize(entree.ligne.texte, 9) + 12;
