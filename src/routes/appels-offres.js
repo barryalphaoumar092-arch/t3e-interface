@@ -263,7 +263,10 @@ router.post('/:id/formulaire/:formId/remplir', async (req, res) => {
     const buf = await downloadBuffer(BUCKETS.SEAO, formulaire.cle_storage_original);
     if (!buf) throw new Error('Fichier original introuvable dans le stockage.');
 
-    const infos = await obtenirInfosEntreprise(db);
+    // ?recalculer=1 permet de forcer une nouvelle analyse IA sans attendre
+    // l'expiration du cache de 30 jours (utile juste apres un ajout/retrait
+    // de document dans la base de connaissances).
+    const infos = await obtenirInfosEntreprise(db, { forcerRecalcul: req.query.recalculer === '1' });
     if (infos.error) throw new Error(infos.error);
 
     const ext = (formulaire.format || '').toLowerCase();

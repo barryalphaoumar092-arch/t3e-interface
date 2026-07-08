@@ -29,6 +29,9 @@
       <form method="POST" action="/appels-offres/<%= appel.id %>/formulaire/<%= formulaire.id %>/remplir">
         <button type="submit" class="btn btn-warning"><i class="bi bi-magic"></i> <%= formulaire.positions && formulaire.positions !== '{}' ? 'Générer avec les positions placées' : "Pré-remplir avec l'IA" %></button>
       </form>
+      <form method="POST" action="/appels-offres/<%= appel.id %>/formulaire/<%= formulaire.id %>/remplir?recalculer=1" title="Force une nouvelle analyse IA de la base de connaissances (ignore le cache de 30 jours) — utile après avoir ajouté un document.">
+        <button type="submit" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-repeat"></i> Réanalyser la base de connaissances</button>
+      </form>
       <% if (formulaire.cle_storage_rempli) { %>
       <a href="/appels-offres/<%= appel.id %>/formulaire/<%= formulaire.id %>/telecharger" class="btn btn-success">
         <i class="bi bi-download"></i> Télécharger le formulaire pré-rempli
