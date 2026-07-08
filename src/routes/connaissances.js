@@ -82,6 +82,23 @@ const MDP_ADMIN = process.env.MDP_APP || 'barry';
 // par le navigateur (voir /api/upload-url + views/connaissances.ejs) — cette
 // route ne recoit plus que les metadonnees, pour contourner la limite de
 // 4.5 Mo par requete des fonctions serverless Vercel.
+router.post('/categorie', async (req, res) => {
+  if (req.body.mdp_admin !== MDP_ADMIN) return res.redirect('/connaissances?error=mdp');
+  const db = req.db;
+  const nom = (req.body.nom || '').trim();
+  if (!nom) return res.redirect('/connaissances?error=no_nom');
+  try {
+    await db.execute({
+      sql: 'INSERT INTO categories (nom, description) VALUES (?, ?)',
+      args: [nom, (req.body.description || '').trim() || null],
+    });
+  } catch (e) {
+    // categorie deja existante (contrainte UNIQUE sur nom) -> pas une erreur utilisateur
+    if (!/UNIQUE/i.test(e.message || '')) throw e;
+  }
+  res.redirect('/connaissances?success=categorie');
+});
+
 router.post('/ajouter', async (req, res) => {
   if (req.body.mdp_admin !== MDP_ADMIN) return res.redirect('/connaissances?error=mdp');
   const db = req.db;
