@@ -77,7 +77,10 @@
       <div class="card-header bg-light"><i class="bi bi-file-earmark-text"></i> Formulaire de soumission</div>
       <div class="card-body">
         <% if (formulaires.length === 0) { %>
-        <p class="text-muted small mb-0">Aucun formulaire de soumission identifié pour cet appel d'offres.</p>
+        <p class="text-muted small">
+          Aucun formulaire déposé pour cet appel d'offres. Les données ouvertes du SEAO ne fournissent que les métadonnées de l'avis (titre, dates, donneur d'ouvrage) — pas les documents eux-mêmes.
+          <% if (appel.url_seao) { %>Téléchargez le formulaire de soumission depuis <a href="<%= appel.url_seao %>" target="_blank" rel="noopener">l'avis SEAO complet <i class="bi bi-box-arrow-up-right"></i></a>, puis déposez-le ci-dessous.<% } else { %>Téléchargez-le depuis le site du SEAO, puis déposez-le ci-dessous.<% } %>
+        </p>
         <% } else { %>
         <% formulaires.forEach(function(f) { %>
         <div class="d-flex justify-content-between align-items-center mb-2">

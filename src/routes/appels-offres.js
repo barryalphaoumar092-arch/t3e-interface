@@ -35,12 +35,14 @@ router.get('/', async (req, res) => {
   else if (filtre === '24h') intervalle = '-1 day';
   else if (filtre === '7j') intervalle = '-7 day';
 
-  let sql = `SELECT * FROM appels_offres_seao WHERE date_publication >= datetime('now', ?)`;
+  let sql = `SELECT a.*,
+      (SELECT COUNT(*) FROM appels_offres_formulaires f WHERE f.appel_offre_id = a.id) as nb_formulaires
+      FROM appels_offres_seao a WHERE a.date_publication >= datetime('now', ?)`;
   const args = [intervalle];
-  if (req.query.visite === '1') sql += ` AND date_visite_obligatoire IS NOT NULL AND date_visite_obligatoire != ''`;
+  if (req.query.visite === '1') sql += ` AND a.date_visite_obligatoire IS NOT NULL AND a.date_visite_obligatoire != ''`;
   sql += tri === 'fermeture'
-    ? ` ORDER BY date_fermeture ASC`
-    : ` ORDER BY LENGTH(mots_cles_matches) - LENGTH(REPLACE(mots_cles_matches, ',', '')) DESC, date_publication DESC`;
+    ? ` ORDER BY a.date_fermeture ASC`
+    : ` ORDER BY LENGTH(a.mots_cles_matches) - LENGTH(REPLACE(a.mots_cles_matches, ',', '')) DESC, a.date_publication DESC`;
 
   const r = await db.execute({ sql, args });
   const derniereSync = await db.execute(`SELECT MAX(updated_at) as t FROM appels_offres_seao`);
@@ -76,6 +78,47 @@ router.post('/nouveau', async (req, res) => {
   } catch (e) {
     res.render('appel-offre-nouveau', { erreur: e.message.includes('UNIQUE') ? 'Ce numéro SEAO existe déjà.' : e.message });
   }
+});
+
+router.get('/rapide', (req, res) => {
+  res.render('appel-offre-formulaire-rapide', { erreur: '' });
+});
+
+// Depot rapide d'un formulaire SANS creer/choisir un appel d'offres au
+// prealable — cree un appel d'offres minimal en arriere-plan pour reutiliser
+// tel quel tout le pipeline existant (formulaire, editeur, remplissage IA),
+// puis redirige directement sur la page du formulaire.
+router.post('/rapide', async (req, res) => {
+  const db = req.db;
+  const tempKey = req.body.fichier_key;
+  const nomOriginal = req.body.fichier_name || 'formulaire';
+  if (!cleTempValide(tempKey)) return res.render('appel-offre-formulaire-rapide', { erreur: 'Fichier manquant ou invalide.' });
+
+  const buf = await downloadBuffer(BUCKETS.UPLOADS_TEMP, tempKey);
+  if (!buf) return res.render('appel-offre-formulaire-rapide', { erreur: 'Fichier introuvable dans le stockage temporaire.' });
+
+  const numeroSeao = 'RAPIDE-' + Date.now();
+  const rAppel = await db.execute({
+    sql: `INSERT INTO appels_offres_seao (numero_seao, titre, date_publication, mots_cles_matches, statut_interne)
+          VALUES (?, ?, datetime('now'), 'dépôt rapide', 'a_analyser')`,
+    args: [numeroSeao, 'Formulaire déposé rapidement — ' + nomOriginal],
+  });
+  const appelId = rAppel.lastInsertRowid;
+
+  const cleFinale = sanitizeKey(`${appelId}/formulaire_soumission/${Date.now()}-${crypto.randomBytes(4).toString('hex')}-${nomOriginal}`);
+  await uploadBuffer(BUCKETS.SEAO, cleFinale, buf);
+  await removeFile(BUCKETS.UPLOADS_TEMP, tempKey).catch(() => {});
+  await db.execute({
+    sql: 'INSERT INTO appels_offres_documents (appel_offre_id, categorie, cle_storage, nom_fichier) VALUES (?, ?, ?, ?)',
+    args: [appelId, 'formulaire_soumission', cleFinale, nomOriginal],
+  });
+  const ext = path.extname(nomOriginal).toLowerCase().replace('.', '');
+  const rForm = await db.execute({
+    sql: `INSERT INTO appels_offres_formulaires (appel_offre_id, cle_storage_original, format, statut) VALUES (?, ?, ?, 'a_remplir')`,
+    args: [appelId, cleFinale, ext],
+  });
+
+  res.redirect(`/appels-offres/${appelId}/formulaire/${rForm.lastInsertRowid}`);
 });
 
 router.post('/actualiser', async (req, res) => {
