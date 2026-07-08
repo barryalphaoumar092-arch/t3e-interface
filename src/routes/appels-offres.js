@@ -10,6 +10,7 @@ const {
   aplatirInfosEntreprise, NOMS_LISIBLES, genererPageNotePreparation,
 } = require('../services/seao-formulaire');
 const { fillTemplatePdf } = require('../services/pdf-filler');
+const { joindreAnnexesReelles } = require('../services/seao-annexes');
 const { downloadBuffer, uploadBuffer, removeFile, createSignedUrl, sanitizeKey, BUCKETS } = require('../services/storage');
 
 const STATUTS = ['a_analyser', 'interessant', 'a_soumissionner', 'refuse', 'depose', 'perdu', 'gagne'];
@@ -350,16 +351,24 @@ router.post('/:id/formulaire/:formId/remplir', async (req, res) => {
       }
     }
 
-    // Mises en garde de l'IA (donnee trouvee pour une entite differente,
-    // attestation manquante...) — regroupees sur UNE page ajoutee en tete du
-    // PDF final plutot que d'annoter le formulaire officiel lui-meme.
-    if (formatDetecte !== 'docx' && Array.isArray(infos.AVERTISSEMENTS) && infos.AVERTISSEMENTS.length > 0) {
+    // Annexes reelles a joindre (CNESST, ISO, francisation, AMP...) + mises
+    // en garde de l'IA (donnee trouvee pour une entite differente,
+    // attestation manquante...) — les annexes sont fusionnees directement
+    // dans le PDF, les avertissements regroupes sur UNE page ajoutee en tete
+    // plutot que d'annoter le formulaire officiel lui-meme.
+    if (formatDetecte !== 'docx') {
       try {
-        const pdfAvecNote = await PDFDocument.load(resultat.buffer);
-        await genererPageNotePreparation(pdfAvecNote, infos.AVERTISSEMENTS);
-        resultat.buffer = Buffer.from(await pdfAvecNote.save());
+        const pdfFinal = await PDFDocument.load(resultat.buffer);
+        const { annexesJointes, annexesNonTrouvees } = await joindreAnnexesReelles(db, pdfFinal);
+        const avertissements = Array.isArray(infos.AVERTISSEMENTS) ? [...infos.AVERTISSEMENTS] : [];
+        annexesNonTrouvees.forEach((lib) => avertissements.push(
+          `Aucun document trouvé dans la base de connaissances pour joindre à l'annexe « ${lib} » — à ajouter manuellement.`
+        ));
+        if (avertissements.length > 0) await genererPageNotePreparation(pdfFinal, avertissements);
+        resultat.buffer = Buffer.from(await pdfFinal.save());
+        if (annexesJointes.length > 0) console.log('[appels-offres] Annexes jointes automatiquement:', annexesJointes.join(', '));
       } catch (e) {
-        console.error('[appels-offres] Ajout page de préparation échoué:', e.message);
+        console.error('[appels-offres] Fusion annexes/note échouée:', e.message);
       }
     }
 
