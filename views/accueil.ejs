@@ -52,6 +52,15 @@
       </div>
     </a>
   </div>
+  <div class="col-md-3">
+    <a href="/appels-offres" class="text-decoration-none">
+      <div class="card stat-card text-center p-4">
+        <div class="stat-icon text-secondary"><i class="bi bi-clipboard-check"></i></div>
+        <h3 class="mt-2"><%= stats.appelsOffres || 0 %></h3>
+        <p class="text-muted mb-0">Appels d'offres SEAO (14j)</p>
+      </div>
+    </a>
+  </div>
 </div>
 
 <div class="row g-4">
@@ -88,6 +97,15 @@
         <h5 class="card-title"><i class="bi bi-journal-richtext text-info"></i> Manuel de fin de chantier</h5>
         <p class="card-text">Importez le devis et les documents du projet, l'IA extrait les champs, générez le manuel complet en PDF.</p>
         <a href="/manuels/nouveau" class="btn btn-info text-white">Nouveau manuel</a>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card h-100">
+      <div class="card-body">
+        <h5 class="card-title"><i class="bi bi-clipboard-check text-secondary"></i> Appels d'offres SEAO</h5>
+        <p class="card-text">Appels d'offres publics pertinents (toiture), pré-remplissage IA du formulaire de soumission à partir de la base de connaissances.</p>
+        <a href="/appels-offres" class="btn btn-secondary text-white">Voir les appels d'offres</a>
       </div>
     </div>
   </div>

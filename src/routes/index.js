@@ -13,9 +13,11 @@ router.get('/', async (req, res) => {
   try { soum = (await db.execute('SELECT COUNT(*) as c FROM soumissions')).rows[0].c; } catch(e) {}
   let manuels = 0;
   try { manuels = (await db.execute('SELECT COUNT(*) as c FROM manuels')).rows[0].c; } catch(e) {}
+  let appelsOffres = 0;
+  try { appelsOffres = (await db.execute("SELECT COUNT(*) as c FROM appels_offres_seao WHERE date_publication >= datetime('now', '-14 day')")).rows[0].c; } catch(e) {}
 
   res.render('accueil', {
-    stats: { documents: docs, materiaux: mats, fichestechniques: ft, bordereaux: bord, architectes: arch, soumissions: soum, manuels: manuels }
+    stats: { documents: docs, materiaux: mats, fichestechniques: ft, bordereaux: bord, architectes: arch, soumissions: soum, manuels: manuels, appelsOffres: appelsOffres }
   });
 });
 
