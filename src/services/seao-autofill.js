@@ -44,12 +44,12 @@ async function chargerDocumentsPertinents(db) {
   if (pertinents.length === 0) {
     return r.rows.filter((d) => d.categorie === 'Certificats corporatifs').slice(0, 20);
   }
-  return pertinents.slice(0, 25); // plafond raisonnable pour le budget de tokens OpenAI
+  return pertinents.slice(0, 35); // plafond raisonnable pour le budget de tokens OpenAI
 }
 
 async function construireContexteTexte(documents) {
   const morceaux = [];
-  let budget = 40000;
+  let budget = 60000;
   for (const doc of documents) {
     if (budget <= 0) break;
     const { sanitizeKey } = require('./storage');
