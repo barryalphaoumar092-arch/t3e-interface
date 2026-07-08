@@ -8,24 +8,56 @@
 const { PDFDocument } = require('pdf-lib');
 const { downloadBuffer, sanitizeKey, BUCKETS } = require('./storage');
 
-// Chaque categorie : motifs qui identifient la page-divider dans le texte du
-// formulaire, puis motifs de TITRE pour retrouver le bon document dans la
-// base de connaissances. `eviter` ecarte les titres qui appartiennent
-// typiquement a une autre entite (ex. "Service d'entretien...") — mieux
-// vaut ne rien joindre que de joindre le document de la mauvaise compagnie
-// (voir le piege NEQ/RBQ/TPS decouvert manuellement sur un vrai formulaire).
+// L'extraction de texte (pdf-parse) de certains PDF SEAO fragmente des mots
+// avec des espaces parasites dus au crenage interne du PDF (ex. "CERTIF
+// ICAT", "QUÉB EC") — une regex normale sur le texte brut rate donc des
+// correspondances pourtant evidentes visuellement. On compare a la place sur
+// une version DEBARRASSEE de tous les espaces/ponctuation, ce qui rend la
+// detection insensible a ce genre de coupure.
+function normaliser(texte) {
+  return texte.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+}
+
+const MOT_JOINDRE = normaliser('doit joindre ce document');
+
+// Chaque categorie : motifs (deja normalises) qui identifient la
+// page-divider dans le texte du formulaire, puis motifs de TITRE pour
+// retrouver le bon document dans la base de connaissances. `eviter` ecarte
+// les titres qui appartiennent typiquement a une autre entite (ex. "Service
+// d'entretien...") — mieux vaut ne rien joindre que de joindre le document
+// de la mauvaise compagnie (voir le piege NEQ/RBQ/TPS decouvert manuellement
+// sur un vrai formulaire).
+// "departement service" : dossier reseau ou vivent TOUS les documents de
+// l'entite "Service d'entretien Toitures Trois Etoiles Inc." — un titre de
+// fichier seul ne mentionne pas toujours "service" (ex. un fichier nomme
+// juste "Attestation de Revenu Quebe.pdf" qui, une fois ouvert, s'avere
+// pourtant etabli au nom de l'entite Service) alors que son CHEMIN complet
+// le trahit systematiquement. Verifier le chemin en plus du titre est donc
+// la seule protection fiable contre ce piege deja rencontre deux fois.
+const DOSSIER_AUTRE_ENTITE = 'departement service';
+
 const CATEGORIES_ANNEXES = [
-  { cle: 'CNESST', libelle: 'Conformité CNESST', declencheurs: [/cnesst/i], titres: ['conformite cnesst', 'conformité cnesst'], eviter: ['service'] },
-  { cle: 'ISO_QUALITE', libelle: 'Certificat système assurance qualité (ISO)', declencheurs: [/syst[eè]me d.assurance qualit[eé]/i, /\biso\s?9001\b/i], titres: ['iso 9001', 'iso9001'], eviter: ['service'] },
-  { cle: 'FRANCISATION', libelle: 'Certificat de francisation (OQLF)', declencheurs: [/francisation/i, /\boqlf\b/i], titres: ['francisation'], eviter: ['service'] },
-  { cle: 'AMP', libelle: "Autorisation de contracter de l'AMP", declencheurs: [/autorit[eé] des march[eé]s publics/i, /\bamp\b.{0,20}contracter/i, /contracter.{0,20}\bamp\b/i], titres: ['amp'], eviter: ['service'] },
-  { cle: 'REVENU_QUEBEC', libelle: 'Attestation de Revenu Québec', declencheurs: [/attestation de revenu qu[eé]bec/i], titres: ['revenu québec', 'attestation de revenu'], eviter: ['service', 'entretien'] },
+  { cle: 'CNESST', libelle: 'Conformité CNESST', motifs: ['cnesst'], titres: ['conformite cnesst', 'conformité cnesst'], eviter: ['service', DOSSIER_AUTRE_ENTITE] },
+  { cle: 'ISO_QUALITE', libelle: 'Certificat système assurance qualité (ISO)', motifs: ['assurancequalite', 'iso9001'], titres: ['iso 9001', 'iso9001'], eviter: ['service', DOSSIER_AUTRE_ENTITE] },
+  { cle: 'AMP', libelle: "Autorisation de contracter de l'AMP", motifs: ['marchespublics', 'contracterdelamp'], titres: ['amp'], eviter: ['service', DOSSIER_AUTRE_ENTITE] },
+  { cle: 'REVENU_QUEBEC', libelle: 'Attestation de Revenu Québec', motifs: ['revenuquebec'], titres: ['revenu québec', 'attestation de revenu'], eviter: ['service', 'entretien', DOSSIER_AUTRE_ENTITE] },
 ];
 
+// Cas particulier : la page "Charte de la langue française" ne contient
+// jamais la phrase-gabarit "doit joindre ce document" (c'est une declaration
+// a cocher, pas un simple renvoi vers une piece jointe) — elle utilise "je
+// le joins" a l'interieur des cases a cocher. Detection dediee.
+const CATEGORIE_FRANCISATION = { cle: 'FRANCISATION', libelle: 'Certificat de francisation (OQLF)', titres: ['francisation'], eviter: ['service', DOSSIER_AUTRE_ENTITE] };
+
 function categoriePourPage(texte) {
-  if (!/doit joindre ce document|joindre.{0,15}(a|à) (la|sa) soumission/i.test(texte)) return null;
-  for (const cat of CATEGORIES_ANNEXES) {
-    if (cat.declencheurs.some((re) => re.test(texte))) return cat;
+  const n = normaliser(texte);
+  if (n.includes(MOT_JOINDRE)) {
+    for (const cat of CATEGORIES_ANNEXES) {
+      if (cat.motifs.some((m) => n.includes(m))) return cat;
+    }
+  }
+  if (n.includes(normaliser('charte de la langue française')) && n.includes(normaliser('cocher une des'))) {
+    return CATEGORIE_FRANCISATION;
   }
   return null;
 }
@@ -40,10 +72,13 @@ function trouverDocumentPourCategorie(documents, categorie) {
     categorie.titres.some((t) => d.titre.toLowerCase().includes(t.toLowerCase()))
   );
   // Jamais un candidat de la liste "eviter" — mieux vaut ne rien joindre que
-  // de joindre le document d'une entite juridique differente.
-  const propres = candidats.filter((d) =>
-    !categorie.eviter.some((mot) => d.titre.toLowerCase().includes(mot))
-  );
+  // de joindre le document d'une entite juridique differente. On verifie le
+  // TITRE et le CHEMIN complet (nom_fichier), car le titre seul ne revele pas
+  // toujours de quelle entite provient reellement le document.
+  const propres = candidats.filter((d) => {
+    const cible = `${d.titre} ${d.nom_fichier || ''}`.toLowerCase();
+    return !categorie.eviter.some((mot) => cible.includes(mot));
+  });
   return propres[0] || null;
 }
 
