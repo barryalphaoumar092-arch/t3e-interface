@@ -122,6 +122,26 @@ router.post('/:id/documents', async (req, res) => {
   res.redirect('/appels-offres/' + id);
 });
 
+// Supprime un document (et le formulaire lie, le cas echeant, avec son
+// eventuel fichier rempli) — necessaire pour retirer un fichier importe par
+// erreur sans devoir passer par la base de donnees directement.
+router.post('/:id/documents/:docId/supprimer', async (req, res) => {
+  const db = req.db;
+  const { id, docId } = req.params;
+  const r = await db.execute({ sql: 'SELECT * FROM appels_offres_documents WHERE id = ? AND appel_offre_id = ?', args: [docId, id] });
+  if (r.rows.length > 0) {
+    const doc = r.rows[0];
+    await removeFile(BUCKETS.SEAO, doc.cle_storage).catch(() => {});
+    const formulairesLies = await db.execute({ sql: 'SELECT * FROM appels_offres_formulaires WHERE appel_offre_id = ? AND cle_storage_original = ?', args: [id, doc.cle_storage] });
+    for (const f of formulairesLies.rows) {
+      if (f.cle_storage_rempli) await removeFile(BUCKETS.SEAO, f.cle_storage_rempli).catch(() => {});
+      await db.execute({ sql: 'DELETE FROM appels_offres_formulaires WHERE id = ?', args: [f.id] });
+    }
+    await db.execute({ sql: 'DELETE FROM appels_offres_documents WHERE id = ?', args: [docId] });
+  }
+  res.redirect('/appels-offres/' + id);
+});
+
 router.get('/:id/formulaire/:formId', async (req, res) => {
   const db = req.db;
   const { id, formId } = req.params;
