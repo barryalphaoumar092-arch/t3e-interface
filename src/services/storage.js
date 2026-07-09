@@ -24,6 +24,7 @@ const BUCKETS = {
   UPLOADS_TEMP: 'uploads-temp',
   MANUELS: 'manuels-fin-chantier',
   SEAO: 'appels-offres-seao',
+  BORDEREAUX_FT_PROJET: 'bordereaux-fiches-projet',
 };
 
 // Supabase Storage rejette les cles avec accents/caracteres speciaux.

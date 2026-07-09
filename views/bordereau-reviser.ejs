@@ -147,6 +147,9 @@
                 <select name="FT_FICHIER" class="form-select form-select-sm ft-select">
                   <option value="__AUTO__" <%= p.ft_selection === '__AUTO__' ? 'selected' : '' %>>Auto (recommandé)</option>
                   <option value="__NONE__" <%= p.ft_selection === '__NONE__' ? 'selected' : '' %>>Aucune fiche technique</option>
+                  <% if (p.ft_projet_key) { %>
+                  <option value="__PROJET__:<%= p.ft_projet_key %>" <%= p.ft_selection === ('__PROJET__:' + p.ft_projet_key) ? 'selected' : '' %>>Importée pour ce projet (<%= p.ft_projet_nom || 'fichier' %>)</option>
+                  <% } %>
                   <% Object.keys(ftParFabricant).sort(function(a, b) { return a.localeCompare(b); }).forEach(function(fab) { %>
                   <optgroup label="<%= fab %>">
                     <% ftParFabricant[fab].forEach(function(f) { %>
@@ -160,6 +163,29 @@
                 <% } else { %>
                 <div class="text-muted small mt-1"><i class="bi bi-dash-circle"></i> Aucune FT auto-détectée</div>
                 <% } %>
+              </div>
+
+              <div class="col-md-12">
+                <div class="d-flex gap-2 flex-wrap align-items-center small border rounded px-2 py-1 bg-light">
+                  <span class="text-muted"><i class="bi bi-diagram-3"></i> Traçabilité :</span>
+                  <% if (p.detecte_devis === true) { %>
+                    <span class="badge bg-success">Détecté dans le devis</span>
+                  <% } else if (p.detecte_devis === false) { %>
+                    <span class="badge bg-secondary">Non détecté dans le devis</span>
+                  <% } %>
+                  <% if (p.ft_noms && p.ft_noms.length > 0) { %>
+                    <span class="badge bg-success">Trouvée dans la bibliothèque T3E</span>
+                  <% } else { %>
+                    <span class="badge bg-danger">Absente de la bibliothèque T3E</span>
+                  <% } %>
+                  <% if (p.ft_projet_key) { %>
+                    <span class="badge bg-info text-dark">Fiche jointe au projet (<%= p.ft_projet_nom %>)</span>
+                  <% } else if (!(p.ft_noms && p.ft_noms.length > 0)) { %>
+                    <button type="button" class="btn btn-outline-primary btn-sm ms-1 btn-importer-ft" data-idx="<%= idx %>">
+                      <i class="bi bi-upload"></i> Importer une fiche pour ce produit
+                    </button>
+                  <% } %>
+                </div>
               </div>
 
               <div class="col-md-6">
@@ -221,7 +247,49 @@
   </div>
 </div>
 
+<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="/js/direct-upload.js"></script>
 <script>
+window.T3E_SUPABASE_URL = "<%= SUPABASE_URL %>";
+window.T3E_SUPABASE_ANON_KEY = "<%= SUPABASE_ANON_KEY %>";
+
+document.querySelectorAll('.btn-importer-ft').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var idx = btn.getAttribute('data-idx');
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.pdf';
+    input.addEventListener('change', function() {
+      var file = input.files[0];
+      if (!file) return;
+      btn.disabled = true;
+      var texteOriginal = btn.innerHTML;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Envoi…';
+      t3eDirectUpload.uploadDirect(file, 'temp').then(function(info) {
+        var form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/bordereaux/importer-ft/<%= bordereau.id %>';
+        [
+          ['produit_index', idx],
+          ['cle_temp', info.key],
+          ['nom_fichier', info.name],
+        ].forEach(function(pair) {
+          var inp = document.createElement('input');
+          inp.type = 'hidden'; inp.name = pair[0]; inp.value = pair[1];
+          form.appendChild(inp);
+        });
+        document.body.appendChild(form);
+        form.submit();
+      }).catch(function(err) {
+        alert('Erreur lors de l\'envoi : ' + err.message);
+        btn.disabled = false;
+        btn.innerHTML = texteOriginal;
+      });
+    });
+    input.click();
+  });
+});
+
 function renum() {
   document.querySelectorAll('.produit-card').forEach(function(card, i) {
     var h6 = card.querySelector('h6');

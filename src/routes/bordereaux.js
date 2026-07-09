@@ -10,7 +10,7 @@ const { convertirDocxEnPdf } = require('../services/docx-to-pdf');
 const { convertirDocEnDocx, estDocLegacy, estDocxValide } = require('../services/doc-to-docx');
 const { PDFDocument } = require('pdf-lib');
 const JSZip = require('jszip');
-const { downloadBuffer, removeFile, listFiles, stripAccents, BUCKETS } = require('../services/storage');
+const { downloadBuffer, uploadBuffer, removeFile, listFiles, stripAccents, sanitizeKey, ensureBucket, BUCKETS } = require('../services/storage');
 
 // Les fichiers devis/bordereau sont uploades par le navigateur DIRECTEMENT
 // vers Supabase Storage (bucket "uploads-temp", voir /api/upload-url) pour
@@ -309,6 +309,18 @@ function motsSignificatifs(s) {
   return normaliserTexte(s).split(' ').filter(w => w.length >= 4);
 }
 
+// Traçabilité #4 : le produit est-il effectivement mentionné dans le devis
+// fourni, ou a-t-il ete ajoute a la selection sans base textuelle dans ce
+// devis precis (ex: piece standard toujours utilisee, ajoutee de memoire) ?
+// Verification simple par mots-cles significatifs, pas un nouvel appel IA.
+function produitDetecteDansDevis(texteDevis, titre) {
+  const mots = motsSignificatifs(titre);
+  if (mots.length === 0) return false;
+  const texteNorm = normaliserTexte(texteDevis);
+  const trouves = mots.filter(w => texteNorm.includes(w)).length;
+  return trouves >= Math.min(2, mots.length);
+}
+
 // Matching conservateur : exige soit un nom identique, soit 2+ mots specifiques
 // partages, soit 1 mot specifique + meme fabricant. Evite les faux positifs sur
 // des mots generiques (ex: "ultra") qui assigneraient le mauvais fabricant.
@@ -449,7 +461,19 @@ async function resoudreFichesTechniques(db, fabricant, titre) {
 // l'utilisateur sur la page de révision (valeur du <select> FT_FICHIER)
 async function resoudreFichesTechniquesAvecSelection(db, fabricant, titre, selection) {
   if (selection === '__NONE__') return [];
-  if (selection && selection !== '__AUTO__') {
+  // Fiche importee specifiquement pour ce projet (priorité #4, "Confirmé
+  // projet") -- stockee dans un bucket dedie, jamais mele a la bibliotheque
+  // partagee "fiches-techniques".
+  if (selection && selection.startsWith('__PROJET__:')) {
+    const cle = selection.slice('__PROJET__:'.length);
+    const safeKey = cle.split('/').filter(seg => seg && seg !== '..').join('/');
+    const buf = safeKey ? await downloadBuffer(BUCKETS.BORDEREAUX_FT_PROJET, safeKey) : null;
+    if (buf) {
+      console.log('[FT] Fiche importée pour ce projet utilisée:', safeKey);
+      return [buf];
+    }
+    console.log('[FT] Fiche importée pour ce projet introuvable:', cle, '- fallback auto');
+  } else if (selection && selection !== '__AUTO__') {
     const safeKey = selection.split('/').filter(seg => seg && seg !== '..').join('/');
     const buf = safeKey ? await downloadBuffer(BUCKETS.FICHES_TECHNIQUES, safeKey) : null;
     if (buf) {
@@ -756,6 +780,13 @@ router.post('/analyser', async (req, res) => {
       p.ft_noms = [nomFichierDepuisUrl(p.ft_url) + ' (web)'];
     }
     p.ft_selection = p.ft_chemins.length > 0 ? p.ft_chemins[0] : '__AUTO__';
+    // Traçabilité (priorité utilisateur #4) : le produit vient de la
+    // selection de l'utilisateur (source fiable, voir plus haut) -- on
+    // verifie EN PLUS s'il est effectivement mentionne dans le devis fourni,
+    // pour distinguer "confirme par le devis" de "ajoute sans base au devis".
+    p.detecte_devis = produitDetecteDansDevis(texteDevis, p.TITRE);
+    p.ft_projet_key = null;
+    p.ft_projet_nom = null;
     produits.push(p);
   }
 
@@ -812,9 +843,13 @@ router.get('/reviser/:id', async (req, res) => {
     };
   }
 
-  // S'assurer que chaque produit a une selection FT (anciens enregistrements)
+  // S'assurer que chaque produit a une selection FT + les champs de
+  // traçabilité #4 (anciens enregistrements créés avant cette fonctionnalité)
   for (const p of (data.produits || [])) {
     if (!p.ft_selection) p.ft_selection = '__AUTO__';
+    if (typeof p.detecte_devis !== 'boolean') p.detecte_devis = null; // inconnu, pas "non"
+    if (p.ft_projet_key === undefined) p.ft_projet_key = null;
+    if (p.ft_projet_nom === undefined) p.ft_projet_nom = null;
   }
 
   const { fabricants, fournisseurs } = await listerFabricantsEtFournisseurs(req.db);
@@ -873,6 +908,55 @@ router.post('/confirmer/:id', express.urlencoded({ extended: true }), async (req
       args: [id, commentaire || null, confirmePar || null],
     });
   }
+
+  res.redirect('/bordereaux/reviser/' + id);
+});
+
+// ── IMPORTER UNE FICHE TECHNIQUE POUR CE PROJET — priorité #4, "Confirmé
+// projet" : quand la bibliothèque T3E n'a pas la fiche d'un produit, permet
+// d'en attacher une propre à ce bordereau (jamais mêlée à la bibliothèque
+// partagée "fiches-techniques"). Le fichier est déjà uploadé côté navigateur
+// vers le bucket "uploads-temp" (voir /api/upload-url), cette route ne
+// reçoit que les métadonnées + la clé temporaire.
+router.post('/importer-ft/:id', express.urlencoded({ extended: true }), async (req, res) => {
+  const db = req.db;
+  const id = parseInt(req.params.id);
+  const produitIndex = parseInt(req.body.produit_index);
+  const cleTemp = req.body.cle_temp;
+  const nomFichier = req.body.nom_fichier || 'fiche-technique.pdf';
+  if (!cleTempValide(cleTemp)) return res.status(400).send('Fichier introuvable dans le stockage temporaire.');
+
+  const r = await db.execute({ sql: 'SELECT contenu FROM bordereaux WHERE id = ?', args: [id] });
+  if (r.rows.length === 0) return res.status(404).send('Bordereau introuvable');
+
+  let data;
+  try { data = JSON.parse(r.rows[0].contenu); } catch (_) { data = {}; }
+  const produits = data.produits || [];
+  if (isNaN(produitIndex) || produitIndex < 0 || produitIndex >= produits.length) {
+    return res.status(400).send('Produit invalide.');
+  }
+
+  const buf = await downloadBuffer(BUCKETS.UPLOADS_TEMP, cleTemp);
+  if (!buf) return res.status(400).send('Fichier introuvable dans le stockage temporaire.');
+
+  await ensureBucket(BUCKETS.BORDEREAUX_FT_PROJET);
+  const cle = sanitizeKey(`${id}/${produitIndex}-${Date.now()}-${path.basename(nomFichier)}`);
+  await uploadBuffer(BUCKETS.BORDEREAUX_FT_PROJET, cle, buf, 'application/pdf');
+  await removeFile(BUCKETS.UPLOADS_TEMP, cleTemp).catch(() => {});
+
+  produits[produitIndex].ft_projet_key = cle;
+  produits[produitIndex].ft_projet_nom = nomFichier;
+  produits[produitIndex].ft_selection = '__PROJET__:' + cle;
+  data.produits = produits;
+
+  await db.execute({
+    sql: 'UPDATE bordereaux SET contenu = ? WHERE id = ?',
+    args: [JSON.stringify(data), id],
+  });
+  await db.execute({
+    sql: `INSERT INTO historique_bordereaux (bordereau_id, action, commentaire, effectue_par) VALUES (?, 'ft_importee_projet', ?, ?)`,
+    args: [id, `Produit « ${produits[produitIndex].TITRE || ''} » — fichier « ${nomFichier} »`, (req.body.importe_par || '').trim() || null],
+  });
 
   res.redirect('/bordereaux/reviser/' + id);
 });
