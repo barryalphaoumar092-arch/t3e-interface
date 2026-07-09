@@ -18,10 +18,16 @@ const { downloadBuffer, uploadBuffer, createSignedUrl, removeFile, listFiles, sa
 // Documents par defaut (reutilises sur tous les manuels, sauf remplacement
 // projet par projet) — a uploader une fois dans le bucket "documents" via la
 // page Connaissances.
+// NOTE (2026-07-09) : attestation_ccq n'a PAS de defaut — contrairement a la
+// conformite CNESST (une lettre generale reutilisable pour toute l'entreprise),
+// les documents CCQ reels ("etat de situation") sont specifiques a CHAQUE
+// chantier (numero de projet, donneur d'ouvrage, dates du contrat...) — les
+// reutiliser d'un projet a l'autre serait FAUX, pas juste incomplet. Voir
+// calculerStatutSections() : la CCQ reste "obligatoire sans defaut possible".
 const DEFAUTS = {
   manuel_entretien: 'manuels-defauts/manuel-entretien-preventif.pdf',
   attestation_cnesst: 'manuels-defauts/attestation-cnesst.pdf',
-  attestation_ccq: 'manuels-defauts/attestation-ccq.pdf',
+  garantie_t3e: 'manuels-defauts/garantie-t3e.pdf',
   brochure_marketing: 'manuels-defauts/guide-toitures-bp.pdf',
 };
 
@@ -32,13 +38,112 @@ const DEFAUTS = {
 const CATEGORIES_DOCUMENTS = [
   { cle: 'dessins_atelier', multiple: true },
   { cle: 'fiches_techniques', multiple: true },
+  { cle: 'fiches_securite', multiple: true },
   { cle: 'plans_as_built', multiple: true },
+  { cle: 'garantie_t3e', multiple: true },
   { cle: 'garantie_fabricant', multiple: true },
   { cle: 'attestation_cnesst', multiple: false },
   { cle: 'attestation_ccq', multiple: false },
   { cle: 'plan', multiple: true },
   { cle: 'brochure_marketing', multiple: false },
 ];
+
+// ══════════════════════════════════════════════════════════════
+//  VÉRIFICATION AVANT GÉNÉRATION (priorité utilisateur #1) — évite qu'une
+//  section obligatoire (garantie, attestation, FT, SDS, plans...) se
+//  retrouve vide dans le PDF final SANS QUE PERSONNE NE S'EN APERÇOIVE.
+//  Chaque section a un statut ('presente'/'manquante'/'non_applicable') et
+//  une regle : les sections "systeme" (defaut T3E) ne peuvent JAMAIS etre
+//  marquees non applicables — si elles manquent, c'est le defaut lui-meme
+//  qu'il faut fournir (voir DEFAUTS), pas une decision projet par projet.
+// ══════════════════════════════════════════════════════════════
+const CHECKLIST_ITEMS = [
+  'Inspection de tous les éléments émergeant de la membrane de toiture (évents, ventilateurs, cheminées, etc.).',
+  'Vérification de tous les drains.',
+  'Vérification de la condition générale de la couverture (débris, clous, feuilles, saletés, sédiments et autres matériaux).',
+  'Inspection de la membrane et de tous ses joints (éviter entreposage, tables, chaises, décorations).',
+  'Vérification de l’étanchéité de tous les solins métalliques, si applicable.',
+  'Vérification de la présence de granules en quantité suffisante sur toute la surface de la membrane.',
+  'Communication aux personnes concernées de toute anomalie des éléments environnants et reliés à la couverture.',
+  'Vérification des équipements mécaniques installés sur la toiture (supports, fixations, étanchéité des pénétrations).',
+  'Anomalie(s) ou autre(s) problème(s) observé(s).',
+];
+
+const SECTIONS_VERIFICATION = [
+  { cle: 'garantie_t3e', label: 'Garantie T3E', defautCle: 'garantie_t3e.pdf', peutEtreNonApplicable: false },
+  { cle: 'garantie_fabricant', label: 'Garantie fabricant', peutEtreNonApplicable: true },
+  { cle: 'manuel_entretien', label: "Manuel d'entretien préventif", documentsCle: null, defautCle: 'manuel-entretien-preventif.pdf', peutEtreNonApplicable: false },
+  { cle: 'fiches_techniques', label: 'Fiches techniques', peutEtreNonApplicable: false },
+  { cle: 'fiches_securite', label: 'Fiches de sécurité (SDS)', peutEtreNonApplicable: true },
+  { cle: 'attestation_cnesst', label: 'Attestation CNESST', defautCle: 'attestation-cnesst.pdf', peutEtreNonApplicable: false, verifierExpiration: true },
+  { cle: 'attestation_ccq', label: 'Attestation CCQ', peutEtreNonApplicable: false },
+  { cle: 'plans_as_built', label: 'Plans tels que construits (as-built)', repliCle: 'plan', peutEtreNonApplicable: true },
+];
+
+// Best-effort, UNIQUEMENT pour un format de date connu et sans ambiguite
+// (lettre CNESST officielle : "Date de fin de la période de validité de
+// l'attestation : 30 septembre 2026") — jamais de detection approximative
+// sur un document dont le format n'est pas garanti, mieux vaut ne rien
+// affirmer que d'affirmer une date fausse.
+const MOIS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+function extraireDateExpirationCnesst(texte) {
+  const m = texte.match(/p[ée]riode de validit[ée] de l['’]attestation\s*:\s*(\d{1,2})\s+([a-zéû]+)\s+(\d{4})/i);
+  if (!m) return null;
+  const mois = MOIS_FR.indexOf(m[2].toLowerCase());
+  if (mois === -1) return null;
+  return new Date(parseInt(m[3]), mois, parseInt(m[1]));
+}
+
+async function calculerStatutSections(documents, nonApplicables) {
+  let defautsExistants = [];
+  try {
+    const entries = await listFiles(BUCKETS.DOCUMENTS, 'manuels-defauts');
+    defautsExistants = entries.map((e) => e.name);
+  } catch (e) {
+    console.error('[manuels] Impossible de lister manuels-defauts:', e.message);
+  }
+
+  const resultats = [];
+  for (const section of SECTIONS_VERIFICATION) {
+    const na = (nonApplicables || {})[section.cle];
+    if (na && na.note) {
+      resultats.push({ ...section, statut: 'non_applicable', note: na.note });
+      continue;
+    }
+
+    const docsProjet = (documents[section.cle] || []).concat(
+      section.repliCle ? (documents[section.repliCle] || []) : []
+    );
+    const aUnDefaut = section.defautCle ? defautsExistants.includes(section.defautCle) : false;
+
+    let statut;
+    if (docsProjet.length > 0) statut = 'presente';
+    else if (aUnDefaut) statut = 'presente';
+    else if (section.defautCle) statut = 'defaut_manquant'; // fichier systeme jamais uploade — pas une decision "projet"
+    else statut = 'manquante';
+
+    let expirationInfo = null;
+    if (statut === 'presente' && section.verifierExpiration) {
+      try {
+        const bufs = docsProjet.length > 0
+          ? await chargerBuffersCategorie(documents[section.cle])
+          : [await downloadBuffer(BUCKETS.DOCUMENTS, `manuels-defauts/${section.defautCle}`)];
+        for (const buf of bufs) {
+          if (!buf) continue;
+          const { text } = await parsePdfBuffer(buf);
+          const dateExp = extraireDateExpirationCnesst(text || '');
+          if (dateExp) { expirationInfo = dateExp; break; }
+        }
+      } catch (e) {
+        console.error('[manuels] Vérification expiration échouée pour', section.cle, ':', e.message);
+      }
+      if (expirationInfo && expirationInfo.getTime() < Date.now()) statut = 'expiree';
+    }
+
+    resultats.push({ ...section, statut, dateExpiration: expirationInfo });
+  }
+  return resultats;
+}
 
 // Champs de garantie conservés en base pour référence interne (affichés sur
 // la page de révision) mais jamais imprimés dans le manuel — la section
@@ -254,17 +359,7 @@ router.get('/reviser/:id', async (req, res) => {
   let data;
   try { data = JSON.parse(row.contenu); } catch (_) { data = {}; }
 
-  const CHECKLIST_ITEMS = [
-    'Inspection de tous les éléments émergeant de la membrane de toiture (évents, ventilateurs, cheminées, etc.).',
-    'Vérification de tous les drains.',
-    'Vérification de la condition générale de la couverture (débris, clous, feuilles, saletés, sédiments et autres matériaux).',
-    'Inspection de la membrane et de tous ses joints (éviter entreposage, tables, chaises, décorations).',
-    'Vérification de l’étanchéité de tous les solins métalliques, si applicable.',
-    'Vérification de la présence de granules en quantité suffisante sur toute la surface de la membrane.',
-    'Communication aux personnes concernées de toute anomalie des éléments environnants et reliés à la couverture.',
-    'Vérification des équipements mécaniques installés sur la toiture (supports, fixations, étanchéité des pénétrations).',
-    'Anomalie(s) ou autre(s) problème(s) observé(s).',
-  ];
+  const statutSections = await calculerStatutSections(data.documents || {}, data.non_applicable || {});
 
   res.render('manuel-reviser', {
     manuel: row,
@@ -272,6 +367,8 @@ router.get('/reviser/:id', async (req, res) => {
     documents: data.documents || {},
     iaErreur: data.ia_erreur || '',
     checklistItems: CHECKLIST_ITEMS,
+    statutSections,
+    blocageMessage: '',
   });
 });
 
@@ -332,6 +429,41 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
     champs[cleChamp] = (req.body[cleChamp] || '').trim();
   }
 
+  // ── Vérification avant génération (priorité #1) : une section obligatoire
+  // manquante ne doit JAMAIS produire un manuel incomplet en silence. Les
+  // sections qui le permettent peuvent être marquées "non applicable" AVEC
+  // une note obligatoire — sans note, la case ne compte pas.
+  const nonApplicables = { ...(data.non_applicable || {}) };
+  for (const section of SECTIONS_VERIFICATION) {
+    if (!section.peutEtreNonApplicable) continue;
+    const coche = req.body['non_applicable_' + section.cle] === '1';
+    const note = (req.body['note_non_applicable_' + section.cle] || '').trim();
+    if (coche && note) nonApplicables[section.cle] = { note, date: new Date().toISOString() };
+    else if (!coche) delete nonApplicables[section.cle];
+  }
+
+  const statutSections = await calculerStatutSections(documents, nonApplicables);
+  const sectionsBloquantes = statutSections.filter((s) => s.statut === 'manquante' || s.statut === 'defaut_manquant');
+
+  // On sauvegarde toujours les reponses (champs + non-applicables), meme si
+  // on bloque — pour ne jamais faire perdre la saisie de l'utilisateur.
+  await db.execute({
+    sql: `UPDATE manuels SET contenu = ? WHERE id = ?`,
+    args: [JSON.stringify({ ...data, champs, documents, non_applicable: nonApplicables }), id],
+  });
+
+  if (sectionsBloquantes.length > 0) {
+    return res.render('manuel-reviser', {
+      manuel: row,
+      champs,
+      documents,
+      iaErreur: data.ia_erreur || '',
+      checklistItems: CHECKLIST_ITEMS,
+      statutSections,
+      blocageMessage: 'Impossible de générer le manuel final : ' + sectionsBloquantes.map((s) => `« ${s.label} » est manquante`).join(', ') + '. Fournissez le document manquant, ou cochez « Non applicable » avec une note si la section ne s\'applique pas à ce projet.',
+    });
+  }
+
   // Les 4 champs de garantie restent en base pour reference interne mais ne
   // doivent jamais etre imprimes (la section Garanties du .docx ne contient
   // plus que le titre — voir CHAMPS_GARANTIE_NON_IMPRIMES).
@@ -370,18 +502,24 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
     manuelEntretienBuf,
     attestationCnesstBufs,
     attestationCcqBufs,
+    garantieT3EBufs,
     garantieBufs,
     dessinsAtelierBufs,
     fichesTechniquesBufs,
+    fichesSecuriteBufs,
     plansAsBuiltBufs,
     brochureBufs,
   ] = await Promise.all([
     downloadBuffer(BUCKETS.DOCUMENTS, DEFAUTS.manuel_entretien),
     chargerAvecDefaut(documents.attestation_cnesst, DEFAUTS.attestation_cnesst),
-    chargerAvecDefaut(documents.attestation_ccq, DEFAUTS.attestation_ccq),
+    // Pas de defaut pour la CCQ (voir commentaire sur DEFAUTS ci-dessus) —
+    // uniquement le document specifique a CE projet, s'il a ete uploade.
+    chargerBuffersCategorie(documents.attestation_ccq),
+    chargerAvecDefaut(documents.garantie_t3e, DEFAUTS.garantie_t3e),
     chargerBuffersCategorie(documents.garantie_fabricant),
     chargerBuffersCategorie(documents.dessins_atelier),
     chargerBuffersCategorie(documents.fiches_techniques),
+    chargerBuffersCategorie(documents.fiches_securite),
     chargerBuffersCategorie(plansSourceDocs),
     chargerAvecDefaut(documents.brochure_marketing, DEFAUTS.brochure_marketing),
   ]);
@@ -444,12 +582,14 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
     // sommaire, toujours juste apres Directives d'exploitation et d'entretien.
     for (const buf of brochureBufs) await ajouterBufferAuDocument(pdfDoc, buf);
 
-    await ajouterSection('Garanties', garantieBufs);
+    await ajouterSection('Garantie T3E', garantieT3EBufs);
+    await ajouterSection('Garantie du fabricant', garantieBufs);
     await ajouterSection("Manuel d'entretien préventif", manuelEntretienBuf ? [manuelEntretienBuf] : []);
     await ajouterSection('Attestation de conformité CNESST', attestationCnesstBufs);
     await ajouterSection('Attestation de conformité CCQ', attestationCcqBufs);
     await ajouterSection("Dessins d'atelier", dessinsAtelierBufs);
     await ajouterSection('Fiches techniques', fichesTechniquesBufs);
+    await ajouterSection('Fiches de sécurité (SDS)', fichesSecuriteBufs);
     await ajouterSection('Plans tels que construits (as-built)', plansAsBuiltBufs, { tamponner: true });
 
     await construireSommaireEtNumeroter(pdfDoc, sections);
@@ -467,7 +607,7 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
 
   await db.execute({
     sql: `UPDATE manuels SET statut = 'approuve', contenu = ?, titre = ?, numero_dossier = ? WHERE id = ?`,
-    args: [JSON.stringify({ champs, documents, ia_erreur: data.ia_erreur || '' }), champs.NOM_DU_PROJET || row.titre, champs.NUMERO_DOSSIER || row.numero_dossier, id],
+    args: [JSON.stringify({ champs, documents, non_applicable: nonApplicables, ia_erreur: data.ia_erreur || '' }), champs.NOM_DU_PROJET || row.titre, champs.NUMERO_DOSSIER || row.numero_dossier, id],
   });
 
   // Redirection vers une URL signee Supabase plutot que d'envoyer le buffer

@@ -24,6 +24,53 @@
     </div>
     <% } %>
 
+    <% if (blocageMessage) { %>
+    <div class="alert alert-danger"><i class="bi bi-exclamation-octagon"></i> <%= blocageMessage %></div>
+    <% } %>
+
+    <!-- Verification avant generation : statut de chaque section obligatoire,
+         pour ne jamais livrer un manuel avec une section vide sans le savoir. -->
+    <div class="card mb-3 border-warning">
+      <div class="card-header bg-warning-subtle py-2"><h6 class="mb-0"><i class="bi bi-clipboard-check"></i> Vérification avant génération</h6></div>
+      <div class="card-body">
+        <table class="table table-sm align-middle mb-0">
+          <thead><tr><th>Section</th><th>Statut</th><th></th></tr></thead>
+          <tbody>
+            <% statutSections.forEach(function(s) { %>
+            <tr>
+              <td><%= s.label %></td>
+              <td>
+                <% if (s.statut === 'presente') { %>
+                  <span class="badge bg-success">Présente</span>
+                  <% if (s.dateExpiration) { %><small class="text-muted ms-1">valide jusqu'au <%= s.dateExpiration.toLocaleDateString('fr-CA') %></small><% } %>
+                <% } else if (s.statut === 'expiree') { %>
+                  <span class="badge bg-danger">Expirée<% if (s.dateExpiration) { %> (<%= s.dateExpiration.toLocaleDateString('fr-CA') %>)<% } %></span>
+                <% } else if (s.statut === 'non_applicable') { %>
+                  <span class="badge bg-secondary">Non applicable</span>
+                  <div class="small text-muted"><%= s.note %></div>
+                <% } else if (s.statut === 'defaut_manquant') { %>
+                  <span class="badge bg-danger">Fichier système manquant</span>
+                  <div class="small text-muted">Aucun document par défaut n'a été uploadé pour cette section — à ajouter dans Connaissances (<code>manuels-defauts/<%= s.defautCle %></code>), pas une décision projet par projet.</div>
+                <% } else { %>
+                  <span class="badge bg-danger">Manquante</span>
+                <% } %>
+              </td>
+              <td>
+                <% if (s.peutEtreNonApplicable && (s.statut === 'manquante')) { %>
+                <div class="form-check form-check-inline">
+                  <input class="form-check-input non-applicable-check" type="checkbox" value="1" name="non_applicable_<%= s.cle %>" id="na_<%= s.cle %>" form="formGenerer">
+                  <label class="form-check-label small" for="na_<%= s.cle %>">Non applicable</label>
+                </div>
+                <input type="text" class="form-control form-control-sm d-inline-block note-non-applicable" style="width:auto;max-width:260px" name="note_non_applicable_<%= s.cle %>" id="note_<%= s.cle %>" placeholder="Note obligatoire (pourquoi ?)" form="formGenerer" disabled>
+                <% } %>
+              </td>
+            </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <form method="POST" action="/manuels/generer/<%= manuel.id %>" id="formGenerer">
 
       <!-- Couverture -->
@@ -151,13 +198,14 @@
     <div class="card mb-4">
       <div class="card-header bg-light py-2"><h6 class="mb-0"><i class="bi bi-paperclip"></i> Documents fournis</h6></div>
       <div class="card-body">
-        <% var labelsDocs = { dessins_atelier: 'Dessins d\'atelier', fiches_techniques: 'Fiches techniques', plans_as_built: 'Plans tels que construits', plan: 'Plan(s) du projet (repli si pas d\'as-built)', garantie_fabricant: 'Certificats de garantie (T3E + fabricant)', attestation_cnesst: 'Attestation CNESST', attestation_ccq: 'Attestation CCQ', brochure_marketing: 'Brochure marketing' }; %>
+        <% var labelsDocs = { dessins_atelier: 'Dessins d\'atelier', fiches_techniques: 'Fiches techniques', fiches_securite: 'Fiches de sécurité (SDS)', plans_as_built: 'Plans tels que construits', plan: 'Plan(s) du projet (repli si pas d\'as-built)', garantie_t3e: 'Garantie T3E', garantie_fabricant: 'Garantie fabricant', attestation_cnesst: 'Attestation CNESST', attestation_ccq: 'Attestation CCQ (aucun défaut — par projet)', brochure_marketing: 'Brochure marketing' }; %>
+        <% var avecDefaut = ['attestation_cnesst', 'garantie_t3e', 'brochure_marketing']; %>
         <% Object.keys(labelsDocs).forEach(function(cle) { %>
         <div class="mb-1">
           <strong><%= labelsDocs[cle] %> :</strong>
           <% if (documents[cle] && documents[cle].length > 0) { %>
             <% documents[cle].forEach(function(d) { %><span class="badge bg-success bg-opacity-75 me-1"><i class="bi bi-file-earmark-pdf"></i> <%= d.nom %></span><% }); %>
-          <% } else if (cle === 'attestation_cnesst' || cle === 'attestation_ccq' || cle === 'brochure_marketing') { %>
+          <% } else if (avecDefaut.indexOf(cle) !== -1) { %>
             <span class="badge bg-secondary">Défaut T3E</span>
           <% } else { %>
             <span class="text-muted small">Aucun</span>
@@ -172,12 +220,14 @@
           <div class="row g-2">
             <div class="col-md-6"><label class="form-label small">Dessins d'atelier</label><input type="file" id="ajoutDessins" class="form-control form-control-sm" accept=".pdf" multiple></div>
             <div class="col-md-6"><label class="form-label small">Fiches techniques</label><input type="file" id="ajoutFT" class="form-control form-control-sm" accept=".pdf" multiple></div>
+            <div class="col-md-6"><label class="form-label small">Fiches de sécurité (SDS)</label><input type="file" id="ajoutSDS" class="form-control form-control-sm" accept=".pdf" multiple></div>
             <div class="col-md-6"><label class="form-label small">Plans tels que construits</label><input type="file" id="ajoutAsBuilt" class="form-control form-control-sm" accept=".pdf" multiple></div>
             <div class="col-md-6"><label class="form-label small">Plan(s) du projet</label><input type="file" id="ajoutPlan" class="form-control form-control-sm" accept=".pdf" multiple></div>
-            <div class="col-md-6"><label class="form-label small">Certificats de garantie</label><input type="file" id="ajoutGarantieFab" class="form-control form-control-sm" accept=".pdf" multiple></div>
+            <div class="col-md-6"><label class="form-label small">Garantie T3E (si différente du défaut)</label><input type="file" id="ajoutGarantieT3E" class="form-control form-control-sm" accept=".pdf" multiple></div>
+            <div class="col-md-6"><label class="form-label small">Garantie fabricant</label><input type="file" id="ajoutGarantieFab" class="form-control form-control-sm" accept=".pdf" multiple></div>
             <div class="col-md-6"><label class="form-label small">Brochure marketing</label><input type="file" id="ajoutBrochure" class="form-control form-control-sm" accept=".pdf"></div>
             <div class="col-md-6"><label class="form-label small">Attestation CNESST</label><input type="file" id="ajoutCnesst" class="form-control form-control-sm" accept=".pdf"></div>
-            <div class="col-md-6"><label class="form-label small">Attestation CCQ</label><input type="file" id="ajoutCcq" class="form-control form-control-sm" accept=".pdf"></div>
+            <div class="col-md-6"><label class="form-label small">Attestation CCQ (spécifique à ce projet)</label><input type="file" id="ajoutCcq" class="form-control form-control-sm" accept=".pdf"></div>
           </div>
           <button type="submit" class="btn btn-outline-primary btn-sm mt-3" id="btnAjoutDocs">
             <i class="bi bi-upload"></i> Ajouter ces documents
@@ -218,8 +268,10 @@ formAjoutDocs.addEventListener('submit', function(e) {
   var inputsMultiples = {
     dessins_atelier: document.getElementById('ajoutDessins'),
     fiches_techniques: document.getElementById('ajoutFT'),
+    fiches_securite: document.getElementById('ajoutSDS'),
     plans_as_built: document.getElementById('ajoutAsBuilt'),
     plan: document.getElementById('ajoutPlan'),
+    garantie_t3e: document.getElementById('ajoutGarantieT3E'),
     garantie_fabricant: document.getElementById('ajoutGarantieFab'),
   };
   var inputsUniques = {
