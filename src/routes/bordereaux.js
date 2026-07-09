@@ -572,14 +572,8 @@ async function rechercherProduitsEtFT(db, q) {
 
 router.get('/_debug-schema', async (req, res) => {
   try {
-    const bordereaux = await req.db.execute("PRAGMA table_info(bordereaux)");
-    let historique;
-    try {
-      historique = await req.db.execute("PRAGMA table_info(historique_bordereaux)");
-    } catch (e) {
-      historique = { rows: [], error: e.message };
-    }
-    res.json({ bordereaux: bordereaux.rows, historique_bordereaux: historique.rows, historique_error: historique.error || null });
+    const sqlDef = await req.db.execute("SELECT name, sql FROM sqlite_master WHERE type='table' AND name IN ('bordereaux','historique_bordereaux')");
+    res.json({ definitions: sqlDef.rows });
   } catch (e) {
     res.json({ error: e.message });
   }
