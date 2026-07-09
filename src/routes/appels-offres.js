@@ -178,6 +178,10 @@ router.post('/actualiser', async (req, res) => {
 router.get('/:id', async (req, res) => {
   const db = req.db;
   const id = parseInt(req.params.id);
+  // Route "attrape-tout" (:id) — un id non numerique (ex. vieux lien vers
+  // /nouveau ou /rapide, retires) doit rediriger proprement plutot que de
+  // faire echouer la requete SQL (NaN comme parametre).
+  if (isNaN(id)) return res.redirect('/appels-offres');
   const r = await db.execute({ sql: 'SELECT * FROM appels_offres_seao WHERE id = ?', args: [id] });
   if (r.rows.length === 0) return res.redirect('/appels-offres');
 
