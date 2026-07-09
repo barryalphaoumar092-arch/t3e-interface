@@ -29,10 +29,21 @@
         <i class="bi bi-cursor"></i> Positionner les champs manuellement
       </a>
       <% } %>
+      <div class="d-flex align-items-center gap-2">
+        <label for="representantSelect" class="form-label mb-0 small text-nowrap">Représentant du dossier :</label>
+        <select id="representantSelect" class="form-select form-select-sm" style="max-width:240px">
+          <option value="">— Sélectionner —</option>
+          <% representants.forEach(r => { %>
+          <option value="<%= r.id %>"><%= r.prenom %> <%= r.nom %> (<%= r.poste %>)</option>
+          <% }) %>
+        </select>
+      </div>
       <form method="POST" action="/appels-offres/<%= appel.id %>/formulaire/<%= formulaire.id %>/remplir">
+        <input type="hidden" name="representant_id" class="champ-representant-id">
         <button type="submit" class="btn btn-warning"><i class="bi bi-magic"></i> <%= formulaire.positions && formulaire.positions !== '{}' ? 'Générer avec les positions placées' : "Pré-remplir avec l'IA" %></button>
       </form>
       <form method="POST" action="/appels-offres/<%= appel.id %>/formulaire/<%= formulaire.id %>/remplir?recalculer=1" title="Force une nouvelle analyse IA de la base de connaissances (ignore le cache de 30 jours) — utile après avoir ajouté un document.">
+        <input type="hidden" name="representant_id" class="champ-representant-id">
         <button type="submit" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-repeat"></i> Réanalyser la base de connaissances</button>
       </form>
       <% if (formulaire.cle_storage_rempli) { %>
@@ -98,4 +109,9 @@
 <div class="alert alert-secondary">Cliquez sur "Pré-remplir avec l'IA" pour lancer le remplissage automatique à partir de la base de connaissances (NEQ, RBQ, assurances, certifications...).</div>
 <% } %>
 
+<script>
+  document.getElementById('representantSelect').addEventListener('change', function () {
+    document.querySelectorAll('.champ-representant-id').forEach((el) => { el.value = this.value; });
+  });
+</script>
 <%- include('partials/footer', { scripts: [] }) %>

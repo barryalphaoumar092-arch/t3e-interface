@@ -565,6 +565,7 @@ const ANALYSE_INFOS_ENTREPRISE_SCHEMA = {
     CAUTIONNEMENT: { type: 'string' },
     CERTIFICATIONS: { type: 'array', items: { type: 'string' } },
     SIGNATAIRE_AUTORISE: { type: 'string' },
+    REPRESENTANT_NOM: { type: 'string' },
     REPRESENTANT_TITRE: { type: 'string' },
     REPRESENTANT_COURRIEL: { type: 'string' },
     REPRESENTANT_TELEPHONE: { type: 'string' },
@@ -582,7 +583,7 @@ const ANALYSE_INFOS_ENTREPRISE_SCHEMA = {
     'NEQ', 'RBQ', 'NOM_ENTREPRISE', 'ADRESSE_ENTREPRISE', 'TELEPHONE_ENTREPRISE',
     'TELECOPIEUR_ENTREPRISE', 'SITE_WEB', 'COURRIEL_ENTREPRISE', 'TPS_TVH', 'TVQ',
     'ASSURANCE_RESPONSABILITE_CIVILE', 'ASSURANCE_AUTOMOBILE', 'CAUTIONNEMENT',
-    'CERTIFICATIONS', 'SIGNATAIRE_AUTORISE', 'REPRESENTANT_TITRE',
+    'CERTIFICATIONS', 'SIGNATAIRE_AUTORISE', 'REPRESENTANT_NOM', 'REPRESENTANT_TITRE',
     'REPRESENTANT_COURRIEL', 'REPRESENTANT_TELEPHONE', 'REPRESENTANT_CELLULAIRE',
     'FORME_JURIDIQUE', 'NOMBRE_EMPLOYES_QUEBEC', 'CNESST_STATUT', 'FRANCISATION_STATUT',
     'AMP_NUMERO_CLIENT', 'AMP_ECHEANCE', 'AVERTISSEMENTS', 'confiance',
@@ -603,6 +604,7 @@ const SYSTEM_INFOS_ENTREPRISE = `Tu extrais les informations d'entreprise de Toi
 - CAUTIONNEMENT : information de cautionnement d'exécution si disponible, sinon ""
 - CERTIFICATIONS : liste courte des certifications/memberships pertinents trouvés (ex: "ISO 9001", "AMCQ", "APECQ", "NRCA", "CRCA", "Safe Contractor")
 - SIGNATAIRE_AUTORISE : nom complet de la personne autorisée à signer pour T3E (président, administrateur, OU le représentant/estimateur désigné dans une résolution de compagnie — cherche dans une résolution de compagnie en priorité, sinon la personne à qui sont adressées les lettres officielles de la CNESST/OQLF/AMP)
+- REPRESENTANT_NOM : nom complet de la personne désignée comme "représentant" du soumissionnaire pour CE dossier (distinct de SIGNATAIRE_AUTORISE quand un formulaire distingue les deux — ex: un estimateur nommé "représentant" alors que le signataire légal est le président). Si le site a déjà assigné un profil de représentant pour ce dossier, cette valeur est remplacée par celle du profil sélectionné — ne cherche dans les documents que si aucun profil n'est fourni.
 - REPRESENTANT_TITRE : titre/fonction de cette personne (ex: "Estimateur", "Président") si trouvé
 - REPRESENTANT_COURRIEL, REPRESENTANT_TELEPHONE, REPRESENTANT_CELLULAIRE : coordonnées directes de cette personne si mentionnées (souvent une adresse courriel nominative @t3e.co)
 - FORME_JURIDIQUE : forme juridique de T3E si mentionnée (ex: "Société par actions, régime provincial (Québec)")

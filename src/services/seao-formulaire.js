@@ -17,7 +17,8 @@ const NOMS_LISIBLES = {
   COURRIEL_ENTREPRISE: 'Courriel corporatif', TPS_TVH: 'TPS/TVH', TVQ: 'TVQ',
   ASSURANCE_RESPONSABILITE_CIVILE: 'Assurance responsabilité civile',
   ASSURANCE_AUTOMOBILE: 'Assurance automobile', CAUTIONNEMENT: 'Cautionnement',
-  SIGNATAIRE_AUTORISE: 'Signataire autorisé', REPRESENTANT_TITRE: 'Titre du représentant',
+  SIGNATAIRE_AUTORISE: 'Signataire autorisé', REPRESENTANT_NOM: 'Nom du représentant',
+  REPRESENTANT_TITRE: 'Titre du représentant',
   REPRESENTANT_COURRIEL: 'Courriel du représentant', REPRESENTANT_TELEPHONE: 'Téléphone du représentant',
   REPRESENTANT_CELLULAIRE: 'Cellulaire du représentant',
   FORME_JURIDIQUE: 'Forme juridique', NOMBRE_EMPLOYES_QUEBEC: 'Nombre d\'employés au Québec',
@@ -304,6 +305,26 @@ async function remplirFormulairePdfPlat(buf, infosEntreprise) {
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const ROUGE = rgb(0.784, 0.063, 0.180); // texte ajoute visuellement distinct de l'original
 
+  // Case a cocher (☐/□) — repere quand une ligne COMMENCE par ce glyphe (le
+  // texte extrait fusionne deja le glyphe + son libelle sur la meme ligne,
+  // voir extraireLignesParPage : le glyphe est TOUJOURS le premier item
+  // fusionne, donc ligne.x correspond a son origine reelle). Dessiner un
+  // "X" en TEXTE a cet endroit atterrit visiblement A COTE de la case plutot
+  // que DEDANS (probleme de metrique de police entre le glyphe source et la
+  // police utilisee pour l'overlay) — un "X" VECTORIEL (deux traits
+  // diagonaux) dans une petite boite centree sur l'origine du glyphe reste
+  // correct quelle que soit la police d'origine.
+  const REGEX_CASE_A_COCHER = /^[☐□❑▢]/;
+  function estLigneCheckbox(ligne) {
+    return REGEX_CASE_A_COCHER.test(ligne.texte.trim());
+  }
+  function cocherCase(page, ligne) {
+    const taille = 8;
+    const x0 = ligne.x, y0 = ligne.y, x1 = ligne.x + taille, y1 = ligne.y + taille;
+    page.drawLine({ start: { x: x0, y: y0 }, end: { x: x1, y: y1 }, thickness: 1.1, color: ROUGE });
+    page.drawLine({ start: { x: x0, y: y1 }, end: { x: x1, y: y0 }, thickness: 1.1, color: ROUGE });
+  }
+
   // Un vrai formulaire SEAO separe souvent le libelle ("Adresse :") de sa
   // ligne a blanc ("________") — parfois sur la MEME ligne (le blanc suit le
   // libelle), parfois sur la ligne SUIVANTE (le libelle seul, le blanc en
@@ -323,6 +344,17 @@ async function remplirFormulairePdfPlat(buf, infosEntreprise) {
     if (!entree) { champsNonPlaces.push(NOMS_LISIBLES[cle] || cle); continue; }
     try {
       const page = pdfDoc.getPage(entree.page);
+      if (estLigneCheckbox(entree.ligne)) {
+        // NOTE : une seule case est cochee par champ (mapperChampsBordereau
+        // ne retourne qu'un seul index par cle) — un fait necessitant
+        // PLUSIEURS cases cochees simultanement (ex. un statut juridique
+        // combinant "Societe par actions" + "Regime provincial" + un
+        // troisieme choix) ne sera donc que partiellement coche. Limitation
+        // connue, documentee, a ameliorer si ce cas devient frequent.
+        cocherCase(page, entree.ligne);
+        champsPlaces.push(cle);
+        continue;
+      }
       let ligneCible = entree.ligne;
       let decalageX;
       const posBlancMemeLigne = trouverDebutBlanc(entree.ligne.texte);

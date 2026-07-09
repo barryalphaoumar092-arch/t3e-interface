@@ -13,6 +13,7 @@ const {
 const { fillTemplatePdf } = require('../services/pdf-filler');
 const { joindreAnnexesReelles } = require('../services/seao-annexes');
 const { downloadBuffer, uploadBuffer, removeFile, createSignedUrl, sanitizeKey, BUCKETS } = require('../services/storage');
+const { listerRepresentants, obtenirRepresentant, champsRepresentant } = require('../services/representants');
 
 const STATUTS = ['a_analyser', 'interessant', 'a_soumissionner', 'refuse', 'depose', 'perdu', 'gagne'];
 const LABELS_STATUT = {
@@ -317,7 +318,7 @@ router.get('/:id/formulaire/:formId', async (req, res) => {
 
   res.render('appel-offre-formulaire', {
     appel: appelR.rows[0], formulaire: r.rows[0], champsDetectes, champsNonPlaces,
-    zonesAvecChamps, ZONES,
+    zonesAvecChamps, ZONES, representants: listerRepresentants(),
     erreur: req.query.erreur || '',
   });
 });
@@ -404,6 +405,13 @@ router.post('/:id/formulaire/:formId/remplir', async (req, res) => {
     // de document dans la base de connaissances).
     const infos = await obtenirInfosEntreprise(db, { forcerRecalcul: req.query.recalculer === '1' });
     if (infos.error) throw new Error(infos.error);
+
+    // Représentant désigné pour CE dossier (choisi par l'utilisateur avant de
+    // lancer le remplissage) — écrase toujours ce que l'IA aurait pu deviner
+    // depuis les documents génériques de l'entreprise : une sélection humaine
+    // explicite pour un dossier précis est plus fiable qu'une extraction.
+    const representant = obtenirRepresentant(req.body && req.body.representant_id);
+    if (representant) Object.assign(infos, champsRepresentant(representant));
 
     const ext = (formulaire.format || '').toLowerCase();
     let positionsSauvegardees = {};
