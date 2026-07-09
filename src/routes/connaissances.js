@@ -157,4 +157,32 @@ router.post('/supprimer/:id', async (req, res) => {
   res.redirect('/connaissances?success=removed');
 });
 
+// ── Reclassement ponctuel (a retirer apres execution) ────────────────────
+// 10 documents legacy classes par TYPE de document dans une categorie
+// ORGANISEE PAR SOURCE ("Certificats corporatifs", "Departement Service",
+// "Bordereaux et formulaires") -- deplaces vers Garanties (18) / Formulaires
+// (20), les 2 nouvelles categories creees pour la separation FT/SDS/Garanties
+// demandee par l'utilisateur. Approuve explicitement avant execution.
+const RECLASSEMENT_LEGACY = [
+  { id: 138, categorie_id: 18 }, // Certificat Garantie Carlisle DRAFT
+  { id: 162, categorie_id: 18 }, // SPECIMEN - GARANTIE T3E
+  { id: 164, categorie_id: 18 }, // SPECIMEN - GARANTIE T3E - ANGLAIS
+  { id: 163, categorie_id: 18 }, // SPECIMEN - Garantie MAMMOUTH PLATINUM - SBS
+  { id: 165, categorie_id: 18 }, // SPECIMEN - MAMMOUTH PLATINUM Warranty - SBS
+  { id: 296, categorie_id: 18 }, // 12. Garantie T3E 5 ans
+  { id: 264, categorie_id: 18 }, // Certificat Vierge Garantie ANGLAIS
+  { id: 297, categorie_id: 18 }, // GARANTIE Template FR
+  { id: 298, categorie_id: 18 }, // Warranty Template EN
+  { id: 34, categorie_id: 20 },  // Bordereau de transmission de fiche technique
+];
+
+router.post('/_reclasser-legacy', async (req, res) => {
+  if (req.body.mdp_admin !== MDP_ADMIN) return res.status(403).json({ error: 'mdp_admin invalide' });
+  const db = req.db;
+  for (const r of RECLASSEMENT_LEGACY) {
+    await db.execute({ sql: 'UPDATE documents SET categorie_id = ? WHERE id = ?', args: [r.categorie_id, r.id] });
+  }
+  res.json({ ok: true, total: RECLASSEMENT_LEGACY.length });
+});
+
 module.exports = router;
