@@ -284,18 +284,23 @@ const MAPPING_REPARATION_LEGACY = [
   { id: 126, bucket: 'fiches-techniques', key: 'Event/T3E20- EVENT ALUMINIUM 5 PO.pdf' },
 ];
 
+// offset/limit : le lot complet (126 x download-de-verification + update)
+// depasse le delai d'une fonction serverless -- on traite par tranches.
 router.post('/_reparer-legacy', async (req, res) => {
   if (req.body.mdp_admin !== MDP_ADMIN) return res.status(403).json({ error: 'mdp_admin invalide' });
   const db = req.db;
-  const resultats = [];
-  for (const m of MAPPING_REPARATION_LEGACY) {
+  const offset = parseInt(req.query.offset) || 0;
+  const limit = parseInt(req.query.limit) || MAPPING_REPARATION_LEGACY.length;
+  const lot = MAPPING_REPARATION_LEGACY.slice(offset, offset + limit);
+
+  const resultats = await Promise.all(lot.map(async (m) => {
     const buf = await downloadBuffer(m.bucket, m.key);
-    if (!buf) { resultats.push({ id: m.id, ok: false, raison: 'fichier candidat introuvable' }); continue; }
+    if (!buf) return { id: m.id, ok: false, raison: 'fichier candidat introuvable' };
     await db.execute({ sql: 'UPDATE documents SET chemin_fichier = ? WHERE id = ?', args: [`${m.bucket}/${m.key}`, m.id] });
-    resultats.push({ id: m.id, ok: true });
-  }
+    return { id: m.id, ok: true };
+  }));
   const echecs = resultats.filter((r) => !r.ok);
-  res.json({ total: resultats.length, ok: resultats.length - echecs.length, echecs });
+  res.json({ traites: resultats.length, ok: resultats.length - echecs.length, echecs, restants: Math.max(0, MAPPING_REPARATION_LEGACY.length - offset - limit) });
 });
 
 router.post('/supprimer/:id', async (req, res) => {
