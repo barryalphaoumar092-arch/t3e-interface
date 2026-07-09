@@ -1145,4 +1145,14 @@ router.post('/supprimer/:id', async (req, res) => {
   res.redirect('/bordereaux');
 });
 
+// ── SUPPRESSION MULTIPLE — évite de devoir supprimer un par un ──
+router.post('/supprimer-plusieurs', express.urlencoded({ extended: true }), async (req, res) => {
+  const ids = [].concat(req.body.ids || []).map(id => parseInt(id)).filter(id => !isNaN(id));
+  for (const id of ids) {
+    try { await req.db.execute({ sql: 'DELETE FROM historique_bordereaux WHERE bordereau_id = ?', args: [id] }); } catch (_) {}
+    await req.db.execute({ sql: 'DELETE FROM bordereaux WHERE id = ?', args: [id] });
+  }
+  res.redirect('/bordereaux');
+});
+
 module.exports = router;

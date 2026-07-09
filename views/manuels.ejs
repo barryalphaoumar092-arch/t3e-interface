@@ -5,60 +5,98 @@
   <a href="/manuels/nouveau" class="btn btn-warning"><i class="bi bi-plus-circle"></i> Nouveau manuel</a>
 </div>
 
-<div class="table-responsive">
-  <table class="table table-hover align-middle">
-    <thead class="table-light">
-      <tr>
-        <th>#</th>
-        <th>Projet</th>
-        <th>N° dossier TTE</th>
-        <th>Statut</th>
-        <th>Date</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-      <% manuels.forEach(function(m) { %>
-      <tr>
-        <td class="text-muted"><%= m.id %></td>
-        <td><strong><%= m.titre || '-' %></strong></td>
-        <td><span class="badge bg-secondary"><%= m.numero_dossier || '-' %></span></td>
-        <td>
-          <% if (m.statut === 'approuve') { %>
-            <span class="badge bg-success">Généré</span>
-          <% } else { %>
-            <span class="badge bg-warning text-dark">Brouillon</span>
-          <% } %>
-        </td>
-        <td><small class="text-muted"><%= m.created_at ? m.created_at.substring(0,10) : '-' %></small></td>
-        <td>
-          <a href="/manuels/reviser/<%= m.id %>" class="btn btn-sm btn-outline-primary" title="Réviser">
-            <i class="bi bi-pencil"></i>
-          </a>
-          <% if (m.statut === 'approuve') { %>
-          <a href="/manuels/telecharger/<%= m.id %>" class="btn btn-sm btn-outline-success" title="Télécharger le PDF">
-            <i class="bi bi-download"></i> PDF
-          </a>
-          <% } %>
-          <form method="POST" action="/manuels/supprimer/<%= m.id %>" style="display:inline" onsubmit="return confirm('Supprimer ce manuel ?')">
-            <button type="submit" class="btn btn-sm btn-outline-danger" title="Supprimer">
+<form method="POST" action="/manuels/supprimer-plusieurs" id="formSuppressionMultiple" onsubmit="return confirm('Supprimer les manuels sélectionnés ? Cette action est irréversible.')">
+  <div class="d-flex align-items-center gap-2 mb-2">
+    <button type="submit" class="btn btn-outline-danger btn-sm" id="btnSupprimerSelection" disabled>
+      <i class="bi bi-trash"></i> Supprimer la sélection (<span id="compteurSelection">0</span>)
+    </button>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead class="table-light">
+        <tr>
+          <th style="width:2rem"><input type="checkbox" class="form-check-input" id="cocherTout"></th>
+          <th>#</th>
+          <th>Projet</th>
+          <th>N° dossier TTE</th>
+          <th>Statut</th>
+          <th>Date</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% manuels.forEach(function(m) { %>
+        <tr>
+          <td><input type="checkbox" class="form-check-input case-ligne" name="ids" value="<%= m.id %>"></td>
+          <td class="text-muted"><%= m.id %></td>
+          <td><strong><%= m.titre || '-' %></strong></td>
+          <td><span class="badge bg-secondary"><%= m.numero_dossier || '-' %></span></td>
+          <td>
+            <% if (m.statut === 'approuve') { %>
+              <span class="badge bg-success">Généré</span>
+            <% } else { %>
+              <span class="badge bg-warning text-dark">Brouillon</span>
+            <% } %>
+          </td>
+          <td><small class="text-muted"><%= m.created_at ? m.created_at.substring(0,10) : '-' %></small></td>
+          <td>
+            <a href="/manuels/reviser/<%= m.id %>" class="btn btn-sm btn-outline-primary" title="Réviser">
+              <i class="bi bi-pencil"></i>
+            </a>
+            <% if (m.statut === 'approuve') { %>
+            <a href="/manuels/telecharger/<%= m.id %>" class="btn btn-sm btn-outline-success" title="Télécharger le PDF">
+              <i class="bi bi-download"></i> PDF
+            </a>
+            <% } %>
+            <button type="button" class="btn btn-sm btn-outline-danger btn-supprimer-un" data-id="<%= m.id %>" title="Supprimer">
               <i class="bi bi-trash"></i>
             </button>
-          </form>
-        </td>
-      </tr>
-      <% }) %>
-      <% if (manuels.length === 0) { %>
-      <tr><td colspan="6" class="text-center text-muted py-5">
-        <i class="bi bi-inbox" style="font-size:3rem;display:block;margin-bottom:.5rem;"></i>
-        Aucun manuel généré.<br>
-        <a href="/manuels/nouveau" class="btn btn-warning mt-3">
-          <i class="bi bi-magic"></i> Créer votre premier manuel
-        </a>
-      </td></tr>
-      <% } %>
-    </tbody>
-  </table>
-</div>
+          </td>
+        </tr>
+        <% }) %>
+        <% if (manuels.length === 0) { %>
+        <tr><td colspan="7" class="text-center text-muted py-5">
+          <i class="bi bi-inbox" style="font-size:3rem;display:block;margin-bottom:.5rem;"></i>
+          Aucun manuel généré.<br>
+          <a href="/manuels/nouveau" class="btn btn-warning mt-3">
+            <i class="bi bi-magic"></i> Créer votre premier manuel
+          </a>
+        </td></tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+</form>
+
+<script>
+var cocherTout = document.getElementById('cocherTout');
+var casesLigne = document.querySelectorAll('.case-ligne');
+var btnSupprimer = document.getElementById('btnSupprimerSelection');
+var compteur = document.getElementById('compteurSelection');
+
+function majCompteur() {
+  var n = document.querySelectorAll('.case-ligne:checked').length;
+  compteur.textContent = n;
+  btnSupprimer.disabled = n === 0;
+}
+
+cocherTout.addEventListener('change', function() {
+  casesLigne.forEach(function(c) { c.checked = cocherTout.checked; });
+  majCompteur();
+});
+casesLigne.forEach(function(c) { c.addEventListener('change', majCompteur); });
+
+document.querySelectorAll('.btn-supprimer-un').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    if (!confirm('Supprimer ce manuel ?')) return;
+    var form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/manuels/supprimer/' + btn.getAttribute('data-id');
+    document.body.appendChild(form);
+    form.submit();
+  });
+});
+</script>
 
 <%- include('partials/footer', { scripts: [] }) %>

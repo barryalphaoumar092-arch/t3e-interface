@@ -5,56 +5,94 @@
   <a href="/bordereaux/nouveau" class="btn btn-warning"><i class="bi bi-plus-circle"></i> Nouveau bordereau</a>
 </div>
 
-<div class="table-responsive">
-  <table class="table table-hover align-middle">
-    <thead class="table-light">
-      <tr>
-        <th>#</th>
-        <th>Projet</th>
-        <th>Section</th>
-        <th>Statut</th>
-        <th>Date</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-      <% bordereaux.forEach(function(b) { %>
-      <tr>
-        <td class="text-muted"><%= b.id %></td>
-        <td><strong><%= b.titre || '-' %></strong></td>
-        <td><span class="badge bg-secondary"><%= b.numero_projet || '-' %></span></td>
-        <td>
-          <span class="badge <%= b.statut === 'approuve' ? 'bg-success' : (b.statut === 'revise' ? 'bg-warning text-dark' : 'bg-secondary') %>">
-            <%= b.statut === 'approuve' ? 'Approuvé' : (b.statut === 'revise' ? 'En révision' : 'Brouillon') %>
-          </span>
-        </td>
-        <td><small class="text-muted"><%= b.created_at ? b.created_at.substring(0,10) : '-' %></small></td>
-        <td>
-          <a href="/bordereaux/reviser/<%= b.id %>" class="btn btn-sm btn-outline-primary" title="Réviser / confirmer">
-            <i class="bi bi-pencil"></i>
-          </a>
-          <a href="/bordereaux/telecharger/<%= b.id %>" class="btn btn-sm btn-outline-success" title="Télécharger .docx">
-            <i class="bi bi-download"></i> .docx
-          </a>
-          <form method="POST" action="/bordereaux/supprimer/<%= b.id %>" style="display:inline" onsubmit="return confirm('Supprimer ce bordereau ?')">
-            <button type="submit" class="btn btn-sm btn-outline-danger" title="Supprimer">
+<form method="POST" action="/bordereaux/supprimer-plusieurs" id="formSuppressionMultiple" onsubmit="return confirm('Supprimer les bordereaux sélectionnés ? Cette action est irréversible.')">
+  <div class="d-flex align-items-center gap-2 mb-2">
+    <button type="submit" class="btn btn-outline-danger btn-sm" id="btnSupprimerSelection" disabled>
+      <i class="bi bi-trash"></i> Supprimer la sélection (<span id="compteurSelection">0</span>)
+    </button>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead class="table-light">
+        <tr>
+          <th style="width:2rem"><input type="checkbox" class="form-check-input" id="cocherTout"></th>
+          <th>#</th>
+          <th>Projet</th>
+          <th>Section</th>
+          <th>Statut</th>
+          <th>Date</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% bordereaux.forEach(function(b) { %>
+        <tr>
+          <td><input type="checkbox" class="form-check-input case-ligne" name="ids" value="<%= b.id %>"></td>
+          <td class="text-muted"><%= b.id %></td>
+          <td><strong><%= b.titre || '-' %></strong></td>
+          <td><span class="badge bg-secondary"><%= b.numero_projet || '-' %></span></td>
+          <td>
+            <span class="badge <%= b.statut === 'approuve' ? 'bg-success' : (b.statut === 'revise' ? 'bg-warning text-dark' : 'bg-secondary') %>">
+              <%= b.statut === 'approuve' ? 'Approuvé' : (b.statut === 'revise' ? 'En révision' : 'Brouillon') %>
+            </span>
+          </td>
+          <td><small class="text-muted"><%= b.created_at ? b.created_at.substring(0,10) : '-' %></small></td>
+          <td>
+            <a href="/bordereaux/reviser/<%= b.id %>" class="btn btn-sm btn-outline-primary" title="Réviser / confirmer">
+              <i class="bi bi-pencil"></i>
+            </a>
+            <a href="/bordereaux/telecharger/<%= b.id %>" class="btn btn-sm btn-outline-success" title="Télécharger .docx">
+              <i class="bi bi-download"></i> .docx
+            </a>
+            <button type="button" class="btn btn-sm btn-outline-danger btn-supprimer-un" data-id="<%= b.id %>" title="Supprimer">
               <i class="bi bi-trash"></i>
             </button>
-          </form>
-        </td>
-      </tr>
-      <% }) %>
-      <% if (bordereaux.length === 0) { %>
-      <tr><td colspan="6" class="text-center text-muted py-5">
-        <i class="bi bi-inbox" style="font-size:3rem;display:block;margin-bottom:.5rem;"></i>
-        Aucun bordereau généré.<br>
-        <a href="/bordereaux/nouveau" class="btn btn-warning mt-3">
-          <i class="bi bi-magic"></i> Générer votre premier bordereau
-        </a>
-      </td></tr>
-      <% } %>
-    </tbody>
-  </table>
-</div>
+          </td>
+        </tr>
+        <% }) %>
+        <% if (bordereaux.length === 0) { %>
+        <tr><td colspan="7" class="text-center text-muted py-5">
+          <i class="bi bi-inbox" style="font-size:3rem;display:block;margin-bottom:.5rem;"></i>
+          Aucun bordereau généré.<br>
+          <a href="/bordereaux/nouveau" class="btn btn-warning mt-3">
+            <i class="bi bi-magic"></i> Générer votre premier bordereau
+          </a>
+        </td></tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+</form>
+
+<script>
+var cocherTout = document.getElementById('cocherTout');
+var casesLigne = document.querySelectorAll('.case-ligne');
+var btnSupprimer = document.getElementById('btnSupprimerSelection');
+var compteur = document.getElementById('compteurSelection');
+
+function majCompteur() {
+  var n = document.querySelectorAll('.case-ligne:checked').length;
+  compteur.textContent = n;
+  btnSupprimer.disabled = n === 0;
+}
+
+cocherTout.addEventListener('change', function() {
+  casesLigne.forEach(function(c) { c.checked = cocherTout.checked; });
+  majCompteur();
+});
+casesLigne.forEach(function(c) { c.addEventListener('change', majCompteur); });
+
+document.querySelectorAll('.btn-supprimer-un').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    if (!confirm('Supprimer ce bordereau ?')) return;
+    var form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/bordereaux/supprimer/' + btn.getAttribute('data-id');
+    document.body.appendChild(form);
+    form.submit();
+  });
+});
+</script>
 
 <%- include('partials/footer', { scripts: [] }) %>

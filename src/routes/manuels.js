@@ -637,4 +637,14 @@ router.post('/supprimer/:id', async (req, res) => {
   res.redirect('/manuels');
 });
 
+// ── SUPPRESSION MULTIPLE — évite de devoir supprimer un par un ──
+router.post('/supprimer-plusieurs', async (req, res) => {
+  const ids = [].concat(req.body.ids || []).map(id => parseInt(id)).filter(id => !isNaN(id));
+  for (const id of ids) {
+    await supprimerDossierManuel(id);
+    await req.db.execute({ sql: 'DELETE FROM manuels WHERE id = ?', args: [id] });
+  }
+  res.redirect('/manuels');
+});
+
 module.exports = router;
