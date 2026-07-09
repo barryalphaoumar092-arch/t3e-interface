@@ -115,6 +115,15 @@ async function initDb() {
       created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (appel_offre_id) REFERENCES appels_offres_seao(id)
     )`,
+    `CREATE TABLE IF NOT EXISTS historique_appels_offres (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      appel_offre_id INTEGER NOT NULL,
+      action TEXT NOT NULL,
+      details TEXT,
+      effectue_par TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (appel_offre_id) REFERENCES appels_offres_seao(id)
+    )`,
     `CREATE TABLE IF NOT EXISTS configuration (
       cle TEXT PRIMARY KEY,
       valeur JSON,
@@ -156,6 +165,9 @@ async function initDb() {
     // champs_detectes/champs_non_places (listes de noms) restent inchangees
     // pour compatibilite ; champs_detail les remplace pour l'affichage.
     'ALTER TABLE appels_offres_formulaires ADD COLUMN champs_detail JSON',
+    // Accuse de reception d'un addenda (checklist de depot) — pertinent
+    // seulement pour categorie='addenda', ignore pour les autres categories.
+    'ALTER TABLE appels_offres_documents ADD COLUMN accuse INTEGER DEFAULT 0',
   ];
 
   for (const sql of migrations) {

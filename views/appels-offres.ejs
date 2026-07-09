@@ -3,8 +3,7 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h2><i class="bi bi-clipboard-check"></i> Appels d'offres SEAO</h2>
   <div class="d-flex gap-2">
-    <a href="/appels-offres/rapide" class="btn btn-primary"><i class="bi bi-lightning-charge"></i> Remplir un formulaire rapidement</a>
-    <a href="/appels-offres/nouveau" class="btn btn-outline-primary"><i class="bi bi-plus-lg"></i> Ajouter manuellement</a>
+    <a href="/appels-offres/importer" class="btn btn-primary"><i class="bi bi-cloud-upload"></i> Importer un appel d'offres</a>
     <form method="POST" action="/appels-offres/actualiser">
       <button type="submit" class="btn btn-warning"><i class="bi bi-arrow-repeat"></i> Actualiser maintenant</button>
     </form>
@@ -19,8 +18,15 @@
 
 <div class="alert alert-info py-2 small">
   <i class="bi bi-info-circle"></i>
-  Ces données proviennent des données ouvertes officielles du SEAO (Données Québec), publiées <strong>une fois par semaine</strong> — pas en temps réel.
+  Ces données proviennent des données ouvertes officielles du SEAO (Données Québec), publiées <strong>une fois par semaine</strong> — pas en temps réel. Pour un appel d'offres trouvé ailleurs (site SEAO, courriel), utilisez <a href="/appels-offres/importer">Importer un appel d'offres</a>.
   <% if (derniereSync) { %>Dernière mise à jour de la base : <strong><%= derniereSync.replace('T',' ').substring(0,16) %></strong> (UTC).<% } else { %>Aucune synchronisation effectuée pour l'instant — cliquez sur "Actualiser maintenant".<% } %>
+</div>
+
+<div class="d-flex gap-2 mb-3 flex-wrap">
+  <% var libellesStats = { a_analyser: 'À analyser', interessant: 'Intéressant', a_soumissionner: 'À soumissionner', depose: 'Déposé', gagne: 'Gagné', perdu: 'Perdu', refuse: 'Refusé' }; %>
+  <% Object.keys(libellesStats).forEach(function(s) { %>
+    <span class="badge bg-secondary bg-opacity-75"><%= libellesStats[s] %> : <%= stats[s] || 0 %></span>
+  <% }) %>
 </div>
 
 <form class="row g-2 mb-3" method="GET" action="/appels-offres">
@@ -34,8 +40,8 @@
   </div>
   <div class="col-md-3">
     <select name="tri" class="form-select" onchange="this.form.submit()">
+      <option value="urgence" <%= tri === 'urgence' || tri === 'fermeture' ? 'selected' : '' %>>Trier par urgence (délai le plus proche)</option>
       <option value="pertinence" <%= tri === 'pertinence' ? 'selected' : '' %>>Trier par pertinence</option>
-      <option value="fermeture" <%= tri === 'fermeture' ? 'selected' : '' %>>Trier par date de fermeture</option>
     </select>
   </div>
   <div class="col-md-3 form-check pt-2">
@@ -65,7 +71,14 @@
         <td><%= a.donneur_ouvrage || '-' %></td>
         <td><%= a.lieu_travaux || '-' %></td>
         <td><small><%= (a.date_publication || '').substring(0,10) %></small></td>
-        <td><small><%= (a.date_fermeture || '').substring(0,10) %></small></td>
+        <td>
+          <small><%= (a.date_fermeture || '').substring(0,10) %></small>
+          <% if (a.joursRestants !== null) { %>
+          <br><span class="badge <%= a.joursRestants < 3 ? 'bg-danger' : (a.joursRestants < 7 ? 'bg-warning text-dark' : 'bg-light text-dark') %>">
+            <%= a.joursRestants >= 0 ? a.joursRestants + ' j.' : 'dépassé' %>
+          </span>
+          <% } %>
+        </td>
         <td>
           <% (a.mots_cles_matches || '').split(',').filter(Boolean).forEach(function(m) { %>
           <span class="badge bg-secondary bg-opacity-75"><%= m.trim() %></span>

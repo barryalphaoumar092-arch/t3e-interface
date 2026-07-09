@@ -10,7 +10,14 @@
 <div class="row">
   <div class="col-md-8">
     <div class="card mb-3">
-      <div class="card-header bg-dark text-white"><h5 class="mb-0"><%= appel.titre %></h5></div>
+      <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><%= appel.titre %></h5>
+        <% if (joursRestants !== null) { %>
+          <span class="badge <%= joursRestants < 3 ? 'bg-danger' : (joursRestants < 7 ? 'bg-warning text-dark' : 'bg-light text-dark') %>">
+            <%= joursRestants >= 0 ? joursRestants + ' jour(s) restant(s)' : 'Délai dépassé' %>
+          </span>
+        <% } %>
+      </div>
       <div class="card-body">
         <table class="table table-sm">
           <tr><th style="width:220px">Numéro SEAO</th><td><%= appel.numero_seao %></td></tr>
@@ -42,9 +49,18 @@
           <% documents.forEach(function(d) { %>
           <li class="list-group-item d-flex justify-content-between align-items-center">
             <span><span class="badge bg-secondary me-2"><%= d.categorie %></span><%= d.nom_fichier %></span>
-            <form method="POST" action="/appels-offres/<%= appel.id %>/documents/<%= d.id %>/supprimer" onsubmit="return confirm('Supprimer ce document ?');">
-              <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
-            </form>
+            <div class="d-flex align-items-center gap-2">
+              <% if (d.categorie === 'addenda') { %>
+              <form method="POST" action="/appels-offres/<%= appel.id %>/documents/<%= d.id %>/accuser" class="d-inline">
+                <button type="submit" class="btn btn-sm <%= d.accuse ? 'btn-success' : 'btn-outline-secondary' %>" title="Accusé de réception">
+                  <i class="bi <%= d.accuse ? 'bi-check-circle-fill' : 'bi-circle' %>"></i> <%= d.accuse ? 'Accusé reçu' : 'Accuser réception' %>
+                </button>
+              </form>
+              <% } %>
+              <form method="POST" action="/appels-offres/<%= appel.id %>/documents/<%= d.id %>/supprimer" onsubmit="return confirm('Supprimer ce document ?');" class="d-inline">
+                <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+              </form>
+            </div>
           </li>
           <% }) %>
         </ul>
@@ -85,16 +101,67 @@
         <% } else { %>
         <% formulaires.forEach(function(f) { %>
         <div class="d-flex justify-content-between align-items-center mb-2">
-          <span><span class="badge bg-info text-dark me-2"><%= f.format || '?' %></span>Statut : <%= f.statut %></span>
+          <span>
+            <span class="badge bg-info text-dark me-2"><%= f.format || '?' %></span>
+            Statut :
+            <span class="badge <%= f.statut === 'valide' ? 'bg-success' : (f.statut === 'pre_rempli' ? 'bg-warning text-dark' : 'bg-secondary') %>">
+              <%= f.statut === 'valide' ? 'Validé' : (f.statut === 'pre_rempli' ? 'Brouillon' : 'À remplir') %>
+            </span>
+          </span>
           <a href="/appels-offres/<%= appel.id %>/formulaire/<%= f.id %>" class="btn btn-sm btn-primary"><i class="bi bi-magic"></i> Ouvrir / Remplir</a>
         </div>
         <% }) %>
         <% } %>
       </div>
     </div>
+
+    <div class="card mb-3">
+      <div class="card-header bg-light"><i class="bi bi-clock-history"></i> Historique</div>
+      <div class="card-body">
+        <% if (historique.length === 0) { %>
+        <p class="text-muted small mb-0">Aucune action enregistrée pour l'instant.</p>
+        <% } else { %>
+        <ul class="list-group list-group-flush">
+          <% historique.forEach(function(h) { %>
+          <li class="list-group-item small">
+            <strong><%= h.action.replace(/_/g, ' ') %></strong>
+            <% if (h.effectue_par) { %> — <%= h.effectue_par %><% } %>
+            <span class="text-muted">— <%= h.created_at %></span>
+            <% if (h.details) { %><div class="text-muted fst-italic"><%= h.details %></div><% } %>
+          </li>
+          <% }) %>
+        </ul>
+        <% } %>
+      </div>
+    </div>
   </div>
 
   <div class="col-md-4">
+    <div class="card mb-3 <%= pretADeposer ? 'border-success' : 'border-warning' %>">
+      <div class="card-header <%= pretADeposer ? 'bg-success bg-opacity-25' : 'bg-warning bg-opacity-25' %>">
+        <i class="bi bi-list-check"></i> Checklist de dépôt
+      </div>
+      <div class="card-body">
+        <% if (pretADeposer) { %>
+        <p class="text-success fw-bold small mb-2"><i class="bi bi-check-circle"></i> Prêt à déposer</p>
+        <% } %>
+        <ul class="list-unstyled mb-0">
+          <% checklist.forEach(function(c) { %>
+          <li class="mb-1">
+            <% if (c.ok) { %>
+              <i class="bi bi-check-circle-fill text-success"></i>
+            <% } else if (c.obligatoire) { %>
+              <i class="bi bi-x-circle-fill text-danger"></i>
+            <% } else { %>
+              <i class="bi bi-dash-circle text-muted"></i>
+            <% } %>
+            <%= c.label %>
+          </li>
+          <% }) %>
+        </ul>
+      </div>
+    </div>
+
     <div class="card">
       <div class="card-header bg-light"><i class="bi bi-flag"></i> Statut interne</div>
       <div class="card-body">

@@ -1,0 +1,127 @@
+<%- include('partials/header', { title: "Importer un appel d'offres", page: 'appels-offres' }) %>
+
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="/appels-offres">Appels d'offres SEAO</a></li>
+    <li class="breadcrumb-item active">Importer</li>
+  </ol>
+</nav>
+
+<h2><i class="bi bi-cloud-upload"></i> Importer un appel d'offres</h2>
+<p class="text-muted small">
+  Trouvé un appel d'offres pertinent ailleurs que dans la synchronisation automatique (ex. hors mots-clés toiture, avant la prochaine synchronisation, ou découvert directement sur le site du SEAO) ? Importez-le ici : renseignez ce que vous savez et déposez tous les documents en main — devis, formulaire, plans, addendas, documents administratifs — en une seule étape.
+</p>
+
+<% if (erreur) { %>
+<div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> <%= erreur %></div>
+<% } %>
+
+<form method="POST" action="/appels-offres/importer" id="formImporter" class="card card-body" style="max-width:800px">
+  <h6 class="mb-3">Informations connues <span class="text-muted fw-normal">(toutes optionnelles — remplissez ce que vous savez déjà)</span></h6>
+  <div class="row">
+    <div class="col-md-6 mb-3">
+      <label class="form-label">Numéro SEAO</label>
+      <input type="text" name="numero_seao" class="form-control" placeholder="Ex. APP-260327-01">
+    </div>
+    <div class="col-md-6 mb-3">
+      <label class="form-label">Titre</label>
+      <input type="text" name="titre" class="form-control">
+    </div>
+    <div class="col-md-6 mb-3">
+      <label class="form-label">Donneur d'ouvrage</label>
+      <input type="text" name="donneur_ouvrage" class="form-control">
+    </div>
+    <div class="col-md-6 mb-3">
+      <label class="form-label">Lieu des travaux</label>
+      <input type="text" name="lieu_travaux" class="form-control">
+    </div>
+    <div class="col-md-6 mb-3">
+      <label class="form-label">Date et heure de fermeture</label>
+      <input type="datetime-local" name="date_fermeture" class="form-control">
+    </div>
+    <div class="col-md-6 mb-3">
+      <label class="form-label">Date de visite obligatoire</label>
+      <input type="text" name="date_visite_obligatoire" class="form-control" placeholder="Optionnel">
+    </div>
+    <div class="col-md-12 mb-3">
+      <label class="form-label">URL de l'avis SEAO</label>
+      <input type="url" name="url_seao" class="form-control">
+    </div>
+  </div>
+
+  <hr>
+  <h6 class="mb-3">Documents <span class="text-muted fw-normal">(optionnels aussi — vous pourrez toujours en ajouter plus tard)</span></h6>
+  <div class="row g-2 mb-3">
+    <div class="col-md-6">
+      <label class="form-label small">Devis</label>
+      <input type="file" id="fichierDevis" class="form-control form-control-sm" accept=".pdf,.docx,.doc" multiple>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label small">Formulaire de soumission</label>
+      <input type="file" id="fichierFormulaire" class="form-control form-control-sm" accept=".pdf,.docx,.doc" multiple>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label small">Plans</label>
+      <input type="file" id="fichierPlans" class="form-control form-control-sm" accept=".pdf" multiple>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label small">Addendas</label>
+      <input type="file" id="fichierAddenda" class="form-control form-control-sm" accept=".pdf,.docx,.doc" multiple>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label small">Documents administratifs</label>
+      <input type="file" id="fichierAdministratifs" class="form-control form-control-sm" accept=".pdf,.docx,.doc" multiple>
+    </div>
+  </div>
+
+  <button type="submit" class="btn btn-primary" id="btnImporter"><i class="bi bi-check-lg"></i> Importer</button>
+</form>
+
+<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="/js/direct-upload.js"></script>
+<script>
+window.T3E_SUPABASE_URL = "<%= SUPABASE_URL %>";
+window.T3E_SUPABASE_ANON_KEY = "<%= SUPABASE_ANON_KEY %>";
+
+var inputsParCategorie = {
+  devis: document.getElementById('fichierDevis'),
+  formulaire_soumission: document.getElementById('fichierFormulaire'),
+  plans: document.getElementById('fichierPlans'),
+  addenda: document.getElementById('fichierAddenda'),
+  documents_administratifs: document.getElementById('fichierAdministratifs'),
+};
+
+document.getElementById('formImporter').addEventListener('submit', function (e) {
+  e.preventDefault();
+  var form = e.target;
+  var btn = document.getElementById('btnImporter');
+  var taches = [];
+
+  Object.keys(inputsParCategorie).forEach(function (categorie) {
+    Array.prototype.slice.call(inputsParCategorie[categorie].files).forEach(function (fichier) {
+      taches.push(t3eDirectUpload.uploadDirect(fichier, 'temp').then(function (info) {
+        var inpKey = document.createElement('input');
+        inpKey.type = 'hidden'; inpKey.name = categorie + '_key'; inpKey.value = info.key;
+        form.appendChild(inpKey);
+        var inpNom = document.createElement('input');
+        inpNom.type = 'hidden'; inpNom.name = categorie + '_name'; inpNom.value = info.name;
+        form.appendChild(inpNom);
+      }));
+    });
+  });
+
+  if (taches.length === 0) { form.submit(); return; }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Envoi des documents…';
+  Promise.all(taches).then(function () {
+    form.submit();
+  }).catch(function (err) {
+    alert("Erreur lors de l'envoi d'un document : " + err.message);
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-check-lg"></i> Importer';
+  });
+});
+</script>
+
+<%- include('partials/footer', { scripts: [] }) %>

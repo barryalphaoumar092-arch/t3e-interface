@@ -26,10 +26,37 @@ function cleTempValide(key) {
   return typeof key === 'string' && key.length > 0 && !key.includes('/') && !key.includes('..');
 }
 
+// Historique (priorite #5 du plan d'optimisation) — trace qui a fait quoi et
+// quand sur un appel d'offres, meme principe que historique_bordereaux.
+// Jamais bloquant : une erreur d'insertion n'empeche pas l'action principale.
+async function enregistrerHistorique(db, appelOffreId, action, details, effectuePar) {
+  try {
+    await db.execute({
+      sql: 'INSERT INTO historique_appels_offres (appel_offre_id, action, details, effectue_par) VALUES (?, ?, ?, ?)',
+      args: [appelOffreId, action, details || null, effectuePar || null],
+    });
+  } catch (e) {
+    console.error('[appels-offres] Historique non enregistré:', e.message);
+  }
+}
+
+// Jours restants avant le delai de depot (priorite #5 du plan d'optimisation) —
+// null si aucune date de fermeture connue. Sert au tri "urgence" ET au badge
+// couleur (rouge <3j, orange <7j) sur la liste.
+function joursRestants(dateFermeture) {
+  if (!dateFermeture) return null;
+  const fermeture = new Date(dateFermeture.replace(' ', 'T'));
+  if (isNaN(fermeture.getTime())) return null;
+  return Math.ceil((fermeture.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+}
+
 router.get('/', async (req, res) => {
   const db = req.db;
   const filtre = req.query.filtre || '14j';
-  const tri = req.query.tri || 'pertinence';
+  // "urgence" (delai de depot le plus proche en premier) est le tri par
+  // defaut desormais — bien plus utile au quotidien qu'un tri par pertinence
+  // de mots-cles quand des dates de fermeture existent.
+  const tri = req.query.tri || 'urgence';
 
   // Toujours plafonne a 14 jours (voir demande initiale), le filtre affine dans cette fenetre.
   let intervalle = '-14 day';
@@ -42,85 +69,101 @@ router.get('/', async (req, res) => {
       FROM appels_offres_seao a WHERE a.date_publication >= datetime('now', ?)`;
   const args = [intervalle];
   if (req.query.visite === '1') sql += ` AND a.date_visite_obligatoire IS NOT NULL AND a.date_visite_obligatoire != ''`;
-  sql += tri === 'fermeture'
-    ? ` ORDER BY a.date_fermeture ASC`
-    : ` ORDER BY LENGTH(a.mots_cles_matches) - LENGTH(REPLACE(a.mots_cles_matches, ',', '')) DESC, a.date_publication DESC`;
+  sql += tri === 'pertinence'
+    ? ` ORDER BY LENGTH(a.mots_cles_matches) - LENGTH(REPLACE(a.mots_cles_matches, ',', '')) DESC, a.date_publication DESC`
+    // "urgence" et l'ancien "fermeture" (compat) partagent le meme tri : date
+    // de fermeture la plus proche en premier, NULL (aucune date) en dernier.
+    : ` ORDER BY (a.date_fermeture IS NULL OR a.date_fermeture = ''), a.date_fermeture ASC`;
 
   const r = await db.execute({ sql, args });
+  const appels = r.rows.map((a) => ({ ...a, joursRestants: joursRestants(a.date_fermeture) }));
   const derniereSync = await db.execute(`SELECT MAX(updated_at) as t FROM appels_offres_seao`);
 
+  // Statistiques simples (priorite #5 du plan) — visibilite rapide de la
+  // valeur de l'outil, calculees sur TOUS les appels d'offres (pas juste la
+  // fenetre de 14 jours affichee), par statut interne.
+  const statsR = await db.execute(`SELECT statut_interne, COUNT(*) as n FROM appels_offres_seao GROUP BY statut_interne`);
+  const stats = {};
+  statsR.rows.forEach((s) => { stats[s.statut_interne] = s.n; });
+
   res.render('appels-offres', {
-    appels: r.rows, filtre, tri,
+    appels, filtre, tri, stats,
     derniereSync: derniereSync.rows[0] ? derniereSync.rows[0].t : null,
     syncMsg: req.query.sync || '', syncMatches: req.query.matches || '', syncErreur: req.query.msg || '',
   });
 });
 
-router.get('/nouveau', (req, res) => {
-  res.render('appel-offre-nouveau', { erreur: '' });
+router.get('/importer', (req, res) => {
+  res.render('appel-offre-importer', { erreur: '' });
 });
 
-// Creation manuelle — necessaire car la synchronisation automatique ne
-// capture que les avis correspondant aux mots-cles toiture ; un appel
-// d'offres trouve autrement (hors mots-cles, ou avant la prochaine
-// synchronisation hebdomadaire) doit pouvoir etre ajoute a la main.
-router.post('/nouveau', async (req, res) => {
+// Point d'entree UNIQUE pour importer un appel d'offres trouve manuellement
+// (remplace les anciens /nouveau [metadonnees seules] et /rapide [un seul
+// formulaire] — priorite #5 du plan d'optimisation : un seul parcours,
+// metadonnees ET documents (devis/plans/addenda/formulaire/administratifs)
+// au meme endroit, tout optionnel sauf au moins UNE information utile).
+router.post('/importer', async (req, res) => {
   const db = req.db;
   const { numero_seao, titre, donneur_ouvrage, lieu_travaux, date_fermeture, date_visite_obligatoire, url_seao } = req.body;
-  if (!numero_seao || !titre) {
-    return res.render('appel-offre-nouveau', { erreur: 'Le numéro SEAO et le titre sont obligatoires.' });
+
+  // Fichiers optionnels par categorie : chacun est soit absent, soit une cle
+  // temp unique, soit un tableau de cles (categories "multiple", voir vue).
+  const fichiers = {};
+  for (const cat of CATEGORIES_DOCUMENTS) {
+    const cles = [].concat(req.body[cat + '_key'] || []).filter(cleTempValide);
+    const noms = [].concat(req.body[cat + '_name'] || []);
+    if (cles.length > 0) fichiers[cat] = cles.map((cle, i) => ({ cle, nom: noms[i] || cat }));
   }
+  const nbFichiers = Object.values(fichiers).reduce((s, arr) => s + arr.length, 0);
+
+  if (!titre && !numero_seao && nbFichiers === 0) {
+    return res.render('appel-offre-importer', { erreur: 'Donnez au moins un titre, un numéro SEAO, ou un document à importer.' });
+  }
+
+  const numeroFinal = (numero_seao || '').trim() || ('MANUEL-' + Date.now());
+  const titreFinal = (titre || '').trim() || 'Appel d\'offres importé manuellement';
+
+  let appelId;
   try {
     const r = await db.execute({
       sql: `INSERT INTO appels_offres_seao (numero_seao, titre, donneur_ouvrage, lieu_travaux, date_publication, date_fermeture, date_visite_obligatoire, url_seao, mots_cles_matches)
-            VALUES (?, ?, ?, ?, datetime('now'), ?, ?, ?, 'ajout manuel')`,
-      args: [numero_seao, titre, donneur_ouvrage || null, lieu_travaux || null, date_fermeture || null, date_visite_obligatoire || null, url_seao || null],
+            VALUES (?, ?, ?, ?, datetime('now'), ?, ?, ?, 'import manuel')`,
+      args: [numeroFinal, titreFinal, donneur_ouvrage || null, lieu_travaux || null, date_fermeture || null, date_visite_obligatoire || null, url_seao || null],
     });
-    res.redirect('/appels-offres/' + r.lastInsertRowid);
+    appelId = r.lastInsertRowid;
   } catch (e) {
-    res.render('appel-offre-nouveau', { erreur: e.message.includes('UNIQUE') ? 'Ce numéro SEAO existe déjà.' : e.message });
+    return res.render('appel-offre-importer', { erreur: e.message.includes('UNIQUE') ? 'Ce numéro SEAO existe déjà.' : e.message });
   }
-});
+  await enregistrerHistorique(db, appelId, 'importe', `Importé manuellement (${nbFichiers} document(s))`);
 
-router.get('/rapide', (req, res) => {
-  res.render('appel-offre-formulaire-rapide', { erreur: '' });
-});
+  let premierFormulaireId = null;
+  for (const [categorie, entrees] of Object.entries(fichiers)) {
+    for (const { cle, nom } of entrees) {
+      const buf = await downloadBuffer(BUCKETS.UPLOADS_TEMP, cle);
+      if (!buf) continue;
+      const cleFinale = sanitizeKey(`${appelId}/${categorie}/${Date.now()}-${crypto.randomBytes(4).toString('hex')}-${nom}`);
+      await uploadBuffer(BUCKETS.SEAO, cleFinale, buf);
+      await removeFile(BUCKETS.UPLOADS_TEMP, cle).catch(() => {});
+      await db.execute({
+        sql: 'INSERT INTO appels_offres_documents (appel_offre_id, categorie, cle_storage, nom_fichier) VALUES (?, ?, ?, ?)',
+        args: [appelId, categorie, cleFinale, nom],
+      });
+      if (categorie === 'formulaire_soumission') {
+        const ext = path.extname(nom).toLowerCase().replace('.', '');
+        const rForm = await db.execute({
+          sql: `INSERT INTO appels_offres_formulaires (appel_offre_id, cle_storage_original, format, statut) VALUES (?, ?, ?, 'a_remplir')`,
+          args: [appelId, cleFinale, ext],
+        });
+        if (!premierFormulaireId) premierFormulaireId = rForm.lastInsertRowid;
+      }
+    }
+  }
 
-// Depot rapide d'un formulaire SANS creer/choisir un appel d'offres au
-// prealable — cree un appel d'offres minimal en arriere-plan pour reutiliser
-// tel quel tout le pipeline existant (formulaire, editeur, remplissage IA),
-// puis redirige directement sur la page du formulaire.
-router.post('/rapide', async (req, res) => {
-  const db = req.db;
-  const tempKey = req.body.fichier_key;
-  const nomOriginal = req.body.fichier_name || 'formulaire';
-  if (!cleTempValide(tempKey)) return res.render('appel-offre-formulaire-rapide', { erreur: 'Fichier manquant ou invalide.' });
-
-  const buf = await downloadBuffer(BUCKETS.UPLOADS_TEMP, tempKey);
-  if (!buf) return res.render('appel-offre-formulaire-rapide', { erreur: 'Fichier introuvable dans le stockage temporaire.' });
-
-  const numeroSeao = 'RAPIDE-' + Date.now();
-  const rAppel = await db.execute({
-    sql: `INSERT INTO appels_offres_seao (numero_seao, titre, date_publication, mots_cles_matches, statut_interne)
-          VALUES (?, ?, datetime('now'), 'dépôt rapide', 'a_analyser')`,
-    args: [numeroSeao, 'Formulaire déposé rapidement — ' + nomOriginal],
-  });
-  const appelId = rAppel.lastInsertRowid;
-
-  const cleFinale = sanitizeKey(`${appelId}/formulaire_soumission/${Date.now()}-${crypto.randomBytes(4).toString('hex')}-${nomOriginal}`);
-  await uploadBuffer(BUCKETS.SEAO, cleFinale, buf);
-  await removeFile(BUCKETS.UPLOADS_TEMP, tempKey).catch(() => {});
-  await db.execute({
-    sql: 'INSERT INTO appels_offres_documents (appel_offre_id, categorie, cle_storage, nom_fichier) VALUES (?, ?, ?, ?)',
-    args: [appelId, 'formulaire_soumission', cleFinale, nomOriginal],
-  });
-  const ext = path.extname(nomOriginal).toLowerCase().replace('.', '');
-  const rForm = await db.execute({
-    sql: `INSERT INTO appels_offres_formulaires (appel_offre_id, cle_storage_original, format, statut) VALUES (?, ?, ?, 'a_remplir')`,
-    args: [appelId, cleFinale, ext],
-  });
-
-  res.redirect(`/appels-offres/${appelId}/formulaire/${rForm.lastInsertRowid}`);
+  // Si un (seul) formulaire vient d'etre importe, aller directement dessus
+  // (meme UX rapide que l'ancien /rapide) ; sinon, la page de detail.
+  res.redirect(premierFormulaireId
+    ? `/appels-offres/${appelId}/formulaire/${premierFormulaireId}`
+    : `/appels-offres/${appelId}`);
 });
 
 router.post('/actualiser', async (req, res) => {
@@ -140,13 +183,30 @@ router.get('/:id', async (req, res) => {
 
   const documents = await db.execute({ sql: 'SELECT * FROM appels_offres_documents WHERE appel_offre_id = ?', args: [id] });
   const formulaires = await db.execute({ sql: 'SELECT * FROM appels_offres_formulaires WHERE appel_offre_id = ?', args: [id] });
+  const historique = await db.execute({ sql: 'SELECT * FROM historique_appels_offres WHERE appel_offre_id = ? ORDER BY created_at DESC, id DESC', args: [id] });
 
   let donneesBrutes = {};
   try { donneesBrutes = JSON.parse(r.rows[0].donnees_brutes || '{}'); } catch (_) {}
 
+  // Checklist de depot (priorite #5 du plan) — calculee a la volee a partir
+  // des donnees reelles plutot que stockee a part, pour ne jamais desynchroniser
+  // de la realite (ex: un document supprime met a jour la checklist tout seul).
+  const addendas = documents.rows.filter((d) => d.categorie === 'addenda');
+  const checklist = [
+    { label: 'Devis importé', ok: documents.rows.some((d) => d.categorie === 'devis'), obligatoire: true },
+    { label: 'Formulaire de soumission rempli et validé', ok: formulaires.rows.some((f) => f.statut === 'valide'), obligatoire: true },
+    {
+      label: addendas.length > 0 ? `Tous les addendas accusés (${addendas.filter((d) => d.accuse).length}/${addendas.length})` : 'Aucun addenda à ce jour',
+      ok: addendas.every((d) => d.accuse),
+      obligatoire: addendas.length > 0,
+    },
+  ];
+  const pretADeposer = checklist.filter((c) => c.obligatoire).every((c) => c.ok);
+
   res.render('appel-offre-detail', {
-    appel: r.rows[0], documents: documents.rows, formulaires: formulaires.rows,
-    donneesBrutes, statuts: STATUTS, labelsStatut: LABELS_STATUT,
+    appel: r.rows[0], documents: documents.rows, formulaires: formulaires.rows, historique: historique.rows,
+    donneesBrutes, statuts: STATUTS, labelsStatut: LABELS_STATUT, checklist, pretADeposer,
+    joursRestants: joursRestants(r.rows[0].date_fermeture),
   });
 });
 
@@ -158,6 +218,7 @@ router.post('/:id/statut', async (req, res) => {
     sql: `UPDATE appels_offres_seao SET statut_interne = ?, updated_at = datetime('now') WHERE id = ?`,
     args: [statut, id],
   });
+  await enregistrerHistorique(db, id, 'statut_change', `Nouveau statut : ${LABELS_STATUT[statut] || statut}`);
   res.redirect('/appels-offres/' + id);
 });
 
@@ -189,6 +250,7 @@ router.post('/:id/documents', async (req, res) => {
         args: [id, cleFinale, ext],
       });
     }
+    await enregistrerHistorique(db, id, 'document_ajoute', `${categorie} — ${nomOriginal}`);
   }
   res.redirect('/appels-offres/' + id);
 });
@@ -209,6 +271,21 @@ router.post('/:id/documents/:docId/supprimer', async (req, res) => {
       await db.execute({ sql: 'DELETE FROM appels_offres_formulaires WHERE id = ?', args: [f.id] });
     }
     await db.execute({ sql: 'DELETE FROM appels_offres_documents WHERE id = ?', args: [docId] });
+  }
+  res.redirect('/appels-offres/' + id);
+});
+
+// Accuse de reception d'un addenda (checklist de depot, priorite #5) — bascule
+// simple, jamais automatique : chaque addenda importe doit etre confirme
+// individuellement par l'utilisateur avant que la checklist soit complete.
+router.post('/:id/documents/:docId/accuser', async (req, res) => {
+  const db = req.db;
+  const { id, docId } = req.params;
+  const r = await db.execute({ sql: 'SELECT accuse, nom_fichier FROM appels_offres_documents WHERE id = ? AND appel_offre_id = ? AND categorie = ?', args: [docId, id, 'addenda'] });
+  if (r.rows.length > 0) {
+    const nouvelEtat = r.rows[0].accuse ? 0 : 1;
+    await db.execute({ sql: 'UPDATE appels_offres_documents SET accuse = ? WHERE id = ?', args: [nouvelEtat, docId] });
+    await enregistrerHistorique(db, id, 'addenda_accuse', `${r.rows[0].nom_fichier} — ${nouvelEtat ? 'accusé reçu' : 'accusé retiré'}`);
   }
   res.redirect('/appels-offres/' + id);
 });
@@ -399,6 +476,7 @@ router.post('/:id/formulaire/:formId/remplir', async (req, res) => {
       sql: `UPDATE appels_offres_formulaires SET cle_storage_rempli = ?, format = ?, champs_detectes = ?, champs_non_places = ?, champs_detail = ?, statut = 'pre_rempli' WHERE id = ?`,
       args: [cleRempli, formatDetecte, JSON.stringify(resultat.champsPlaces), JSON.stringify(resultat.champsNonPlaces), JSON.stringify(champDetail), formId],
     });
+    await enregistrerHistorique(db, id, 'formulaire_rempli', `${resultat.champsPlaces.length} champ(s) rempli(s), ${resultat.champsNonPlaces.length} manquant(s)`);
   } catch (e) {
     console.error('[appels-offres] Remplissage formulaire échoué:', e.message);
     return res.redirect(`/appels-offres/${id}/formulaire/${formId}?erreur=${encodeURIComponent(e.message)}`);
@@ -437,6 +515,7 @@ router.post('/:id/formulaire/:formId/valider', async (req, res) => {
     return res.redirect(`/appels-offres/${id}/formulaire/${formId}?erreur=${encodeURIComponent('Impossible de valider : ' + manquants.length + ' champ(s) encore manquant(s).')}`);
   }
   await db.execute({ sql: `UPDATE appels_offres_formulaires SET statut = 'valide' WHERE id = ?`, args: [formId] });
+  await enregistrerHistorique(db, id, 'formulaire_valide', `Formulaire #${formId} validé — plus aucun champ manquant`, (req.body && req.body.valide_par) || null);
   res.redirect(`/appels-offres/${id}/formulaire/${formId}`);
 });
 
