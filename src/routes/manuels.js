@@ -70,7 +70,7 @@ const CHECKLIST_ITEMS = [
 ];
 
 const SECTIONS_VERIFICATION = [
-  { cle: 'garantie_t3e', label: 'Garantie T3E', defautCle: 'garantie_t3e.pdf', peutEtreNonApplicable: false },
+  { cle: 'garantie_t3e', label: 'Garantie T3E', defautCle: 'garantie-t3e.pdf', peutEtreNonApplicable: false },
   { cle: 'garantie_fabricant', label: 'Garantie fabricant', peutEtreNonApplicable: true },
   { cle: 'manuel_entretien', label: "Manuel d'entretien préventif", documentsCle: null, defautCle: 'manuel-entretien-preventif.pdf', peutEtreNonApplicable: false },
   { cle: 'fiches_techniques', label: 'Fiches techniques', peutEtreNonApplicable: false },
@@ -256,6 +256,15 @@ async function supprimerDossierManuel(manuelId) {
 // ══════════════════════════════════════════════════════════════
 //  ROUTES
 // ══════════════════════════════════════════════════════════════
+
+router.get('/_debug-defauts', async (req, res) => {
+  try {
+    const entries = await listFiles(BUCKETS.DOCUMENTS, 'manuels-defauts');
+    res.json({ ok: true, count: entries.length, names: entries.map((e) => e.name) });
+  } catch (e) {
+    res.json({ ok: false, error: e.message, stack: e.stack });
+  }
+});
 
 router.get('/', async (req, res) => {
   const r = await req.db.execute(
