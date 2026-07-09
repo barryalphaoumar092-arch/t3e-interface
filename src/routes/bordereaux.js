@@ -505,8 +505,81 @@ async function listerFabricantsEtFournisseurs(db) {
 }
 
 // ══════════════════════════════════════════════════════════════
+//  RECHERCHE PRODUITS (barre de recherche de /bordereaux/nouveau) — combine
+//  les matériaux catalogués (source fiable) ET les fiches techniques
+//  présentes dans le bucket "fiches-techniques" mais jamais ajoutées comme
+//  matériau. Sans ça, un produit dont seule la FT existe (ex : gammes de
+//  bardeaux résidentiels IKO comme "Dynasty"/"Cambridge"/"Stormtite", non
+//  couvertes par les 23 matériaux IKO déjà catalogués — ceux-ci ne couvrant
+//  que les membranes commerciales) reste introuvable dans la recherche, alors
+//  que sa fiche technique existe bel et bien. Les entrées "FT seule" sont
+//  clairement identifiées (source: 'ft') et n'ont pas d'id numérique réel.
+function nomLisibleDepuisFichierFT(fichier) {
+  return (fichier || '')
+    .replace(/\.[a-z0-9]+$/i, '')
+    .replace(/^\d+[.\-_]?\s*/, '')
+    .replace(/[_]+/g, ' ')
+    .replace(/-+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+async function rechercherProduitsEtFT(db, q) {
+  const like = `%${q}%`;
+  const matRes = await db.execute({
+    sql: `SELECT id, nom, fabricant, fournisseur, lien_fiche_technique FROM materiaux
+          WHERE nom LIKE ? OR fabricant LIKE ? ORDER BY fabricant, nom LIMIT 40`,
+    args: [like, like],
+  });
+  const materiauxTrouves = matRes.rows.map(r => ({ ...r, source: 'materiau' }));
+
+  const motsQuery = motsSignificatifs(q);
+  if (motsQuery.length === 0) return materiauxTrouves;
+
+  const tousMateriaux = await chargerTousMateriaux(db);
+  const dirs = await listerDossiersFT();
+  const ftVirtuelles = [];
+
+  for (const dossier of dirs) {
+    const dossierNorm = normaliserTexte(dossier);
+    const pdfs = await listerPdfsDossierFT(dossier);
+    for (const fichier of pdfs) {
+      const fichierNorm = normaliserTexte(fichier);
+      const correspond = motsQuery.every(w => fichierNorm.includes(w) || dossierNorm.includes(w));
+      if (!correspond) continue;
+
+      const nomPropose = nomLisibleDepuisFichierFT(fichier);
+      const matsDuFabricant = tousMateriaux.filter(m => normaliserTexte(m.fabricant) === dossierNorm);
+      if (matcherMateriau(matsDuFabricant, nomPropose, dossier)) continue; // deja catalogue comme materiau
+
+      ftVirtuelles.push({
+        id: 'ft:' + dossier + '/' + fichier,
+        nom: nomPropose,
+        fabricant: dossier,
+        fournisseur: '',
+        lien_fiche_technique: null,
+        source: 'ft',
+      });
+    }
+  }
+
+  return materiauxTrouves.concat(ftVirtuelles).slice(0, 40);
+}
+
+// ══════════════════════════════════════════════════════════════
 //  ROUTES
 // ══════════════════════════════════════════════════════════════
+
+router.get('/api/rechercher-produits', async (req, res) => {
+  const q = (req.query.q || '').trim();
+  if (q.length < 2) return res.json([]);
+  try {
+    res.json(await rechercherProduitsEtFT(req.db, q));
+  } catch (e) {
+    console.error('[rechercher-produits] Erreur:', e.message);
+    res.json([]);
+  }
+});
 
 router.get('/', async (req, res) => {
   const r = await req.db.execute(
@@ -536,11 +609,16 @@ router.post('/analyser', async (req, res) => {
   if (!cleTempValide(devisKey)) return res.status(400).send('Veuillez importer le devis PDF.');
   if (!cleTempValide(bordereauKey)) return res.status(400).send('Veuillez importer le bordereau .docx.');
 
-  const materiauIds = [].concat(req.body.materiau_id || [])
-    .map(id => parseInt(id))
-    .filter(id => !isNaN(id));
+  // materiau_id contient soit un vrai id numerique (table materiaux), soit
+  // une entree virtuelle "ft:{fabricant}/{fichier}" choisie depuis une fiche
+  // technique presente dans le stockage mais jamais cataloguee comme materiau
+  // (voir rechercherProduitsEtFT / GET /api/rechercher-produits) — les deux
+  // sont fusionnes plus bas EN CONSERVANT L'ORDRE DE SELECTION.
+  const materiauIdsBrut = [].concat(req.body.materiau_id || []);
+  const materiauIds = materiauIdsBrut.map(id => parseInt(id)).filter(id => !isNaN(id));
+  const ftVirtuellesBrut = materiauIdsBrut.filter(id => typeof id === 'string' && id.startsWith('ft:'));
 
-  if (materiauIds.length === 0) {
+  if (materiauIds.length === 0 && ftVirtuellesBrut.length === 0) {
     await removeFile(BUCKETS.UPLOADS_TEMP, devisKey).catch(() => {});
     await removeFile(BUCKETS.UPLOADS_TEMP, bordereauKey).catch(() => {});
     return res.status(400).send('Veuillez sélectionner au moins un matériau dans la barre de recherche.');
@@ -586,15 +664,36 @@ router.post('/analyser', async (req, res) => {
 
   // Charger les matériaux EXACTEMENT choisis par l'utilisateur (source 100% fiable,
   // plus de devinage par l'IA pour TITRE/FABRICANT/FOURNISSEUR)
-  const placeholders = materiauIds.map(() => '?').join(',');
-  const matRows = (await db.execute({
-    sql: `SELECT id, nom, fabricant, fournisseur, lien_fiche_technique FROM materiaux WHERE id IN (${placeholders})`,
-    args: materiauIds,
-  })).rows;
+  let matRows = [];
+  if (materiauIds.length > 0) {
+    const placeholders = materiauIds.map(() => '?').join(',');
+    matRows = (await db.execute({
+      sql: `SELECT id, nom, fabricant, fournisseur, lien_fiche_technique FROM materiaux WHERE id IN (${placeholders})`,
+      args: materiauIds,
+    })).rows;
+  }
 
-  // Conserver l'ordre de sélection de l'utilisateur
-  const produitsBase = materiauIds
-    .map(id => matRows.find(m => m.id === id))
+  // Entrees "fiche technique seule" (pas encore un materiau catalogue) : on
+  // connait deja le chemin exact du fichier, donc pas besoin de re-matcher
+  // par mots-cles plus bas (voir _ftCheminConnu).
+  const ftVirtuelles = ftVirtuellesBrut.map((idBrut) => {
+    const chemin = idBrut.slice('ft:'.length); // "{fabricant}/{fichier}"
+    const sepIdx = chemin.indexOf('/');
+    const fabricant = sepIdx === -1 ? chemin : chemin.slice(0, sepIdx);
+    const fichier = sepIdx === -1 ? '' : chemin.slice(sepIdx + 1);
+    return {
+      id: idBrut,
+      nom: nomLisibleDepuisFichierFT(fichier),
+      fabricant,
+      fournisseur: '',
+      lien_fiche_technique: null,
+      _ftCheminConnu: chemin,
+    };
+  });
+
+  // Conserver l'ordre de sélection de l'utilisateur (numeriques + virtuelles confondus)
+  const produitsBase = materiauIdsBrut
+    .map(idBrut => matRows.find(m => m.id === parseInt(idBrut)) || ftVirtuelles.find(v => v.id === idBrut))
     .filter(Boolean);
 
   // Appel IA GPT-4o — uniquement pour situer chaque produit dans le devis (section/article/remarque)
@@ -651,7 +750,7 @@ router.post('/analyser', async (req, res) => {
       REMARQUE: '',
       ft_url: mat.lien_fiche_technique || '',
     };
-    p.ft_chemins = await trouverFichesTechniques(p.FABRICANT, p.TITRE);
+    p.ft_chemins = mat._ftCheminConnu ? [mat._ftCheminConnu] : await trouverFichesTechniques(p.FABRICANT, p.TITRE);
     p.ft_noms = p.ft_chemins.map(c => path.basename(c));
     if (p.ft_noms.length === 0 && p.ft_url) {
       p.ft_noms = [nomFichierDepuisUrl(p.ft_url) + ' (web)'];

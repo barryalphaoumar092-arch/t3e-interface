@@ -119,7 +119,7 @@ searchInput.addEventListener('input', function() {
   var q = searchInput.value.trim();
   if (q.length < 2) { suggestionsBox.style.display = 'none'; suggestionsBox.innerHTML = ''; return; }
   debounceTimer = setTimeout(function() {
-    fetch('/api/materiaux?q=' + encodeURIComponent(q))
+    fetch('/bordereaux/api/rechercher-produits?q=' + encodeURIComponent(q))
       .then(function(r) { return r.json(); })
       .then(function(items) { afficherSuggestions(items); })
       .catch(function() { suggestionsBox.style.display = 'none'; });
@@ -140,6 +140,7 @@ function afficherSuggestions(items) {
     btn.className = 'list-group-item list-group-item-action' + (dejaChoisi ? ' disabled text-muted' : '');
     btn.innerHTML = '<strong>' + escapeHtml(item.nom) + '</strong>' +
       (item.fabricant ? ' <span class="text-muted small">— ' + escapeHtml(item.fabricant) + (item.fournisseur ? ' / ' + escapeHtml(item.fournisseur) : '') + '</span>' : '') +
+      (item.source === 'ft' ? ' <span class="badge bg-warning text-dark">Fiche technique seule — pas encore cataloguée</span>' : '') +
       (dejaChoisi ? ' <i class="bi bi-check-circle text-success"></i>' : '');
     if (!dejaChoisi) {
       btn.addEventListener('click', function() { ajouterMateriau(item); });
@@ -168,7 +169,8 @@ function rendreSelection() {
     var row = document.createElement('div');
     row.className = 'd-flex justify-content-between align-items-center border rounded px-2 py-1 bg-light';
     row.innerHTML = '<span><i class="bi bi-box-seam text-primary me-1"></i><strong>' + escapeHtml(item.nom) + '</strong>' +
-      (item.fabricant ? ' <span class="text-muted small">— ' + escapeHtml(item.fabricant) + '</span>' : '') + '</span>';
+      (item.fabricant ? ' <span class="text-muted small">— ' + escapeHtml(item.fabricant) + '</span>' : '') +
+      (item.source === 'ft' ? ' <span class="badge bg-warning text-dark">FT seule</span>' : '') + '</span>';
 
     var btn = document.createElement('button');
     btn.type = 'button';
