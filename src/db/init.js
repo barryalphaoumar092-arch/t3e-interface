@@ -151,6 +151,11 @@ async function initDb() {
     // { NEQ: {x,y,page,size}, RBQ: {...}, ... }. Absente/vide tant que
     // l'utilisateur n'a pas encore utilise l'editeur pour ce formulaire.
     'ALTER TABLE appels_offres_formulaires ADD COLUMN positions JSON',
+    // Detail structure par champ pour le tableau de validation par zone
+    // (priorite utilisateur #5) : [{ cle, nom, zone, valeur, source, statut }].
+    // champs_detectes/champs_non_places (listes de noms) restent inchangees
+    // pour compatibilite ; champs_detail les remplace pour l'affichage.
+    'ALTER TABLE appels_offres_formulaires ADD COLUMN champs_detail JSON',
   ];
 
   for (const sql of migrations) {

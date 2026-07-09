@@ -23,6 +23,77 @@ const NOMS_LISIBLES = {
   CERTIFICATIONS: 'Certifications',
 };
 
+// ══════════════════════════════════════════════════════════════
+//  ZONES DU FORMULAIRE (priorité utilisateur #5) — un formulaire de
+//  soumission SEAO n'est pas un document homogène : chaque partie a un usage
+//  différent (identification vs prix vs signature légale...). On classe
+//  chaque champ RÉELLEMENT DÉTECTÉ dans le document (pas une liste théorique
+//  attendue, qui varierait d'un formulaire à l'autre) dans l'une de ces 8
+//  zones, par mots-clés sur son nom/libellé — best-effort, jamais bloquant :
+//  un champ qui ne correspond à aucun mot-clé tombe dans "Autre" plutôt que
+//  de disparaître.
+const ZONES = {
+  couverture: 'Page de couverture',
+  formulaire_principal: 'Formulaire principal',
+  annexes: 'Annexes',
+  bordereau_prix: 'Bordereau de prix',
+  declaration_soumissionnaire: 'Déclaration du soumissionnaire',
+  accuse_reception_addendas: 'Accusé de réception des addendas',
+  signature: 'Signature',
+  documents_a_joindre: 'Documents à joindre',
+  autre: 'Autre',
+};
+
+const MOTS_CLES_ZONE = [
+  ['couverture', /titre du projet|numero.*appel|no\.?\s*appel|date de publication|objet de l|donneur d.ouvrage/i],
+  ['bordereau_prix', /prix|montant|ventilation|taxe|tps|tvq|sous-total|total|cout|\$/i],
+  ['declaration_soumissionnaire', /declaration|atteste|certifie|soumissionnaire|conflit d.interet|integrite/i],
+  ['accuse_reception_addendas', /addenda|addendum/i],
+  ['signature', /signature|signataire|nom du signataire|titre du signataire|date de signature/i],
+  ['documents_a_joindre', /joindre|annexer|piece jointe|document requis|doit etre joint/i],
+  ['annexes', /annexe/i],
+  ['formulaire_principal', /neq|rbq|entreprise|adresse|telephone|telecopieur|site web|assurance|cautionnement|licence|forme juridique|employe|cnesst|francisation|amp|certification/i],
+];
+
+function classifierZone(nomOuCle) {
+  const texte = String(nomOuCle || '');
+  for (const [zone, regex] of MOTS_CLES_ZONE) {
+    if (regex.test(texte)) return zone;
+  }
+  return 'autre';
+}
+
+// Construit le detail structure { cle, nom, zone, valeur, source, statut }
+// pour CHAQUE champ reellement detecte (place ou non) — sert au tableau de
+// validation par zone. Les champs jamais places restent visibles avec un
+// statut "Manquant" plutot que de disparaitre silencieusement.
+function construireDetailChamps(champsPlaces, champsNonPlaces, valeurs) {
+  const detail = [];
+  const valeursParNomLisible = {};
+  for (const [cle, valeur] of Object.entries(valeurs || {})) {
+    valeursParNomLisible[NOMS_LISIBLES[cle] || cle] = valeur;
+  }
+  for (const nom of champsPlaces || []) {
+    detail.push({
+      nom,
+      zone: classifierZone(nom),
+      valeur: valeursParNomLisible[nom] || '',
+      source: 'Base de connaissances T3E',
+      statut: 'a_valider',
+    });
+  }
+  for (const nom of champsNonPlaces || []) {
+    detail.push({
+      nom,
+      zone: classifierZone(nom),
+      valeur: '',
+      source: 'Aucune',
+      statut: 'manquant',
+    });
+  }
+  return detail;
+}
+
 // AVERTISSEMENTS n'est jamais un champ a placer sur le formulaire (ni via
 // l'IA, ni via l'editeur visuel) — c'est une liste de mises en garde pour
 // l'utilisateur, consommee separement par genererPageNotePreparation().
@@ -44,14 +115,22 @@ function aplatirInfosEntreprise(infosEntreprise) {
 // manquante...) — plutot que d'annoter le formulaire officiel lui-meme avec
 // du texte visible (repere comme peu pro par l'utilisateur), on regroupe tout
 // sur UNE page a part, clairement etiquetee comme a retirer avant depot.
-async function genererPageNotePreparation(pdfDoc, avertissements) {
-  if (!avertissements || avertissements.length === 0) return;
+// `champsManquants` (priorité #5) : liste de noms de champs encore sans
+// valeur — affichée sur la même note plutôt que de générer une 2e page, et
+// sert aussi à marquer le PDF comme BROUILLON tant qu'elle n'est pas vide.
+async function genererPageNotePreparation(pdfDoc, avertissements, champsManquants) {
+  const aAvertir = avertissements && avertissements.length > 0;
+  const aManquants = champsManquants && champsManquants.length > 0;
+  if (!aAvertir && !aManquants) return;
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   const PAGE_W = 612, PAGE_H = 792;
   const memo = pdfDoc.insertPage(0, [PAGE_W, PAGE_H]);
   let y = PAGE_H - 60;
-  memo.drawText('NOTE DE PRÉPARATION — À RETIRER AVANT DÉPÔT', { x: 50, y, size: 14, font: fontBold });
+  const titre = aManquants
+    ? 'BROUILLON — NOTE DE PRÉPARATION — À RETIRER AVANT DÉPÔT'
+    : 'NOTE DE PRÉPARATION — À RETIRER AVANT DÉPÔT';
+  memo.drawText(titre, { x: 50, y, size: 14, font: fontBold });
   y -= 26;
   const lignes = [
     'Ce formulaire a été pré-rempli automatiquement à partir de la base de',
@@ -60,19 +139,27 @@ async function genererPageNotePreparation(pdfDoc, avertissements) {
   ];
   lignes.forEach((l) => { memo.drawText(l, { x: 50, y, size: 10, font }); y -= 16; });
   y -= 10;
-  avertissements.forEach((av, i) => {
-    const mots = av.split(' ');
-    let ligne = `${i + 1}. `;
-    for (const mot of mots) {
-      if (font.widthOfTextAtSize(ligne + mot, 10) > PAGE_W - 100) {
-        memo.drawText(ligne, { x: 50, y, size: 10, font }); y -= 15;
-        ligne = '   ' + mot + ' ';
-      } else {
-        ligne += mot + ' ';
+
+  function ecrireListe(entete, items) {
+    memo.drawText(entete, { x: 50, y, size: 11, font: fontBold }); y -= 18;
+    items.forEach((av, i) => {
+      const mots = String(av).split(' ');
+      let ligne = `${i + 1}. `;
+      for (const mot of mots) {
+        if (font.widthOfTextAtSize(ligne + mot, 10) > PAGE_W - 100) {
+          memo.drawText(ligne, { x: 50, y, size: 10, font }); y -= 15;
+          ligne = '   ' + mot + ' ';
+        } else {
+          ligne += mot + ' ';
+        }
       }
-    }
-    memo.drawText(ligne, { x: 50, y, size: 10, font }); y -= 24;
-  });
+      memo.drawText(ligne, { x: 50, y, size: 10, font }); y -= 20;
+    });
+    y -= 10;
+  }
+
+  if (aManquants) ecrireListe('CHAMPS ENCORE MANQUANTS (à compléter avant approbation finale) :', champsManquants);
+  if (aAvertir) ecrireListe('MISES EN GARDE :', avertissements);
 }
 
 // .docx — réutilise le moteur partagé docx-xml-utils.js en mode "tout en
@@ -266,4 +353,5 @@ async function remplirFormulairePdfPlat(buf, infosEntreprise) {
 module.exports = {
   remplirFormulaireDocx, remplirFormulairePdfAcroForm, remplirFormulairePdfPlat,
   aplatirInfosEntreprise, NOMS_LISIBLES, genererPageNotePreparation,
+  ZONES, classifierZone, construireDetailChamps,
 };

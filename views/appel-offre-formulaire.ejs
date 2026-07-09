@@ -18,7 +18,10 @@
   <div class="card-body d-flex justify-content-between align-items-center">
     <div>
       <span class="badge bg-info text-dark"><%= formulaire.format || '?' %></span>
-      Statut : <strong><%= formulaire.statut %></strong>
+      Statut :
+      <span class="badge <%= formulaire.statut === 'valide' ? 'bg-success' : (formulaire.statut === 'pre_rempli' ? 'bg-warning text-dark' : 'bg-secondary') %>">
+        <%= formulaire.statut === 'valide' ? 'Validé' : (formulaire.statut === 'pre_rempli' ? 'Brouillon — à valider' : 'À remplir') %>
+      </span>
     </div>
     <div class="d-flex gap-2">
       <% if ((formulaire.format || '').toLowerCase() !== 'docx') { %>
@@ -34,8 +37,15 @@
       </form>
       <% if (formulaire.cle_storage_rempli) { %>
       <a href="/appels-offres/<%= appel.id %>/formulaire/<%= formulaire.id %>/telecharger" class="btn btn-success">
-        <i class="bi bi-download"></i> Télécharger le formulaire pré-rempli
+        <i class="bi bi-download"></i> Télécharger le <%= formulaire.statut === 'valide' ? 'formulaire' : 'brouillon' %>
       </a>
+      <% } %>
+      <% if (formulaire.cle_storage_rempli && formulaire.statut !== 'valide') { %>
+      <form method="POST" action="/appels-offres/<%= appel.id %>/formulaire/<%= formulaire.id %>/valider" onsubmit="return confirm('Confirmer que ce formulaire est prêt (tous les champs vérifiés) ?');">
+        <button type="submit" class="btn btn-success" <%= champsNonPlaces.length > 0 ? 'disabled title="Des champs sont encore manquants"' : '' %>>
+          <i class="bi bi-check2-circle"></i> Marquer comme validé
+        </button>
+      </form>
       <% } %>
     </div>
   </div>
@@ -48,35 +58,42 @@
 <% } %>
 
 <% if (formulaire.cle_storage_rempli) { %>
-<div class="row">
-  <div class="col-md-6">
-    <div class="card mb-3">
-      <div class="card-header bg-success text-white"><i class="bi bi-check-circle"></i> Champs pré-remplis automatiquement (<%= champsDetectes.length %>)</div>
-      <div class="card-body">
-        <% if (champsDetectes.length === 0) { %>
-        <p class="text-muted small mb-0">Aucun champ n'a pu être rempli automatiquement.</p>
-        <% } else { %>
-        <ul class="mb-0">
-          <% champsDetectes.forEach(function(c) { %><li><%= c %></li><% }) %>
-        </ul>
-        <% } %>
-      </div>
+<% if (champsNonPlaces.length > 0) { %>
+<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> <strong>Brouillon</strong> — <%= champsNonPlaces.length %> champ(s) encore manquant(s) avant de pouvoir valider ce formulaire.</div>
+<% } %>
+<p class="text-muted small">Traçabilité par zone du formulaire — chaque champ détecté dans le document est classé dans sa zone d'origine. Prix, exclusions, addendas acceptés, délais, cautionnement et déclarations légales ne sont <strong>jamais</strong> remplis automatiquement — à valider vous-même avant dépôt.</p>
+
+<% Object.keys(ZONES).forEach(function(zoneKey) { %>
+  <% var champsZone = zonesAvecChamps[zoneKey]; %>
+  <% if (champsZone && champsZone.length > 0) { %>
+  <div class="card mb-3">
+    <div class="card-header bg-light"><i class="bi bi-folder2"></i> <%= ZONES[zoneKey] %> <span class="badge bg-secondary ms-1"><%= champsZone.length %></span></div>
+    <div class="table-responsive">
+      <table class="table table-sm mb-0 align-middle">
+        <thead class="table-light">
+          <tr><th>Champ détecté</th><th>Valeur proposée</th><th>Source</th><th>Statut</th></tr>
+        </thead>
+        <tbody>
+          <% champsZone.forEach(function(c) { %>
+          <tr>
+            <td><%= c.nom %></td>
+            <td><%= c.valeur || '—' %></td>
+            <td class="text-muted small"><%= c.source %></td>
+            <td>
+              <% if (c.statut === 'manquant') { %>
+                <span class="badge bg-danger">Manquant</span>
+              <% } else { %>
+                <span class="badge bg-warning text-dark">À valider</span>
+              <% } %>
+            </td>
+          </tr>
+          <% }) %>
+        </tbody>
+      </table>
     </div>
   </div>
-  <div class="col-md-6">
-    <div class="card mb-3">
-      <div class="card-header bg-warning text-dark"><i class="bi bi-pencil-square"></i> À compléter manuellement (<%= champsNonPlaces.length %>)</div>
-      <div class="card-body">
-        <p class="text-muted small">Prix, exclusions, addendas acceptés, délais, cautionnement et déclarations légales ne sont <strong>jamais</strong> remplis automatiquement — à valider vous-même avant dépôt.</p>
-        <% if (champsNonPlaces.length > 0) { %>
-        <ul class="mb-0">
-          <% champsNonPlaces.forEach(function(c) { %><li><%= c %></li><% }) %>
-        </ul>
-        <% } %>
-      </div>
-    </div>
-  </div>
-</div>
+  <% } %>
+<% }) %>
 <% } else { %>
 <div class="alert alert-secondary">Cliquez sur "Pré-remplir avec l'IA" pour lancer le remplissage automatique à partir de la base de connaissances (NEQ, RBQ, assurances, certifications...).</div>
 <% } %>

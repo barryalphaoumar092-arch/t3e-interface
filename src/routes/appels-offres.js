@@ -8,6 +8,7 @@ const { obtenirInfosEntreprise } = require('../services/seao-autofill');
 const {
   remplirFormulaireDocx, remplirFormulairePdfAcroForm, remplirFormulairePdfPlat,
   aplatirInfosEntreprise, NOMS_LISIBLES, genererPageNotePreparation,
+  ZONES, construireDetailChamps,
 } = require('../services/seao-formulaire');
 const { fillTemplatePdf } = require('../services/pdf-filler');
 const { joindreAnnexesReelles } = require('../services/seao-annexes');
@@ -18,7 +19,7 @@ const LABELS_STATUT = {
   a_analyser: 'À analyser', interessant: 'Intéressant', a_soumissionner: 'À soumissionner',
   refuse: 'Refusé', depose: 'Déposé', perdu: 'Perdu', gagne: 'Gagné',
 };
-const CATEGORIES_DOCUMENTS = ['devis', 'plans', 'addenda', 'formulaire_soumission'];
+const CATEGORIES_DOCUMENTS = ['devis', 'plans', 'addenda', 'formulaire_soumission', 'documents_administratifs'];
 
 // Cles generees exclusivement par /api/upload-url (voir bordereaux.js/manuels.js) : jamais de separateur de chemin.
 function cleTempValide(key) {
@@ -220,12 +221,22 @@ router.get('/:id/formulaire/:formId', async (req, res) => {
   const appelR = await db.execute({ sql: 'SELECT * FROM appels_offres_seao WHERE id = ?', args: [id] });
   if (appelR.rows.length === 0) return res.redirect('/appels-offres');
 
-  let champsDetectes = [], champsNonPlaces = [];
+  let champsDetectes = [], champsNonPlaces = [], champsDetail = [];
   try { champsDetectes = JSON.parse(r.rows[0].champs_detectes || '[]'); } catch (_) {}
   try { champsNonPlaces = JSON.parse(r.rows[0].champs_non_places || '[]'); } catch (_) {}
+  try { champsDetail = JSON.parse(r.rows[0].champs_detail || '[]'); } catch (_) {}
+
+  // Grouper par zone (priorite #5) pour l'affichage, dans un ordre fixe et
+  // lisible plutot que l'ordre d'insertion (place/non-place melanges).
+  const zonesAvecChamps = {};
+  for (const c of champsDetail) {
+    if (!zonesAvecChamps[c.zone]) zonesAvecChamps[c.zone] = [];
+    zonesAvecChamps[c.zone].push(c);
+  }
 
   res.render('appel-offre-formulaire', {
     appel: appelR.rows[0], formulaire: r.rows[0], champsDetectes, champsNonPlaces,
+    zonesAvecChamps, ZONES,
     erreur: req.query.erreur || '',
   });
 });
@@ -351,10 +362,16 @@ router.post('/:id/formulaire/:formId/remplir', async (req, res) => {
       }
     }
 
+    // Traçabilité par zone (priorité #5) : chaque champ réellement détecté
+    // (placé ou non) est classé dans l'une des 8 zones du formulaire pour le
+    // tableau de validation — jamais bloquant, "Autre" en repli.
+    const champDetail = construireDetailChamps(resultat.champsPlaces, resultat.champsNonPlaces, aplatirInfosEntreprise(infos));
+
     // Annexes reelles a joindre (CNESST, ISO, francisation, AMP...) + mises
     // en garde de l'IA (donnee trouvee pour une entite differente,
     // attestation manquante...) — les annexes sont fusionnees directement
-    // dans le PDF, les avertissements regroupes sur UNE page ajoutee en tete
+    // dans le PDF, les avertissements + champs manquants regroupes sur UNE
+    // page ajoutee en tete (marquee BROUILLON tant qu'il manque des champs)
     // plutot que d'annoter le formulaire officiel lui-meme.
     if (formatDetecte !== 'docx') {
       try {
@@ -364,7 +381,7 @@ router.post('/:id/formulaire/:formId/remplir', async (req, res) => {
         annexesNonTrouvees.forEach((lib) => avertissements.push(
           `Aucun document trouvé dans la base de connaissances pour joindre à l'annexe « ${lib} » — à ajouter manuellement.`
         ));
-        if (avertissements.length > 0) await genererPageNotePreparation(pdfFinal, avertissements);
+        await genererPageNotePreparation(pdfFinal, avertissements, resultat.champsNonPlaces);
         resultat.buffer = Buffer.from(await pdfFinal.save());
         if (annexesJointes.length > 0) console.log('[appels-offres] Annexes jointes automatiquement:', annexesJointes.join(', '));
       } catch (e) {
@@ -375,9 +392,12 @@ router.post('/:id/formulaire/:formId/remplir', async (req, res) => {
     const cleRempli = formulaire.cle_storage_original.replace(/(\.[a-z0-9]+)$/i, '-rempli$1');
     await uploadBuffer(BUCKETS.SEAO, cleRempli, resultat.buffer);
 
+    // "pre_rempli" reste le statut tant que l'utilisateur n'a pas confirmé
+    // explicitement (voir POST .../valider) — même si tous les champs sont
+    // déjà remplis, la confirmation manuelle reste requise.
     await db.execute({
-      sql: `UPDATE appels_offres_formulaires SET cle_storage_rempli = ?, format = ?, champs_detectes = ?, champs_non_places = ?, statut = 'pre_rempli' WHERE id = ?`,
-      args: [cleRempli, formatDetecte, JSON.stringify(resultat.champsPlaces), JSON.stringify(resultat.champsNonPlaces), formId],
+      sql: `UPDATE appels_offres_formulaires SET cle_storage_rempli = ?, format = ?, champs_detectes = ?, champs_non_places = ?, champs_detail = ?, statut = 'pre_rempli' WHERE id = ?`,
+      args: [cleRempli, formatDetecte, JSON.stringify(resultat.champsPlaces), JSON.stringify(resultat.champsNonPlaces), JSON.stringify(champDetail), formId],
     });
   } catch (e) {
     console.error('[appels-offres] Remplissage formulaire échoué:', e.message);
@@ -392,12 +412,32 @@ router.get('/:id/formulaire/:formId/telecharger', async (req, res) => {
   const r = await db.execute({ sql: 'SELECT * FROM appels_offres_formulaires WHERE id = ? AND appel_offre_id = ?', args: [formId, id] });
   if (r.rows.length === 0 || !r.rows[0].cle_storage_rempli) return res.status(404).send('Formulaire pas encore pré-rempli.');
   try {
-    const nomFichier = 'formulaire-rempli' + path.extname(r.rows[0].cle_storage_rempli);
+    // Tant que le formulaire n'a pas ete valide explicitement (priorite #5),
+    // le nom du fichier telecharge le rappelle clairement.
+    const prefixe = r.rows[0].statut === 'valide' ? '' : 'BROUILLON-';
+    const nomFichier = prefixe + 'formulaire-rempli' + path.extname(r.rows[0].cle_storage_rempli);
     const url = await createSignedUrl(BUCKETS.SEAO, r.rows[0].cle_storage_rempli, 300, nomFichier);
     res.redirect(url);
   } catch (e) {
     res.status(404).send('Fichier introuvable dans le stockage.');
   }
+});
+
+// Confirmation manuelle (priorité #5) : le formulaire ne devient "valide"
+// (retire le marquage brouillon) que si tous les champs détectés ont une
+// valeur — jamais automatique, jamais si des champs manquent encore.
+router.post('/:id/formulaire/:formId/valider', async (req, res) => {
+  const db = req.db;
+  const { id, formId } = req.params;
+  const r = await db.execute({ sql: 'SELECT champs_non_places FROM appels_offres_formulaires WHERE id = ? AND appel_offre_id = ?', args: [formId, id] });
+  if (r.rows.length === 0) return res.redirect(`/appels-offres/${id}`);
+  let manquants = [];
+  try { manquants = JSON.parse(r.rows[0].champs_non_places || '[]'); } catch (_) {}
+  if (manquants.length > 0) {
+    return res.redirect(`/appels-offres/${id}/formulaire/${formId}?erreur=${encodeURIComponent('Impossible de valider : ' + manquants.length + ' champ(s) encore manquant(s).')}`);
+  }
+  await db.execute({ sql: `UPDATE appels_offres_formulaires SET statut = 'valide' WHERE id = ?`, args: [formId] });
+  res.redirect(`/appels-offres/${id}/formulaire/${formId}`);
 });
 
 module.exports = router;
