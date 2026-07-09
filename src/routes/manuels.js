@@ -257,15 +257,6 @@ async function supprimerDossierManuel(manuelId) {
 //  ROUTES
 // ══════════════════════════════════════════════════════════════
 
-router.get('/_debug-defauts', async (req, res) => {
-  try {
-    const entries = await listFiles(BUCKETS.DOCUMENTS, 'manuels-defauts');
-    res.json({ ok: true, count: entries.length, names: entries.map((e) => e.name) });
-  } catch (e) {
-    res.json({ ok: false, error: e.message, stack: e.stack });
-  }
-});
-
 router.get('/', async (req, res) => {
   const r = await req.db.execute(
     "SELECT id, titre, numero_dossier, statut, cree_par, created_at FROM manuels ORDER BY created_at DESC"
