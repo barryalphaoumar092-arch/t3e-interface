@@ -1,8 +1,8 @@
 // Profils des personnes chez T3E qui remplissent les formulaires de
-// soumission SEAO — l'utilisateur choisit lequel gère le dossier avant de
-// lancer le remplissage IA, et ses coordonnées remplacent automatiquement
+// soumission SEAO — l'utilisateur choisit lequel gere le dossier avant de
+// lancer le remplissage IA, et ses coordonnees remplacent automatiquement
 // les champs REPRESENTANT_* sur chaque page du formulaire concerne.
-// Liste fixe (3 personnes) : pas de table DB pour l'instant, à convertir en
+// Liste fixe (4 personnes) : pas de table DB pour l'instant, a convertir en
 // CRUD si le nombre de profils devait grandir.
 const REPRESENTANTS = [
   {
@@ -28,6 +28,14 @@ const REPRESENTANTS = [
     poste: 'Estimateur / Chargé de projet',
     courriel: 'fbedoui@toiturestroisetoiles.com',
     telephone: '514-365-6600 x 234',
+  },
+  {
+    id: 4,
+    nom: 'Barry',
+    prenom: 'Alpha Oumar',
+    poste: 'Stagiaire',
+    courriel: 'projets@t3e.co',
+    telephone: '438-226-9598',
   },
 ];
 
