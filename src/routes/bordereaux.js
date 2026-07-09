@@ -241,10 +241,21 @@ async function listerDossiersFT() {
   return _ftFoldersCache;
 }
 
+// Cache par dossier (5 min, meme principe que _ftFoldersCache) — sans ca,
+// rechercherProduitsEtFT() relistait TOUS les dossiers fabricants (21 appels
+// Supabase sequentiels) a CHAQUE frappe dans la barre de recherche, assez
+// lent pour depasser le delai d'une fonction serverless (504 observe en
+// production).
+const _ftPdfsCache = new Map(); // dossier -> { pdfs, at }
 async function listerPdfsDossierFT(dossier) {
+  const now = Date.now();
+  const cached = _ftPdfsCache.get(dossier);
+  if (cached && now - cached.at < 5 * 60 * 1000) return cached.pdfs;
   let entries = [];
   try { entries = await listFiles(BUCKETS.FICHES_TECHNIQUES, dossier); } catch (_) { return []; }
-  return entries.filter(e => e.id !== null && e.name.toLowerCase().endsWith('.pdf')).map(e => e.name);
+  const pdfs = entries.filter(e => e.id !== null && e.name.toLowerCase().endsWith('.pdf')).map(e => e.name);
+  _ftPdfsCache.set(dossier, { pdfs, at: now });
+  return pdfs;
 }
 
 async function trouverFichesTechniques(fabricant, titre) {
@@ -562,11 +573,16 @@ async function rechercherProduitsEtFT(db, q) {
 
   const tousMateriaux = await chargerTousMateriaux(db);
   const dirs = await listerDossiersFT();
+  // Liste TOUS les dossiers EN PARALLELE (au lieu d'un for..await sequentiel)
+  // — le premier appel non cache par dossier (voir listerPdfsDossierFT)
+  // dominait sinon le temps de reponse, jusqu'a depasser le delai serverless.
+  const pdfsParDossier = await Promise.all(dirs.map(d => listerPdfsDossierFT(d)));
   const ftVirtuelles = [];
 
-  for (const dossier of dirs) {
+  for (let i = 0; i < dirs.length; i++) {
+    const dossier = dirs[i];
     const dossierNorm = normaliserTexte(dossier);
-    const pdfs = await listerPdfsDossierFT(dossier);
+    const pdfs = pdfsParDossier[i];
     for (const fichier of pdfs) {
       const fichierNorm = normaliserTexte(fichier);
       const correspond = motsQuery.every(w => fichierNorm.includes(w) || dossierNorm.includes(w));
