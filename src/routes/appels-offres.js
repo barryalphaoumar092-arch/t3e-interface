@@ -411,7 +411,16 @@ router.post('/:id/formulaire/:formId/remplir', async (req, res) => {
     // depuis les documents génériques de l'entreprise : une sélection humaine
     // explicite pour un dossier précis est plus fiable qu'une extraction.
     const representant = obtenirRepresentant(req.body && req.body.representant_id);
-    if (representant) Object.assign(infos, champsRepresentant(representant));
+    if (representant) {
+      Object.assign(infos, champsRepresentant(representant));
+      // Le représentant désigné pour CE dossier est la personne qui remplit
+      // et signe la soumission — ne pas laisser l'IA placer en plus
+      // SIGNATAIRE_AUTORISE (fait légal distinct, signataire par défaut de
+      // l'entreprise) sur les mêmes lignes "Nom/Fonction en lettres
+      // moulées" : cause confirmée d'un bug signalé par l'utilisateur (le
+      // président apparaissait à la place du représentant sélectionné).
+      delete infos.SIGNATAIRE_AUTORISE;
+    }
 
     const ext = (formulaire.format || '').toLowerCase();
     let positionsSauvegardees = {};

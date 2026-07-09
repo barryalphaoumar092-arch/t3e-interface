@@ -335,6 +335,32 @@ async function remplirFormulairePdfPlat(buf, infosEntreprise) {
     page.drawLine({ start: { x: x0, y: y0 }, end: { x: x1, y: y1 }, thickness: 1.1, color: ROUGE });
     page.drawLine({ start: { x: x0, y: y1 }, end: { x: x1, y: y0 }, thickness: 1.1, color: ROUGE });
   }
+  const REGEX_DIACRITIQUES = new RegExp('[' + String.fromCharCode(0x0300) + '-' + String.fromCharCode(0x036f) + ']', 'g');
+  function normaliserTexte(s) {
+    return String(s || '').normalize('NFD').replace(REGEX_DIACRITIQUES, '').toLowerCase().trim();
+  }
+  // FORME_JURIDIQUE encode PLUSIEURS cases a cocher simultanement (ex.
+  // "Societe par actions, regime provincial (Quebec)" = 3 cases distinctes :
+  // "Societe par actions" + "Regime provincial" + "Quebec") alors que
+  // mapperChampsBordereau() ne retourne qu'UN SEUL index par champ. Le
+  // laisser choisir a deja mene a cocher a tort une case sans rapport (ex.
+  // "Autre") au lieu des bonnes. On coche donc directement TOUTE case dont
+  // le libelle apparait tel quel dans la valeur, sans passer par l'IA pour
+  // ce champ precis.
+  function cocherCasesFormeJuridique(valeur) {
+    const valeurNorm = normaliserTexte(valeur);
+    let nbCochees = 0;
+    for (const entree of entriesLimitees) {
+      if (!estLigneCheckbox(entree.ligne)) continue;
+      const label = entree.ligne.texte.replace(REGEX_CASE_A_COCHER, '').replace(REGEX_OPTION_LETTRE, '').trim();
+      const labelNorm = normaliserTexte(label);
+      if (labelNorm.length >= 4 && valeurNorm.includes(labelNorm)) {
+        cocherCase(pdfDoc.getPage(entree.page), entree.ligne);
+        nbCochees++;
+      }
+    }
+    return nbCochees;
+  }
 
   // Un vrai formulaire SEAO separe souvent le libelle ("Adresse :") de sa
   // ligne a blanc ("________") — parfois sur la MEME ligne (le blanc suit le
@@ -350,18 +376,18 @@ async function remplirFormulairePdfPlat(buf, infosEntreprise) {
   }
 
   for (const cle of Object.keys(champs)) {
+    if (cle === 'FORME_JURIDIQUE') {
+      const nbCochees = cocherCasesFormeJuridique(champs[cle]);
+      if (nbCochees > 0) champsPlaces.push(NOMS_LISIBLES[cle] || cle);
+      else champsNonPlaces.push(NOMS_LISIBLES[cle] || cle);
+      continue;
+    }
     const idx = mapping ? mapping[cle] : null;
     const entree = (idx !== null && idx !== undefined) ? entriesLimitees[idx] : null;
     if (!entree) { champsNonPlaces.push(NOMS_LISIBLES[cle] || cle); continue; }
     try {
       const page = pdfDoc.getPage(entree.page);
       if (estLigneCheckbox(entree.ligne)) {
-        // NOTE : une seule case est cochee par champ (mapperChampsBordereau
-        // ne retourne qu'un seul index par cle) — un fait necessitant
-        // PLUSIEURS cases cochees simultanement (ex. un statut juridique
-        // combinant "Societe par actions" + "Regime provincial" + un
-        // troisieme choix) ne sera donc que partiellement coche. Limitation
-        // connue, documentee, a ameliorer si ce cas devient frequent.
         cocherCase(page, entree.ligne);
         champsPlaces.push(NOMS_LISIBLES[cle] || cle);
         continue;
