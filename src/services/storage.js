@@ -107,4 +107,26 @@ async function listFiles(bucket, prefix = '') {
   return data || [];
 }
 
-module.exports = { getClient, BUCKETS, ensureBucket, uploadBuffer, downloadBuffer, createSignedUploadUrl, createSignedUrl, removeFile, listFiles, sanitizeKey, stripAccents };
+// chemin_fichier (table `documents`) est normalement "documents/{fichier}"
+// (bucket "documents", a plat) -- mais pour certains documents de la base de
+// connaissances (ex : fiches techniques stockees dans le bucket
+// "fiches-techniques", sous des sous-dossiers par fabricant) le premier
+// segment peut designer un AUTRE bucket connu. On ne retombe sur le
+// comportement historique (bucket "documents", cle = basename) que si ce
+// premier segment n'est pas un bucket reconnu, pour ne rien casser sur les
+// documents deja corrects. Utilise par connaissances.js ET seao-annexes.js
+// (meme piege rencontre dans les deux : deviner une cle a plat plutot que
+// resoudre le vrai chemin fait echouer silencieusement le telechargement
+// d'un document pourtant bien present et trouve par titre).
+const BUCKETS_CONNUS = new Set(Object.values(BUCKETS));
+function resoudreBucketEtCle(cheminFichier, nomFichier) {
+  const brut = cheminFichier || nomFichier || '';
+  const segments = brut.split('/');
+  if (segments.length > 1 && BUCKETS_CONNUS.has(segments[0])) {
+    return { bucket: segments[0], key: sanitizeKey(segments.slice(1).join('/')) };
+  }
+  const path = require('path');
+  return { bucket: BUCKETS.DOCUMENTS, key: sanitizeKey(path.basename(brut)) };
+}
+
+module.exports = { getClient, BUCKETS, ensureBucket, uploadBuffer, downloadBuffer, createSignedUploadUrl, createSignedUrl, removeFile, listFiles, sanitizeKey, stripAccents, resoudreBucketEtCle };

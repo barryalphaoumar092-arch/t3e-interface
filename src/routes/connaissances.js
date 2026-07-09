@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const path = require('path');
-const { downloadBuffer, sanitizeKey, BUCKETS } = require('../services/storage');
+const { downloadBuffer, sanitizeKey, BUCKETS, resoudreBucketEtCle } = require('../services/storage');
 
 const MIME_TYPES = {
   '.pdf': 'application/pdf',
@@ -114,23 +114,6 @@ router.post('/ajouter', async (req, res) => {
   });
   res.redirect('/connaissances?success=added');
 });
-
-// chemin_fichier est normalement "documents/{fichier}" (bucket "documents",
-// a plat) -- mais pour certains documents de la base de connaissances (ex :
-// fiches techniques deja stockees dans le bucket "fiches-techniques", sous
-// des sous-dossiers par fabricant) le premier segment peut designer un AUTRE
-// bucket connu. On ne retombe sur le comportement historique (bucket
-// "documents", cle = basename) que si ce premier segment n'est pas un bucket
-// reconnu, pour ne rien casser sur les documents deja corrects.
-const BUCKETS_CONNUS = new Set(Object.values(BUCKETS));
-function resoudreBucketEtCle(cheminFichier, nomFichier) {
-  const brut = cheminFichier || nomFichier || '';
-  const segments = brut.split('/');
-  if (segments.length > 1 && BUCKETS_CONNUS.has(segments[0])) {
-    return { bucket: segments[0], key: sanitizeKey(segments.slice(1).join('/')) };
-  }
-  return { bucket: BUCKETS.DOCUMENTS, key: sanitizeKey(path.basename(brut)) };
-}
 
 router.get('/fichier/:id', async (req, res) => {
   const db = req.db;

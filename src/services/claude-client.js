@@ -557,12 +557,18 @@ const ANALYSE_INFOS_ENTREPRISE_SCHEMA = {
     TELEPHONE_ENTREPRISE: { type: 'string' },
     TELECOPIEUR_ENTREPRISE: { type: 'string' },
     SITE_WEB: { type: 'string' },
+    COURRIEL_ENTREPRISE: { type: 'string' },
+    TPS_TVH: { type: 'string' },
+    TVQ: { type: 'string' },
     ASSURANCE_RESPONSABILITE_CIVILE: { type: 'string' },
     ASSURANCE_AUTOMOBILE: { type: 'string' },
     CAUTIONNEMENT: { type: 'string' },
     CERTIFICATIONS: { type: 'array', items: { type: 'string' } },
     SIGNATAIRE_AUTORISE: { type: 'string' },
     REPRESENTANT_TITRE: { type: 'string' },
+    REPRESENTANT_COURRIEL: { type: 'string' },
+    REPRESENTANT_TELEPHONE: { type: 'string' },
+    REPRESENTANT_CELLULAIRE: { type: 'string' },
     FORME_JURIDIQUE: { type: 'string' },
     NOMBRE_EMPLOYES_QUEBEC: { type: 'string' },
     CNESST_STATUT: { type: 'string' },
@@ -574,10 +580,11 @@ const ANALYSE_INFOS_ENTREPRISE_SCHEMA = {
   },
   required: [
     'NEQ', 'RBQ', 'NOM_ENTREPRISE', 'ADRESSE_ENTREPRISE', 'TELEPHONE_ENTREPRISE',
-    'TELECOPIEUR_ENTREPRISE', 'SITE_WEB',
+    'TELECOPIEUR_ENTREPRISE', 'SITE_WEB', 'COURRIEL_ENTREPRISE', 'TPS_TVH', 'TVQ',
     'ASSURANCE_RESPONSABILITE_CIVILE', 'ASSURANCE_AUTOMOBILE', 'CAUTIONNEMENT',
-    'CERTIFICATIONS', 'SIGNATAIRE_AUTORISE', 'REPRESENTANT_TITRE', 'FORME_JURIDIQUE',
-    'NOMBRE_EMPLOYES_QUEBEC', 'CNESST_STATUT', 'FRANCISATION_STATUT',
+    'CERTIFICATIONS', 'SIGNATAIRE_AUTORISE', 'REPRESENTANT_TITRE',
+    'REPRESENTANT_COURRIEL', 'REPRESENTANT_TELEPHONE', 'REPRESENTANT_CELLULAIRE',
+    'FORME_JURIDIQUE', 'NOMBRE_EMPLOYES_QUEBEC', 'CNESST_STATUT', 'FRANCISATION_STATUT',
     'AMP_NUMERO_CLIENT', 'AMP_ECHEANCE', 'AVERTISSEMENTS', 'confiance',
   ],
   additionalProperties: false,
@@ -588,14 +595,17 @@ const SYSTEM_INFOS_ENTREPRISE = `Tu extrais les informations d'entreprise de Toi
 === CHAMPS ===
 - NEQ : Numéro d'Entreprise du Québec (10 chiffres) DE TOITURES TROIS ÉTOILES INC. — cherche "Registre des entreprises" / "NEQ". ATTENTION : la base contient aussi des documents pour une entité JURIDIQUE DIFFÉRENTE, "Service d'entretien Toitures Trois Étoiles Inc." (NEQ différent) — ne confonds jamais les deux.
 - RBQ : numéro de licence RBQ (Régie du bâtiment du Québec) DE TOITURES TROIS ÉTOILES INC. spécifiquement (pas de l'entité "Service")
-- NOM_ENTREPRISE, ADRESSE_ENTREPRISE, TELEPHONE_ENTREPRISE, TELECOPIEUR_ENTREPRISE, SITE_WEB : coordonnées officielles de T3E (jamais celles d'un client, d'un assureur/courtier, ou d'un tiers)
+- NOM_ENTREPRISE, ADRESSE_ENTREPRISE, TELEPHONE_ENTREPRISE, TELECOPIEUR_ENTREPRISE, SITE_WEB, COURRIEL_ENTREPRISE : coordonnées officielles de T3E (jamais celles d'un client, d'un assureur/courtier, ou d'un tiers)
+- TPS_TVH : numéro d'inscription TPS/TVH de T3E, si mentionné (distinct du NEQ et du RBQ)
+- TVQ : numéro d'inscription TVQ de T3E, si mentionné
 - ASSURANCE_RESPONSABILITE_CIVILE : montant de couverture + assureur si mentionné (ex: "15 000 000 $ — [assureur]")
 - ASSURANCE_AUTOMOBILE : idem pour l'assurance automobile
 - CAUTIONNEMENT : information de cautionnement d'exécution si disponible, sinon ""
 - CERTIFICATIONS : liste courte des certifications/memberships pertinents trouvés (ex: "ISO 9001", "AMCQ", "APECQ", "NRCA", "CRCA", "Safe Contractor")
-- SIGNATAIRE_AUTORISE : nom complet de la personne autorisée à signer pour T3E (président, administrateur — cherche dans une résolution de compagnie, ou la personne à qui sont adressées les lettres officielles de la CNESST/OQLF/AMP)
-- REPRESENTANT_TITRE : titre/fonction de cette personne (ex: "Président") si trouvé
-- FORME_JURIDIQUE : forme juridique de T3E si mentionnée (ex: "Société par actions")
+- SIGNATAIRE_AUTORISE : nom complet de la personne autorisée à signer pour T3E (président, administrateur, OU le représentant/estimateur désigné dans une résolution de compagnie — cherche dans une résolution de compagnie en priorité, sinon la personne à qui sont adressées les lettres officielles de la CNESST/OQLF/AMP)
+- REPRESENTANT_TITRE : titre/fonction de cette personne (ex: "Estimateur", "Président") si trouvé
+- REPRESENTANT_COURRIEL, REPRESENTANT_TELEPHONE, REPRESENTANT_CELLULAIRE : coordonnées directes de cette personne si mentionnées (souvent une adresse courriel nominative @t3e.co)
+- FORME_JURIDIQUE : forme juridique de T3E si mentionnée (ex: "Société par actions, régime provincial (Québec)")
 - NOMBRE_EMPLOYES_QUEBEC : nombre de salariés au Québec si mentionné (ex: "100 à 249"), utile pour les déclarations "Charte de la langue française"
 - CNESST_STATUT : statut de conformité CNESST le plus récent trouvé + sa date (ex: "Conforme au 1 juillet 2026")
 - FRANCISATION_STATUT : statut de francisation OQLF le plus récent (ex: "Certificat de francisation en vigueur")

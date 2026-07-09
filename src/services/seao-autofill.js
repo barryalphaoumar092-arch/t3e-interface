@@ -6,10 +6,12 @@ const { downloadBuffer, BUCKETS } = require('./storage');
 const { parsePdfBuffer } = require('./document-parser');
 const { analyserInfosEntreprise } = require('./claude-client');
 
-// v2 : schema d'extraction elargi (telecopieur, site web, forme juridique,
-// statuts CNESST/francisation/AMP, avertissements d'entite...) — le suffixe
-// invalide automatiquement tout cache calcule avec l'ancien schema plus pauvre.
-const CLE_CACHE = 'seao_infos_entreprise_v2';
+// v3 : schema d'extraction encore elargi (TPS/TVH, TVQ, courriel corporatif,
+// coordonnees directes du representant) + correction du bug de resolution de
+// bucket qui faisait echouer silencieusement la lecture de certains
+// documents "Certificats corporatifs" — le suffixe invalide automatiquement
+// tout cache calcule avec l'ancien schema/bug.
+const CLE_CACHE = 'seao_infos_entreprise_v3';
 const CACHE_MAX_AGE_JOURS = 30;
 
 // Documents les plus denses en information pour le pré-remplissage — évite de
@@ -31,7 +33,7 @@ const TITRES_PERTINENTS = [
 
 async function chargerDocumentsPertinents(db) {
   const r = await db.execute(`
-    SELECT d.id, d.titre, d.nom_fichier, c.nom as categorie
+    SELECT d.id, d.titre, d.nom_fichier, d.chemin_fichier, c.nom as categorie
     FROM documents d JOIN categories c ON d.categorie_id = c.id
     WHERE c.nom IN ('Certificats corporatifs', 'Assurances', 'Département Service')
       AND d.statut = 'actif'
@@ -52,8 +54,15 @@ async function construireContexteTexte(documents) {
   let budget = 60000;
   for (const doc of documents) {
     if (budget <= 0) break;
-    const { sanitizeKey } = require('./storage');
-    const buf = await downloadBuffer(BUCKETS.DOCUMENTS, sanitizeKey(doc.nom_fichier));
+    // Meme piege que connaissances.js/seao-annexes.js : deviner une cle a
+    // plat dans le bucket "documents" plutot que resoudre le vrai
+    // bucket/chemin faisait echouer silencieusement la lecture d'un
+    // document pourtant present dans la base de connaissances — l'IA se
+    // retrouvait alors sans le contenu du document pour en extraire les
+    // champs, meme si "Certificats corporatifs" contenait bien l'info.
+    const { resoudreBucketEtCle } = require('./storage');
+    const { bucket, key } = resoudreBucketEtCle(doc.chemin_fichier, doc.nom_fichier);
+    const buf = await downloadBuffer(bucket, key);
     if (!buf) continue;
     try {
       const { text } = await parsePdfBuffer(buf);

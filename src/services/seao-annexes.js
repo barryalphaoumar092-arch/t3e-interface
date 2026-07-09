@@ -6,7 +6,7 @@
 // statut a cet endroit (ex. "Conforme au 1 juillet 2026"), on retrouve le
 // VRAI document dans la base de connaissances et on l'insere directement.
 const { PDFDocument } = require('pdf-lib');
-const { downloadBuffer, sanitizeKey, BUCKETS } = require('./storage');
+const { downloadBuffer, resoudreBucketEtCle } = require('./storage');
 
 // L'extraction de texte (pdf-parse) de certains PDF SEAO fragmente des mots
 // avec des espaces parasites dus au crenage interne du PDF (ex. "CERTIF
@@ -43,11 +43,11 @@ const CATEGORIES_ANNEXES = [
   { cle: 'REVENU_QUEBEC', libelle: 'Attestation de Revenu Québec', motifs: ['revenuquebec'], titres: ['revenu québec', 'attestation de revenu'], eviter: ['service', 'entretien', DOSSIER_AUTRE_ENTITE] },
 ];
 
-// Cas particulier : la page "Charte de la langue française" ne contient
-// jamais la phrase-gabarit "doit joindre ce document" (c'est une declaration
-// a cocher, pas un simple renvoi vers une piece jointe) — elle utilise "je
-// le joins" a l'interieur des cases a cocher. Detection dediee.
+// Cas particuliers : ces pages-divider ne contiennent pas toujours la
+// phrase-gabarit "doit joindre ce document" (declaration a cocher, ou simple
+// titre d'annexe sans cette formule) — detection dediee par titre de page.
 const CATEGORIE_FRANCISATION = { cle: 'FRANCISATION', libelle: 'Certificat de francisation (OQLF)', titres: ['francisation'], eviter: ['service', DOSSIER_AUTRE_ENTITE] };
+const CATEGORIE_RBQ_LICENCE = { cle: 'RBQ_LICENCE', libelle: 'Copie des licences et permis (RBQ)', titres: ['licence rbq', 'rbq tte', "licence d'entrepreneur"], eviter: ['service', DOSSIER_AUTRE_ENTITE] };
 
 function categoriePourPage(texte) {
   const n = normaliser(texte);
@@ -59,11 +59,14 @@ function categoriePourPage(texte) {
   if (n.includes(normaliser('charte de la langue française')) && n.includes(normaliser('cocher une des'))) {
     return CATEGORIE_FRANCISATION;
   }
+  if (n.includes(normaliser('copie des licences et permis'))) {
+    return CATEGORIE_RBQ_LICENCE;
+  }
   return null;
 }
 
 async function chargerDocumentsActifs(db) {
-  const r = await db.execute(`SELECT id, titre, nom_fichier FROM documents WHERE statut = 'actif'`);
+  const r = await db.execute(`SELECT id, titre, nom_fichier, chemin_fichier FROM documents WHERE statut = 'actif'`);
   return r.rows;
 }
 
@@ -122,7 +125,13 @@ async function joindreAnnexesReelles(db, pdfDoc) {
   const jointsAvecSucces = [];
   for (const { index, categorie, doc } of trouves) {
     try {
-      const docBuf = await downloadBuffer(BUCKETS.DOCUMENTS, sanitizeKey(doc.nom_fichier));
+      // Meme piege que connaissances.js : deviner une cle a plat dans le
+      // bucket "documents" plutot que resoudre le vrai chemin/bucket faisait
+      // echouer silencieusement le telechargement d'un document pourtant
+      // trouve par titre (categorie affichee "non trouvee" alors qu'il
+      // existe bel et bien dans la base de connaissances).
+      const { bucket, key } = resoudreBucketEtCle(doc.chemin_fichier, doc.nom_fichier);
+      const docBuf = await downloadBuffer(bucket, key);
       if (!docBuf) { nonTrouves.push(categorie.libelle); continue; }
       const src = await PDFDocument.load(docBuf, { ignoreEncryption: true });
       const copiees = await pdfDoc.copyPages(src, src.getPageIndices());
