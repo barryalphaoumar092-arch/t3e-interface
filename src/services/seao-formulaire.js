@@ -315,12 +315,23 @@ async function remplirFormulairePdfPlat(buf, infosEntreprise) {
   // diagonaux) dans une petite boite centree sur l'origine du glyphe reste
   // correct quelle que soit la police d'origine.
   const REGEX_CASE_A_COCHER = /^[☐□❑▢]/;
+  // Repli : certains formulaires dessinent la case a cocher en VECTEUR dans
+  // le PDF source (invisible a l'extraction de texte — aucun glyphe ☐/□ n'est
+  // present) mais font systematiquement preceder chaque option d'une lettre
+  // entre parentheses ("(a) qu'il n'a en aucun moment...", "(b) qu'il a...")
+  // — motif tres courant dans les declarations legales des formulaires SEAO
+  // quebecois. Quand aucun glyphe n'est trouve, on detecte ce motif et on
+  // estime la position de la case dans la marge a gauche de la lettre
+  // (decalage fixe, jamais mesure precisement — meilleur effort documente).
+  const REGEX_OPTION_LETTRE = /^\([a-z0-9]\)\s/i;
+  const DECALAGE_CASE_ESTIMEE = 15;
   function estLigneCheckbox(ligne) {
-    return REGEX_CASE_A_COCHER.test(ligne.texte.trim());
+    return REGEX_CASE_A_COCHER.test(ligne.texte.trim()) || REGEX_OPTION_LETTRE.test(ligne.texte.trim());
   }
   function cocherCase(page, ligne) {
     const taille = 8;
-    const x0 = ligne.x, y0 = ligne.y, x1 = ligne.x + taille, y1 = ligne.y + taille;
+    const x = REGEX_CASE_A_COCHER.test(ligne.texte.trim()) ? ligne.x : Math.max(0, ligne.x - DECALAGE_CASE_ESTIMEE);
+    const x0 = x, y0 = ligne.y, x1 = x + taille, y1 = ligne.y + taille;
     page.drawLine({ start: { x: x0, y: y0 }, end: { x: x1, y: y1 }, thickness: 1.1, color: ROUGE });
     page.drawLine({ start: { x: x0, y: y1 }, end: { x: x1, y: y0 }, thickness: 1.1, color: ROUGE });
   }
