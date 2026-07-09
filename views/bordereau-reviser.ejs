@@ -10,11 +10,45 @@
 <div class="row justify-content-center">
   <div class="col-md-11">
 
-    <div class="d-flex gap-2 mb-3">
+    <div class="d-flex gap-2 mb-3 align-items-center">
       <span class="badge bg-success fs-6"><i class="bi bi-check"></i> 1. Upload</span>
       <span class="badge bg-primary fs-6">2. Révision</span>
       <span class="badge bg-secondary fs-6">3. Téléchargement</span>
+      <span class="badge fs-6 <%= bordereau.statut === 'approuve' ? 'bg-success' : (bordereau.statut === 'revise' ? 'bg-warning text-dark' : 'bg-secondary') %>">
+        Statut : <%= bordereau.statut === 'approuve' ? 'Approuvé' : (bordereau.statut === 'revise' ? 'En révision' : 'Brouillon') %>
+        <% if (bordereau.statut === 'approuve' && bordereau.approuve_par) { %> — par <%= bordereau.approuve_par %><% } %>
+      </span>
     </div>
+
+    <% if (bordereau.statut === 'revise') { %>
+    <div class="card border-warning mb-3">
+      <div class="card-header bg-warning bg-opacity-25 py-2">
+        <h6 class="mb-0"><i class="bi bi-question-circle"></i> Vérification avant approbation</h6>
+      </div>
+      <div class="card-body">
+        <p class="mb-3">Ce bordereau a été généré (le ZIP a été téléchargé). <strong>Des modifications sont-elles nécessaires ?</strong></p>
+        <form method="POST" action="/bordereaux/confirmer/<%= bordereau.id %>" id="formConfirmer" class="row g-2 align-items-start">
+          <div class="col-md-4">
+            <label class="form-label small">Votre nom</label>
+            <input type="text" name="confirme_par" class="form-control form-control-sm" placeholder="Qui confirme ?">
+          </div>
+          <div class="col-md-8">
+            <label class="form-label small">Commentaire <span class="text-muted">(obligatoire si des modifications sont nécessaires)</span></label>
+            <input type="text" name="commentaire" id="commentaireConfirmer" class="form-control form-control-sm" placeholder="Ex : mauvais fabricant pour le produit 2">
+          </div>
+          <div class="col-12 d-flex gap-2 mt-2">
+            <button type="submit" name="reponse" value="oui" class="btn btn-outline-danger" id="btnOuiModif">
+              <i class="bi bi-pencil"></i> Oui, des modifications sont nécessaires
+            </button>
+            <button type="submit" name="reponse" value="non" class="btn btn-success">
+              <i class="bi bi-check-circle"></i> Non, approuver tel quel
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+    <p class="text-muted small mb-3"><i class="bi bi-info-circle"></i> Vous pouvez aussi modifier directement les champs ci-dessous et régénérer, mais répondre à la question ci-dessus garantit un historique fiable (qui a demandé quoi, et pourquoi).</p>
+    <% } %>
 
     <% if (iaErreur) { %>
     <div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> L'IA n'a pas pu analyser le devis (<%= iaErreur %>). Remplissez les champs manuellement.</div>
@@ -150,6 +184,12 @@
         <% }); %>
       </div>
 
+      <div class="row g-2 align-items-end mb-2">
+        <div class="col-md-4">
+          <label class="form-label small text-muted">Votre nom (optionnel, pour l'historique)</label>
+          <input type="text" name="genere_par" class="form-control form-control-sm" placeholder="Qui génère ?">
+        </div>
+      </div>
       <div class="d-flex gap-3 mb-4">
         <button type="submit" class="btn btn-success btn-lg" id="btnGenerer">
           <i class="bi bi-file-earmark-zip"></i> Générer <%= produits.length %> bordereau<%= produits.length > 1 ? 'x' : '' %> + fiches techniques
@@ -157,6 +197,26 @@
         <a href="/bordereaux" class="btn btn-outline-secondary btn-lg">Annuler</a>
       </div>
     </form>
+
+    <% if (historique && historique.length > 0) { %>
+    <div class="card mb-4">
+      <div class="card-header bg-light py-2">
+        <h6 class="mb-0"><i class="bi bi-clock-history"></i> Historique</h6>
+      </div>
+      <ul class="list-group list-group-flush">
+        <% historique.forEach(function(h) { %>
+        <li class="list-group-item small">
+          <strong>
+            <%= h.action === 'genere' ? 'Généré' : (h.action === 'approuve' ? 'Approuvé' : (h.action === 'modifications_demandees' ? 'Modifications demandées' : h.action)) %>
+          </strong>
+          <% if (h.effectue_par) { %> par <%= h.effectue_par %><% } %>
+          <span class="text-muted">— <%= h.created_at %></span>
+          <% if (h.commentaire) { %><div class="text-muted fst-italic mt-1"><%= h.commentaire %></div><% } %>
+        </li>
+        <% }); %>
+      </ul>
+    </div>
+    <% } %>
 
   </div>
 </div>
@@ -180,6 +240,19 @@ document.getElementById('formGenerer').addEventListener('submit', function() {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Génération en cours…';
 });
+
+var formConfirmer = document.getElementById('formConfirmer');
+if (formConfirmer) {
+  formConfirmer.addEventListener('submit', function(e) {
+    var reponse = e.submitter && e.submitter.value;
+    var commentaire = document.getElementById('commentaireConfirmer');
+    if (reponse === 'oui' && !commentaire.value.trim()) {
+      e.preventDefault();
+      commentaire.classList.add('is-invalid');
+      commentaire.focus();
+    }
+  });
+}
 </script>
 
 <%- include('partials/footer', { scripts: [] }) %>

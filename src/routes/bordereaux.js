@@ -570,15 +570,6 @@ async function rechercherProduitsEtFT(db, q) {
 //  ROUTES
 // ══════════════════════════════════════════════════════════════
 
-router.get('/_debug-schema', async (req, res) => {
-  try {
-    const sqlDef = await req.db.execute("SELECT name, sql FROM sqlite_master WHERE type='table' AND name IN ('bordereaux','historique_bordereaux')");
-    res.json({ definitions: sqlDef.rows });
-  } catch (e) {
-    res.json({ error: e.message });
-  }
-});
-
 router.get('/api/rechercher-produits', async (req, res) => {
   const q = (req.query.q || '').trim();
   if (q.length < 2) return res.json([]);
@@ -592,7 +583,7 @@ router.get('/api/rechercher-produits', async (req, res) => {
 
 router.get('/', async (req, res) => {
   const r = await req.db.execute(
-    "SELECT id, titre, numero_projet, cree_par, created_at FROM bordereaux WHERE (session_actif = 0 OR session_actif IS NULL) ORDER BY created_at DESC"
+    "SELECT id, titre, numero_projet, cree_par, statut, approuve_par, created_at FROM bordereaux WHERE (session_actif = 0 OR session_actif IS NULL) ORDER BY created_at DESC"
   );
   res.render('bordereaux', { bordereaux: r.rows });
 });
@@ -828,6 +819,10 @@ router.get('/reviser/:id', async (req, res) => {
 
   const { fabricants, fournisseurs } = await listerFabricantsEtFournisseurs(req.db);
   const ftParFabricant = await listerFTParFabricant();
+  const historique = (await req.db.execute({
+    sql: 'SELECT action, ancien_statut, nouveau_statut, commentaire, effectue_par, created_at FROM historique_bordereaux WHERE bordereau_id = ? ORDER BY created_at DESC, id DESC',
+    args: [row.id],
+  })).rows;
 
   res.render('bordereau-reviser', {
     bordereau: row,
@@ -839,7 +834,47 @@ router.get('/reviser/:id', async (req, res) => {
     fabricantsListe: fabricants,
     fournisseursListe: fournisseurs,
     ftParFabricant,
+    historique,
   });
+});
+
+// ── CONFIRMATION APRÈS GÉNÉRATION — étape de contrôle obligatoire avant
+// l'approbation finale (priorité utilisateur #3). "Oui" (modifications
+// nécessaires) renvoie le bordereau en Brouillon avec un commentaire
+// obligatoire ; "Non" l'approuve. Toujours consigné dans historique_bordereaux.
+router.post('/confirmer/:id', express.urlencoded({ extended: true }), async (req, res) => {
+  const db = req.db;
+  const id = parseInt(req.params.id);
+  const r = await db.execute({ sql: 'SELECT statut FROM bordereaux WHERE id = ?', args: [id] });
+  if (r.rows.length === 0) return res.status(404).send('Bordereau introuvable');
+  if (r.rows[0].statut !== 'revise') return res.redirect('/bordereaux/reviser/' + id);
+
+  const reponse = req.body.reponse === 'oui' ? 'oui' : 'non';
+  const confirmePar = (req.body.confirme_par || '').trim();
+  const commentaire = (req.body.commentaire || '').trim();
+
+  if (reponse === 'oui') {
+    if (!commentaire) return res.status(400).send('Un commentaire est obligatoire pour indiquer quelles modifications sont nécessaires.');
+    await db.execute({
+      sql: `UPDATE bordereaux SET statut = 'brouillon', modifie_par = ? WHERE id = ?`,
+      args: [confirmePar || null, id],
+    });
+    await db.execute({
+      sql: `INSERT INTO historique_bordereaux (bordereau_id, action, ancien_statut, nouveau_statut, commentaire, effectue_par) VALUES (?, 'modifications_demandees', 'revise', 'brouillon', ?, ?)`,
+      args: [id, commentaire, confirmePar || null],
+    });
+  } else {
+    await db.execute({
+      sql: `UPDATE bordereaux SET statut = 'approuve', approuve_par = ? WHERE id = ?`,
+      args: [confirmePar || null, id],
+    });
+    await db.execute({
+      sql: `INSERT INTO historique_bordereaux (bordereau_id, action, ancien_statut, nouveau_statut, commentaire, effectue_par) VALUES (?, 'approuve', 'revise', 'approuve', ?, ?)`,
+      args: [id, commentaire || null, confirmePar || null],
+    });
+  }
+
+  res.redirect('/bordereaux/reviser/' + id);
 });
 
 // ── GÉNÉRER — remplir N .docx + FT → ZIP ──
@@ -983,11 +1018,20 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
     zip.file('_DIAGNOSTIC.txt', diagnostic.join('\n'));
   }
 
-  // Mettre à jour la DB
+  // Mettre à jour la DB — la génération place le bordereau "En révision"
+  // plutôt que directement "Approuvé" : une vraie étape de contrôle (voir
+  // POST /confirmer/:id) est désormais nécessaire avant l'approbation.
+  // Le PDF/ZIP reste immédiatement téléchargeable (envoyé ci-dessous, comme
+  // avant) — seule la mention du statut en base change.
+  const generePar = (req.body.genere_par || '').trim();
   try {
     await db.execute({
-      sql: `UPDATE bordereaux SET statut = 'approuve', session_actif = 0, numero_projet = ?, titre = ? WHERE id = ?`,
+      sql: `UPDATE bordereaux SET statut = 'revise', session_actif = 0, numero_projet = ?, titre = ? WHERE id = ?`,
       args: [numProjet, nomProjet, id],
+    });
+    await db.execute({
+      sql: `INSERT INTO historique_bordereaux (bordereau_id, action, ancien_statut, nouveau_statut, commentaire, effectue_par) VALUES (?, 'genere', ?, 'revise', ?, ?)`,
+      args: [id, row.statut || 'brouillon', diagnostic.length > 0 ? diagnostic.join('\n').substring(0, 500) : null, generePar || null],
     });
   } catch (_) {}
 

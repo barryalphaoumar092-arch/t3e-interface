@@ -12,6 +12,7 @@
         <th>#</th>
         <th>Projet</th>
         <th>Section</th>
+        <th>Statut</th>
         <th>Date</th>
         <th>Actions</th>
       </tr>
@@ -22,8 +23,16 @@
         <td class="text-muted"><%= b.id %></td>
         <td><strong><%= b.titre || '-' %></strong></td>
         <td><span class="badge bg-secondary"><%= b.numero_projet || '-' %></span></td>
+        <td>
+          <span class="badge <%= b.statut === 'approuve' ? 'bg-success' : (b.statut === 'revise' ? 'bg-warning text-dark' : 'bg-secondary') %>">
+            <%= b.statut === 'approuve' ? 'Approuvé' : (b.statut === 'revise' ? 'En révision' : 'Brouillon') %>
+          </span>
+        </td>
         <td><small class="text-muted"><%= b.created_at ? b.created_at.substring(0,10) : '-' %></small></td>
         <td>
+          <a href="/bordereaux/reviser/<%= b.id %>" class="btn btn-sm btn-outline-primary" title="Réviser / confirmer">
+            <i class="bi bi-pencil"></i>
+          </a>
           <a href="/bordereaux/telecharger/<%= b.id %>" class="btn btn-sm btn-outline-success" title="Télécharger .docx">
             <i class="bi bi-download"></i> .docx
           </a>
@@ -36,7 +45,7 @@
       </tr>
       <% }) %>
       <% if (bordereaux.length === 0) { %>
-      <tr><td colspan="5" class="text-center text-muted py-5">
+      <tr><td colspan="6" class="text-center text-muted py-5">
         <i class="bi bi-inbox" style="font-size:3rem;display:block;margin-bottom:.5rem;"></i>
         Aucun bordereau généré.<br>
         <a href="/bordereaux/nouveau" class="btn btn-warning mt-3">
