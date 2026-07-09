@@ -570,6 +570,21 @@ async function rechercherProduitsEtFT(db, q) {
 //  ROUTES
 // ══════════════════════════════════════════════════════════════
 
+router.get('/_debug-schema', async (req, res) => {
+  try {
+    const bordereaux = await req.db.execute("PRAGMA table_info(bordereaux)");
+    let historique;
+    try {
+      historique = await req.db.execute("PRAGMA table_info(historique_bordereaux)");
+    } catch (e) {
+      historique = { rows: [], error: e.message };
+    }
+    res.json({ bordereaux: bordereaux.rows, historique_bordereaux: historique.rows, historique_error: historique.error || null });
+  } catch (e) {
+    res.json({ error: e.message });
+  }
+});
+
 router.get('/api/rechercher-produits', async (req, res) => {
   const q = (req.query.q || '').trim();
   if (q.length < 2) return res.json([]);
