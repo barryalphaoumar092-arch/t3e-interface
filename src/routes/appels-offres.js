@@ -93,6 +93,15 @@ router.get('/', async (req, res) => {
   });
 });
 
+router.get('/_debug-infos-entreprise', async (req, res) => {
+  try {
+    const infos = await obtenirInfosEntreprise(req.db, { forcerRecalcul: req.query.recalculer === '1' });
+    res.json(infos);
+  } catch (e) {
+    res.json({ error: e.message, stack: e.stack });
+  }
+});
+
 router.get('/importer', (req, res) => {
   res.render('appel-offre-importer', { erreur: '' });
 });
