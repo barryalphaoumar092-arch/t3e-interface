@@ -199,7 +199,13 @@ function ajouterChampsNonPlaces(xml, champsRestants, nomsLisibles = {}) {
     .map(([k, v]) => `${nomsLisibles[k] || k} : ${v}`)
     .join(' | ');
 
-  const paragraphe = `<w:p><w:r><w:rPr><w:i/><w:sz w:val="16"/></w:rPr><w:t xml:space="preserve">${escapeXml(texte)}</w:t></w:r></w:p>`;
+  // Espacement de paragraphe explicitement a zero : sans ca, ce paragraphe
+  // herite du style "Normal" du gabarit (souvent plusieurs points d'espace
+  // avant/apres), ce qui peut le faire atterrir seul, visuellement isole,
+  // en haut d'une page quasi vide quand le gabarit remplit deja presque
+  // entierement la page precedente (observe avec le gabarit T3E + un champ
+  // ARCHITECTE extrait du devis sans equivalent dans ses libelles fixes).
+  const paragraphe = `<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/><w:contextualSpacing/></w:pPr><w:r><w:rPr><w:i/><w:sz w:val="16"/></w:rPr><w:t xml:space="preserve">${escapeXml(texte)}</w:t></w:r></w:p>`;
   const bodyCloseIdx = xml.lastIndexOf('</w:body>');
   if (bodyCloseIdx === -1) return xml;
   // Inserer avant la derniere <w:sectPr> (proprietes de section, obligatoires
