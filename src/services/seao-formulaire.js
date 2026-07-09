@@ -190,7 +190,7 @@ async function remplirFormulaireDocx(buf, infosEntreprise) {
 
   return {
     buffer,
-    champsPlaces: Object.keys(champs).filter((c) => !(c in resultat.restants)),
+    champsPlaces: Object.keys(champs).filter((c) => !(c in resultat.restants)).map((c) => NOMS_LISIBLES[c] || c),
     champsNonPlaces: Object.keys(resultat.restants).map((c) => NOMS_LISIBLES[c] || c),
   };
 }
@@ -352,7 +352,7 @@ async function remplirFormulairePdfPlat(buf, infosEntreprise) {
         // troisieme choix) ne sera donc que partiellement coche. Limitation
         // connue, documentee, a ameliorer si ce cas devient frequent.
         cocherCase(page, entree.ligne);
-        champsPlaces.push(cle);
+        champsPlaces.push(NOMS_LISIBLES[cle] || cle);
         continue;
       }
       let ligneCible = entree.ligne;
@@ -374,7 +374,7 @@ async function remplirFormulairePdfPlat(buf, infosEntreprise) {
       page.drawText(String(champs[cle]), {
         x: ligneCible.x + decalageX, y: ligneCible.y, size: 9, font, color: ROUGE,
       });
-      champsPlaces.push(cle);
+      champsPlaces.push(NOMS_LISIBLES[cle] || cle);
     } catch (e) {
       console.error('[seao-formulaire] Champ PDF plat non dessine:', cle, e.message);
       champsNonPlaces.push(NOMS_LISIBLES[cle] || cle);

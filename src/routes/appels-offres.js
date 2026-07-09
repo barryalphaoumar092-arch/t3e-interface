@@ -94,26 +94,6 @@ router.get('/', async (req, res) => {
   });
 });
 
-router.get('/_debug-categories', async (req, res) => {
-  const db = req.db;
-  try {
-    const r = await db.execute(`SELECT id, nom, (SELECT COUNT(*) FROM documents WHERE categorie_id = categories.id AND statut='actif') as nb FROM categories ORDER BY nom`);
-    res.json(r.rows);
-  } catch (e) {
-    res.json({ error: e.message });
-  }
-});
-
-router.get('/_debug-documents/:categorieId', async (req, res) => {
-  const db = req.db;
-  try {
-    const r = await db.execute({ sql: `SELECT id, titre, nom_fichier, chemin_fichier, statut FROM documents WHERE categorie_id = ? ORDER BY titre`, args: [req.params.categorieId] });
-    res.json(r.rows);
-  } catch (e) {
-    res.json({ error: e.message });
-  }
-});
-
 router.get('/importer', (req, res) => {
   res.render('appel-offre-importer', { erreur: '' });
 });
