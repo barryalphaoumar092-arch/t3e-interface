@@ -390,9 +390,27 @@ async function remplirFormulairePdfPlat(buf, infosEntreprise) {
   // (soit collee au libelle si le blanc est plus bas, soit tres loin a
   // droite du blanc puisque son propre texte inclut deja les "_____").
   // On cherche donc explicitement ou commence le blanc (suite de "_").
-  function trouverDebutBlanc(texte) {
-    const m = texte.match(/_{3,}/);
-    return m ? m.index : -1;
+  // `apresIndex` : ne cherche le blanc qu'A PARTIR de cette position. Sans
+  // ca, deux champs distincts fusionnes sur la MEME ligne visuelle par
+  // extraireLignesParPage() (ex. "Telephone : ____ Telecopieur : ____", ou
+  // "TPS/TVH : ____ TVQ : ____") trouvaient tous les deux le PREMIER blanc de
+  // la ligne (celui du premier champ) et s'ecrivaient l'un par-dessus
+  // l'autre au meme endroit — meme classe de bug que
+  // cocherCasesFormeJuridique() (plusieurs elements sur une ligne fusionnee),
+  // mais pour du texte plutot que des cases a cocher.
+  function trouverDebutBlanc(texte, apresIndex = 0) {
+    const m = texte.slice(apresIndex).match(/_{3,}/);
+    return m ? apresIndex + m.index : -1;
+  }
+  // Localise ou commence le libelle de CE champ dans la ligne fusionnee, pour
+  // ne chercher son blanc qu'apres cette position (voir ci-dessus). Retourne
+  // 0 (comportement d'origine, premier blanc de la ligne) si le libelle n'y
+  // est pas trouve tel quel.
+  function positionLabelDansLigne(cle, texte) {
+    const label = NOMS_LISIBLES[cle];
+    if (!label) return 0;
+    const idx = texte.toLowerCase().indexOf(label.toLowerCase());
+    return idx >= 0 ? idx : 0;
   }
 
   for (const cle of Object.keys(champs)) {
@@ -414,12 +432,14 @@ async function remplirFormulairePdfPlat(buf, infosEntreprise) {
       }
       let ligneCible = entree.ligne;
       let decalageX;
-      const posBlancMemeLigne = trouverDebutBlanc(entree.ligne.texte);
+      const debutRechercheLigne = positionLabelDansLigne(cle, entree.ligne.texte);
+      const posBlancMemeLigne = trouverDebutBlanc(entree.ligne.texte, debutRechercheLigne);
       if (posBlancMemeLigne >= 0) {
         decalageX = font.widthOfTextAtSize(entree.ligne.texte.substring(0, posBlancMemeLigne), 9) + 6;
       } else {
         const suivante = entriesLimitees[idx + 1];
-        const posBlancSuivante = suivante ? trouverDebutBlanc(suivante.texte) : -1;
+        const debutRechercheSuivante = suivante ? positionLabelDansLigne(cle, suivante.texte) : 0;
+        const posBlancSuivante = suivante ? trouverDebutBlanc(suivante.texte, debutRechercheSuivante) : -1;
         if (suivante && suivante.page === entree.page && posBlancSuivante >= 0) {
           ligneCible = suivante.ligne;
           decalageX = font.widthOfTextAtSize(suivante.texte.substring(0, posBlancSuivante), 9) + 6;
