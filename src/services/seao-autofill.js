@@ -50,6 +50,17 @@ async function chargerDocumentsPertinents(db) {
   const pertinents = r.rows.filter((doc) =>
     TITRES_PERTINENTS.some((t) => doc.titre.toLowerCase().includes(t.toLowerCase()))
   );
+  // La Fiche d'identite est toujours placee en tete : avec ~121 certificats
+  // dans ces categories (dont beaucoup matchent deja les mots-cles larges
+  // ci-dessus), le plafond de 35 documents plus bas coupait silencieusement
+  // ce document precis des lors qu'il n'etait pas parmi les 35 premiers
+  // retournes par la requete (sans ORDER BY, donc par ordre d'insertion —
+  // un document ajoute apres coup se retrouve toujours en dernier).
+  pertinents.sort((a, b) => {
+    const aFiche = a.titre.toLowerCase().includes("fiche d'identite") ? 0 : 1;
+    const bFiche = b.titre.toLowerCase().includes("fiche d'identite") ? 0 : 1;
+    return aFiche - bFiche;
+  });
   // Toujours inclure au moins les certificats corporatifs meme si le filtre
   // par titre est trop strict (garde-fou pour ne jamais partir d'un contexte vide).
   if (pertinents.length === 0) {
