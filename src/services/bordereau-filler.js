@@ -17,6 +17,7 @@ const NOMS_LISIBLES = {
   FOURNISSEUR: 'Fournisseur', FABRICANT: 'Fabricant', SECTION: 'Section',
   ARTICLE: 'Article', REMARQUE: 'Remarque',
   NOM_ETABLISSEMENT: 'Établissement', ARCHITECTE: 'Architecte',
+  SOUMIS_PAR: 'Soumis par', RECU_ENTREPRENEUR_DATE: "Reçu de l'entrepreneur le",
 };
 
 async function remplirBordereau(champs, buf) {
@@ -28,9 +29,12 @@ async function remplirBordereau(champs, buf) {
   xml = normalizeXmlText(xml);
 
   // Cocher les cases toujours applicables aux bordereaux T3E : discipline
-  // "Architecture" et produit soumis "Fiche technique"
+  // "Architecture", produit soumis "Fiche technique", et le produit est
+  // toujours conforme aux plans et devis (jamais une équivalence proposée
+  // par T3E — cette case reste donc TOUJOURS decochee).
   xml = cocherCaseACocher(xml, 'Architecture');
   xml = cocherCaseACocher(xml, 'Fiche technique');
+  xml = cocherCaseACocher(xml, 'Tel que plans et devis');
 
   // Labels plus longs EN PREMIER pour eviter correspondances partielles
   const NBSP = ' ';
@@ -52,6 +56,11 @@ async function remplirBordereau(champs, buf) {
     ['ARTICLE',          'Article' + NBSP + ':',             champs.ARTICLE          || ''],
     ['DELAI',            'Délai' + NBSP + ':',          ''],
     ['REMARQUE',         'Remarque' + NBSP + ':',            champs.REMARQUE         || ''],
+    // Bas de page (signatures) — "Soumis par" : nom de la personne qui genere
+    // le bordereau (deja saisi pour l'historique, voir POST /generer/:id) ;
+    // "Reçu de l'entrepreneur le" : date de soumission, calculee automatiquement.
+    ['SOUMIS_PAR',              'SOUMIS PAR' + NBSP + ':',                        champs.SOUMIS_PAR              || ''],
+    ['RECU_ENTREPRENEUR_DATE', 'REÇU DE L’ENTREPRENEUR LE' + NBSP + ':', champs.RECU_ENTREPRENEUR_DATE || ''],
     // Sans équivalent dans le gabarit T3E (donc jamais trouvés ici), mais
     // présents sur beaucoup de gabarits d'architectes tiers — le nom du
     // libellé fixe ci-dessous ne matchera presque jamais ; ils passeront donc

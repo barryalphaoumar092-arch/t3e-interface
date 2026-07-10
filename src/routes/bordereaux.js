@@ -1002,6 +1002,12 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
   // "ARCHITECTE") — extraits du devis a l'etape /analyser, editables ici.
   const nomEtablissement = req.body.NOM_ETABLISSEMENT || '';
   const architecte = req.body.ARCHITECTE || '';
+  // "Soumis par" (bas de page) : nom de la personne qui genere le bordereau,
+  // deja saisi plus bas dans le formulaire pour l'historique (genere_par) —
+  // reutilise ici pour remplir le meme champ dans le document. "Reçu de
+  // l'entrepreneur le" : date de soumission, toujours la date du jour.
+  const soumisPar = (req.body.genere_par || '').trim();
+  const recuEntrepreneurDate = new Date().toLocaleDateString('fr-CA', { year: 'numeric', month: 'long', day: 'numeric' });
 
   // Les champs produit arrivent comme tableaux (TITRE[], FABRICANT[], etc.)
   const titres = [].concat(req.body.TITRE || []);
@@ -1035,6 +1041,8 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
       DESCRIPTION: descriptions[i] || '',
       USAGE: usages[i] || '',
       REMARQUE: '',
+      SOUMIS_PAR: soumisPar,
+      RECU_ENTREPRENEUR_DATE: recuEntrepreneurDate,
       NOM_ETABLISSEMENT: nomEtablissement,
       ARCHITECTE: architecte,
     };
