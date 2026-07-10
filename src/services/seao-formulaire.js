@@ -439,4 +439,5 @@ module.exports = {
   remplirFormulaireDocx, remplirFormulairePdfAcroForm, remplirFormulairePdfPlat,
   aplatirInfosEntreprise, NOMS_LISIBLES, genererPageNotePreparation,
   ZONES, classifierZone, construireDetailChamps,
+  extraireLignesParPage, // TEMPORAIRE - debug cases a cocher, a retirer
 };

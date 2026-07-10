@@ -8,7 +8,7 @@ const { obtenirInfosEntreprise } = require('../services/seao-autofill');
 const {
   remplirFormulaireDocx, remplirFormulairePdfAcroForm, remplirFormulairePdfPlat,
   aplatirInfosEntreprise, NOMS_LISIBLES, genererPageNotePreparation,
-  ZONES, construireDetailChamps,
+  ZONES, construireDetailChamps, extraireLignesParPage,
 } = require('../services/seao-formulaire');
 const { fillTemplatePdf } = require('../services/pdf-filler');
 const { joindreAnnexesReelles } = require('../services/seao-annexes');
@@ -520,6 +520,23 @@ router.get('/:id/formulaire/:formId/telecharger', async (req, res) => {
   } catch (e) {
     res.status(404).send('Fichier introuvable dans le stockage.');
   }
+});
+
+// TEMPORAIRE - debug cases a cocher statut juridique, a retirer apres usage
+router.get('/_debug-forme-juridique/:id/:formId', async (req, res) => {
+  const db = req.db;
+  const { id, formId } = req.params;
+  const r = await db.execute({ sql: 'SELECT * FROM appels_offres_formulaires WHERE id = ? AND appel_offre_id = ?', args: [formId, id] });
+  if (r.rows.length === 0) return res.status(404).json({ erreur: 'introuvable' });
+  const formulaire = r.rows[0];
+  const buf = await downloadBuffer(BUCKETS.SEAO, formulaire.cle_storage_original);
+  const infos = await obtenirInfosEntreprise(db);
+  const pagesLignes = await extraireLignesParPage(buf);
+  const lignesAvecCheckbox = [];
+  pagesLignes.forEach((lignes, p) => lignes.forEach((l) => {
+    if (/[☐□❑▢]/.test(l.texte)) lignesAvecCheckbox.push({ page: p, x: l.x, y: l.y, texte: l.texte });
+  }));
+  res.json({ formeJuridique: infos.FORME_JURIDIQUE, lignesAvecCheckbox });
 });
 
 // Confirmation manuelle (priorité #5) : le formulaire ne devient "valide"
