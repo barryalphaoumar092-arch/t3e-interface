@@ -610,6 +610,22 @@ async function rechercherProduitsEtFT(db, q) {
 //  ROUTES
 // ══════════════════════════════════════════════════════════════
 
+// TEMPORAIRE - verifie extraireContextePertinent() sur un vrai devis, a retirer apres usage
+router.post('/_debug-index-devis', express.raw({ limit: '25mb', type: '*/*' }), async (req, res) => {
+  if (req.query.mdp_admin !== process.env.MDP_APP) return res.status(403).send('mdp');
+  const tmpPath = path.join(os.tmpdir(), `debug_devis_${Date.now()}.pdf`);
+  fs.writeFileSync(tmpPath, req.body);
+  try {
+    const parsed = await parseDevis(tmpPath, 'devis.pdf');
+    const index = extraireContextePertinent(parsed.text || '');
+    res.type('text/plain').send(index);
+  } catch (e) {
+    res.status(500).send('Erreur: ' + e.message);
+  } finally {
+    try { fs.unlinkSync(tmpPath); } catch (_) {}
+  }
+});
+
 router.get('/api/rechercher-produits', async (req, res) => {
   const q = (req.query.q || '').trim();
   if (q.length < 2) return res.json([]);
