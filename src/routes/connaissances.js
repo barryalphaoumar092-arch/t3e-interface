@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const path = require('path');
-const { downloadBuffer, sanitizeKey, BUCKETS, resoudreBucketEtCle } = require('../services/storage');
+const { downloadBuffer, uploadBuffer, sanitizeKey, BUCKETS, resoudreBucketEtCle } = require('../services/storage');
 
 const MIME_TYPES = {
   '.pdf': 'application/pdf',
@@ -113,6 +113,22 @@ router.post('/ajouter', async (req, res) => {
     args: [titre, fichier_nom, relativePath, parseInt(categorie_id), ext, parseInt(fichier_taille) || 0, description || null, source || null, annee || null, mots_cles || null]
   });
   res.redirect('/connaissances?success=added');
+});
+
+// TEMPORAIRE - upload direct serveur (fiche d'identite T3E), a retirer apres usage
+router.post('/_debug-upload-direct', async (req, res) => {
+  if (req.body.mdp_admin !== MDP_ADMIN) return res.status(403).json({ error: 'mdp' });
+  const db = req.db;
+  const { titre, categorie_id, description, filename, contenuBase64 } = req.body;
+  const buf = Buffer.from(contenuBase64, 'base64');
+  const cle = sanitizeKey(filename);
+  await uploadBuffer(BUCKETS.DOCUMENTS, cle, buf);
+  await db.execute({
+    sql: `INSERT INTO documents (titre, nom_fichier, chemin_fichier, categorie_id, type_fichier, taille_octets, description)
+          VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    args: [titre, cle, 'documents/' + cle, parseInt(categorie_id), path.extname(filename).replace('.', ''), buf.length, description || null],
+  });
+  res.json({ ok: true, cle });
 });
 
 router.get('/fichier/:id', async (req, res) => {
