@@ -17,14 +17,6 @@ function mimeFor(filename) {
   return MIME_TYPES[path.extname(filename).toLowerCase()] || 'application/octet-stream';
 }
 
-// TEMPORAIRE - verifie obtenirInfosEntreprise() (identifiants T3E fixes), a retirer apres usage
-router.get('/_debug-infos-entreprise', async (req, res) => {
-  if (req.query.mdp_admin !== process.env.MDP_APP) return res.status(403).send('mdp');
-  const { obtenirInfosEntreprise } = require('../services/seao-autofill');
-  const infos = await obtenirInfosEntreprise(req.db, { forcerRecalcul: req.query.recalculer === '1' });
-  res.json(infos);
-});
-
 router.get('/', async (req, res) => {
   const db = req.db;
   const tab = req.query.tab || 'documents';
