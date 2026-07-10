@@ -42,21 +42,7 @@ function labelVariants(label) {
 // la même cellule, cas du gabarit T3E) fait alors déborder la cellule étroite
 // et laisse la vraie zone de saisie vide — d'où le symptôme observé : gros
 // espace vide + texte tronqué/empilé sur plusieurs lignes.
-// `texteApresLabel` : contenu du MEME run que le libelle, entre le ":" et la
-// fermeture du <w:t> (closeIdx). Certains gabarits (dont bordereau-template.docx
-// de T3E lui-meme : "NOM : __________________________________________")
-// mettent la zone a remplir sous forme de SOULIGNES dans ce meme run plutot
-// que dans une cellule separee — dans ce cas il ne faut JAMAIS partir a la
-// recherche d'une cellule pointillee ailleurs dans le document : la recherche
-// peut alors atterrir plusieurs lignes plus loin (bug constate : la valeur de
-// "NOM" affichee sous "ADRESSE", plusieurs lignes en dessous, car aucune
-// cellule de CETTE section n'a de bordure pointillee et la recherche
-// continue jusqu'a la premiere trouvee ailleurs dans le document).
-function resoudrePositionInsertion(xml, closeIdx, texteApresLabel) {
-  if (texteApresLabel && /_{3,}/.test(texteApresLabel)) {
-    return { pos: closeIdx, inline: true };
-  }
-
+function resoudrePositionInsertion(xml, closeIdx) {
   const finCelluleLabel = xml.indexOf('</w:tc>', closeIdx);
   const celluleSeparee = finCelluleLabel !== -1
     && finCelluleLabel < closeIdx + 40
@@ -122,7 +108,29 @@ function remplirChampDansXml(xml, label, valeur) {
     if (closeIdx === -1) continue;
     if (!valeur) return { xml, trouve: true };
 
-    const { pos, inline } = resoudrePositionInsertion(xml, closeIdx, xml.substring(colonIdx, closeIdx));
+    // Certains gabarits (dont bordereau-template.docx de T3E lui-meme :
+    // "NOM : __________________________________________") mettent la zone a
+    // remplir sous forme de SOULIGNES dans le MEME run que le libelle plutot
+    // que dans une cellule separee. Deux pieges corriges ici :
+    // 1) ne JAMAIS partir a la recherche d'une cellule pointillee ailleurs
+    //    dans le document dans ce cas (la recherche peut atterrir plusieurs
+    //    lignes plus loin — bug constate : valeur de "NOM" affichee sous
+    //    "ADRESSE") ;
+    // 2) inserer la valeur JUSTE APRES LE ":" en remplacant les soulignes
+    //    (pas apres eux) : les inserer a la toute fin d'une longue serie de
+    //    soulignes fait deborder la cellule (souvent etroite, ex. 4390 dxa
+    //    pour NOM/SPECIALITE) et Word renvoie la valeur a la ligne suivante
+    //    DANS la meme cellule — visuellement toujours "en dessous" du
+    //    libelle malgre une position correcte dans le XML.
+    const texteApresLabel = xml.substring(colonIdx, closeIdx);
+    if (/_{3,}/.test(texteApresLabel)) {
+      const lignes = String(valeur).split('\n').map(escapeXml);
+      const contenu = ' ' + lignes.join('</w:t></w:r><w:r><w:br/></w:r><w:r><w:t xml:space="preserve">');
+      xml = xml.substring(0, colonIdx + 1) + contenu + xml.substring(closeIdx);
+      return { xml, trouve: true };
+    }
+
+    const { pos, inline } = resoudrePositionInsertion(xml, closeIdx);
     xml = inserer(xml, pos, inline, valeur);
     return { xml, trouve: true };
   }
