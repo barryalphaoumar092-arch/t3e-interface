@@ -29,6 +29,11 @@ const TITRES_PERTINENTS = [
   // eux, l'IA ne pouvait jamais renseigner AMP_NUMERO_CLIENT/ECHEANCE ni
   // FRANCISATION_STATUT, meme si les documents etaient deja dans la base.
   'AMP', 'francisation',
+  // Fiche d'identité T3E — document créé pour combler des faits absents de
+  // tout autre document de la base (site internet, courriel corporatif,
+  // TPS/TVH, TVQ) : ces valeurs n'étaient jamais extraites automatiquement
+  // faute de source texte, même si l'utilisateur les avait fournies.
+  "Fiche d'identité",
 ];
 
 async function chargerDocumentsPertinents(db) {
