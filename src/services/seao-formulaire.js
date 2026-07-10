@@ -88,12 +88,19 @@ function construireDetailChamps(champsPlaces, champsNonPlaces, valeurs) {
     });
   }
   for (const nom of champsNonPlaces || []) {
+    // La valeur EST connue (aplatirInfosEntreprise() ne fournit jamais de
+    // champ vide/falsy en amont) — seul le PLACEMENT automatique a echoue
+    // (aucune case/blanc correspondant detecte dans CE document precis, ou
+    // le champ ne s'y trouve simplement pas). Ne jamais afficher "Aucune"
+    // source ni vider la valeur ici : ça donnait l'illusion trompeuse que la
+    // donnée elle-même était inconnue, alors qu'elle est déjà dans la base
+    // de connaissances T3E — seul un ajout manuel dans CE document est requis.
     detail.push({
       nom,
       zone: classifierZone(nom),
-      valeur: '',
-      source: 'Aucune',
-      statut: 'manquant',
+      valeur: valeursParNomLisible[nom] || '',
+      source: 'Base de connaissances T3E (non localisé automatiquement)',
+      statut: 'non_place',
     });
   }
   return detail;
@@ -120,12 +127,30 @@ function aplatirInfosEntreprise(infosEntreprise) {
 // manquante...) — plutot que d'annoter le formulaire officiel lui-meme avec
 // du texte visible (repere comme peu pro par l'utilisateur), on regroupe tout
 // sur UNE page a part, clairement etiquetee comme a retirer avant depot.
-// `champsManquants` (priorité #5) : liste de noms de champs encore sans
-// valeur — affichée sur la même note plutôt que de générer une 2e page, et
-// sert aussi à marquer le PDF comme BROUILLON tant qu'elle n'est pas vide.
-async function genererPageNotePreparation(pdfDoc, avertissements, champsManquants) {
+// `champsNonPlaces` (priorité #5) : liste de noms de champs dont la VALEUR
+// EST CONNUE (base de connaissances T3E) mais que le placement automatique
+// n'a pas réussi à localiser dans CE document précis (aucune case/blanc
+// correspondant détecté, ou le champ n'existe simplement pas dans ce
+// formulaire). `valeursConnues` permet d'afficher la valeur directement dans
+// la note plutôt que de laisser croire à l'utilisateur qu'il doit aller la
+// chercher — bug signalé : la mention "CHAMPS ENCORE MANQUANTS" laissait
+// entendre que ces informations (RBQ, CCQ, assurances...) étaient inconnues,
+// alors qu'elles sont déjà fixées/mémorisées ; seul l'ajout manuel dans CE
+// document précis (s'il les demande) reste à faire.
+async function genererPageNotePreparation(pdfDoc, avertissements, champsNonPlaces, valeursConnues) {
   const aAvertir = avertissements && avertissements.length > 0;
-  const aManquants = champsManquants && champsManquants.length > 0;
+  const aManquants = champsNonPlaces && champsNonPlaces.length > 0;
+  // valeursConnues est keye par cle brute (NEQ, RBQ...) — champsNonPlaces par
+  // libelle lisible (memes libelles que NOMS_LISIBLES) : reindexer par
+  // libelle pour pouvoir associer chaque nom affiche a sa valeur.
+  const valeursParNomLisible = {};
+  for (const [cle, valeur] of Object.entries(valeursConnues || {})) {
+    valeursParNomLisible[NOMS_LISIBLES[cle] || cle] = valeur;
+  }
+  const champsManquants = (champsNonPlaces || []).map((nom) => {
+    const valeur = valeursParNomLisible[nom];
+    return valeur ? `${nom} : ${valeur}` : nom;
+  });
   if (!aAvertir && !aManquants) return;
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -163,7 +188,7 @@ async function genererPageNotePreparation(pdfDoc, avertissements, champsManquant
     y -= 10;
   }
 
-  if (aManquants) ecrireListe('CHAMPS ENCORE MANQUANTS (à compléter avant approbation finale) :', champsManquants);
+  if (aManquants) ecrireListe('INFOS CONNUES NON LOCALISÉES DANS CE DOCUMENT (à ajouter manuellement si ce formulaire les demande) :', champsManquants);
   if (aAvertir) ecrireListe('MISES EN GARDE :', avertissements);
 }
 

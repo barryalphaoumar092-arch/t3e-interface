@@ -483,7 +483,7 @@ router.post('/:id/formulaire/:formId/remplir', async (req, res) => {
         annexesNonTrouvees.forEach((lib) => avertissements.push(
           `Aucun document trouvé dans la base de connaissances pour joindre à l'annexe « ${lib} » — à ajouter manuellement.`
         ));
-        await genererPageNotePreparation(pdfFinal, avertissements, resultat.champsNonPlaces);
+        await genererPageNotePreparation(pdfFinal, avertissements, resultat.champsNonPlaces, aplatirInfosEntreprise(infos));
         resultat.buffer = Buffer.from(await pdfFinal.save());
         if (annexesJointes.length > 0) console.log('[appels-offres] Annexes jointes automatiquement:', annexesJointes.join(', '));
       } catch (e) {
