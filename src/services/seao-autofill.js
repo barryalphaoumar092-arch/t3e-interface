@@ -33,7 +33,11 @@ const TITRES_PERTINENTS = [
   // tout autre document de la base (site internet, courriel corporatif,
   // TPS/TVH, TVQ) : ces valeurs n'étaient jamais extraites automatiquement
   // faute de source texte, même si l'utilisateur les avait fournies.
-  "Fiche d'identité",
+  // Le document est enregistre sans accent ("identite" -- voir titre reel
+  // dans la base) : le filtre par sous-chaine est sensible aux accents, un
+  // "identité" ici ne matchait donc jamais et le document n'etait jamais
+  // inclus dans le contexte envoye a l'IA malgre sa presence dans la base.
+  "Fiche d'identite",
 ];
 
 async function chargerDocumentsPertinents(db) {
