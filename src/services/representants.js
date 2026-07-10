@@ -60,6 +60,10 @@ function champsRepresentant(profil) {
     REPRESENTANT_COURRIEL: profil.courriel,
     REPRESENTANT_TELEPHONE: profil.telephone,
     REPRESENTANT_CELLULAIRE: profil.telephone,
+    // Le representant choisi pour CE dossier EST le signataire — T3E n'a pas
+    // de signataire distinct fixe (voir infos-entreprise-t3e.js, qui ne
+    // definit plus SIGNATAIRE_AUTORISE pour cette raison).
+    SIGNATAIRE_AUTORISE: `${profil.prenom} ${profil.nom}`,
   };
 }
 

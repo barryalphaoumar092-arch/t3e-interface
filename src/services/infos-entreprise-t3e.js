@@ -21,7 +21,11 @@ const INFOS_ENTREPRISE_T3E = {
   TELECOPIEUR_ENTREPRISE: '514-365-8252',
   SITE_WEB: 'https://www.toiturestroisetoiles.com/',
   COURRIEL_ENTREPRISE: 'info@toiturestroisetoiles.com',
-  SIGNATAIRE_AUTORISE: 'Giancarlo Bellini',
+  // PAS de SIGNATAIRE_AUTORISE fixe ici : contrairement au reste de ces
+  // coordonnees, le signataire n'est jamais une personne unique pour
+  // l'entreprise -- c'est le representant selectionne pour CE dossier
+  // (voir representants.js/champsRepresentant()) qui signe. Un signataire
+  // fixe ici ecraserait a tort le representant choisi par l'utilisateur.
 };
 
 function champsEntrepriseFixes() {

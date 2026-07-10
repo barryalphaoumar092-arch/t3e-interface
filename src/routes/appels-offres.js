@@ -412,13 +412,17 @@ router.post('/:id/formulaire/:formId/remplir', async (req, res) => {
     // explicite pour un dossier précis est plus fiable qu'une extraction.
     const representant = obtenirRepresentant(req.body && req.body.representant_id);
     if (representant) {
+      // champsRepresentant() fixe aussi SIGNATAIRE_AUTORISE au nom de CE
+      // représentant — T3E n'a pas de signataire par défaut distinct, c'est
+      // toujours le représentant désigné pour ce dossier qui signe. Un
+      // signataire fixe ici avait auparavant fait apparaître le président à
+      // tort à la place du représentant sélectionné (bug corrigé deux fois :
+      // d'abord en supprimant le SIGNATAIRE_AUTORISE devine par l'IA, puis en
+      // retirant la constante fixe qui le remplaçait silencieusement).
       Object.assign(infos, champsRepresentant(representant));
-      // Le représentant désigné pour CE dossier est la personne qui remplit
-      // et signe la soumission — ne pas laisser l'IA placer en plus
-      // SIGNATAIRE_AUTORISE (fait légal distinct, signataire par défaut de
-      // l'entreprise) sur les mêmes lignes "Nom/Fonction en lettres
-      // moulées" : cause confirmée d'un bug signalé par l'utilisateur (le
-      // président apparaissait à la place du représentant sélectionné).
+    } else {
+      // Aucun représentant sélectionné : ne pas laisser un signataire deviné
+      // par l'IA (ou une valeur fixe) apparaître sans confirmation humaine.
       delete infos.SIGNATAIRE_AUTORISE;
     }
 
