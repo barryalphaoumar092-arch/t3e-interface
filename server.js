@@ -83,6 +83,31 @@ app.post('/internal/convertir-doc-docx', express.raw({ type: '*/*', limit: '25mb
   }
 });
 
+// TEMPORAIRE - diagnostic pour verifier quelles variables d'environnement
+// sont presentes sur CETTE instance (utile pour distinguer Vercel de Render,
+// et confirmer que Render a bien les identifiants Turso/Supabase necessaires
+// a genererEtSauvegarderManuel) — ne revele que la PRESENCE, jamais la
+// valeur. Meme secret que les autres routes /internal/*. A retirer apres usage.
+app.get('/internal/diagnostic', (req, res) => {
+  const secret = (process.env.CONVERT_SERVICE_SECRET || '').trim();
+  const fourni = typeof req.headers['x-convert-secret'] === 'string'
+    ? req.headers['x-convert-secret'].trim() : '';
+  const valide = secret.length > 0 && fourni.length > 0
+    && Buffer.byteLength(fourni) === Buffer.byteLength(secret)
+    && crypto.timingSafeEqual(Buffer.from(fourni), Buffer.from(secret));
+  if (!valide) return res.status(403).send('Forbidden');
+
+  res.json({
+    VERCEL: !!process.env.VERCEL,
+    TURSO_DATABASE_URL: !!process.env.TURSO_DATABASE_URL,
+    TURSO_AUTH_TOKEN: !!process.env.TURSO_AUTH_TOKEN,
+    SUPABASE_URL: !!process.env.SUPABASE_URL,
+    SUPABASE_SERVICE_ROLE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+    CONVERT_SERVICE_URL: !!process.env.CONVERT_SERVICE_URL,
+    CONVERT_SERVICE_SECRET: !!process.env.CONVERT_SERVICE_SECRET,
+  });
+});
+
 // Meme principe que /internal/convertir-docx-pdf, mais pour la GENERATION
 // COMPLETE d'un manuel de fin de chantier (remplissage + fusion de tous les
 // documents) — trop long pour tenir dans le plafond dur de 60s d'une fonction
