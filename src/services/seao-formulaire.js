@@ -351,12 +351,25 @@ async function remplirFormulairePdfPlat(buf, infosEntreprise) {
     const valeurNorm = normaliserTexte(valeur);
     let nbCochees = 0;
     for (const entree of entriesLimitees) {
-      if (!estLigneCheckbox(entree.ligne)) continue;
-      const label = entree.ligne.texte.replace(REGEX_CASE_A_COCHER, '').replace(REGEX_OPTION_LETTRE, '').trim();
-      const labelNorm = normaliserTexte(label);
-      if (labelNorm.length >= 4 && valeurNorm.includes(labelNorm)) {
-        cocherCase(pdfDoc.getPage(entree.page), entree.ligne);
-        nbCochees++;
+      const texte = entree.ligne.texte.trim();
+      if (!REGEX_CASE_A_COCHER.test(texte)) continue;
+      // Une rangee de tableau peut contenir PLUSIEURS cases cote a cote (ex.
+      // "☐ Societe par actions ☐ Regime federal") — extraireLignesParPage
+      // fusionne tout ce qui partage le meme Y en UNE seule "ligne", donc il
+      // faut redecouper au niveau de CHAQUE glyphe ☐/□/❑/▢ plutot que de ne
+      // traiter que le premier. La position x de chaque morceau est estimee
+      // en cumulant la largeur des morceaux precedents (jamais mesuree
+      // precisement, meme principe que les autres positions estimees).
+      const morceaux = texte.split(/(?=[☐□❑▢])/).filter(Boolean);
+      let xCumul = entree.ligne.x;
+      for (const morceau of morceaux) {
+        const label = morceau.replace(REGEX_CASE_A_COCHER, '').trim();
+        const labelNorm = normaliserTexte(label);
+        if (labelNorm.length >= 4 && valeurNorm.includes(labelNorm)) {
+          cocherCase(pdfDoc.getPage(entree.page), { x: xCumul, y: entree.ligne.y, texte: morceau });
+          nbCochees++;
+        }
+        xCumul += font.widthOfTextAtSize(morceau, 9);
       }
     }
     return nbCochees;
