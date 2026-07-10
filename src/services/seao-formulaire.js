@@ -11,7 +11,8 @@ const { normalizeXmlText, placerChampsRestantsViaIA } = require('./docx-xml-util
 const { mapperChampsFormulairePdf, mapperChampsBordereau } = require('./claude-client');
 
 const NOMS_LISIBLES = {
-  NEQ: 'NEQ', RBQ: 'Numéro de licence RBQ', NOM_ENTREPRISE: "Nom de l'entreprise",
+  NEQ: 'NEQ', RBQ: 'Numéro de licence RBQ', CCQ: 'Numéro de licence CCQ',
+  CNESST_NUMERO: "Numéro d'employeur CNESST", NOM_ENTREPRISE: "Nom de l'entreprise",
   ADRESSE_ENTREPRISE: 'Adresse', TELEPHONE_ENTREPRISE: 'Téléphone',
   TELECOPIEUR_ENTREPRISE: 'Télécopieur', SITE_WEB: 'Site internet',
   COURRIEL_ENTREPRISE: 'Courriel corporatif', TPS_TVH: 'TPS/TVH', TVQ: 'TVQ',

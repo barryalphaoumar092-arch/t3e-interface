@@ -552,6 +552,8 @@ const ANALYSE_INFOS_ENTREPRISE_SCHEMA = {
   properties: {
     NEQ: { type: 'string' },
     RBQ: { type: 'string' },
+    CCQ: { type: 'string' },
+    CNESST_NUMERO: { type: 'string' },
     NOM_ENTREPRISE: { type: 'string' },
     ADRESSE_ENTREPRISE: { type: 'string' },
     TELEPHONE_ENTREPRISE: { type: 'string' },
@@ -580,7 +582,7 @@ const ANALYSE_INFOS_ENTREPRISE_SCHEMA = {
     confiance: { type: 'string' },
   },
   required: [
-    'NEQ', 'RBQ', 'NOM_ENTREPRISE', 'ADRESSE_ENTREPRISE', 'TELEPHONE_ENTREPRISE',
+    'NEQ', 'RBQ', 'CCQ', 'CNESST_NUMERO', 'NOM_ENTREPRISE', 'ADRESSE_ENTREPRISE', 'TELEPHONE_ENTREPRISE',
     'TELECOPIEUR_ENTREPRISE', 'SITE_WEB', 'COURRIEL_ENTREPRISE', 'TPS_TVH', 'TVQ',
     'ASSURANCE_RESPONSABILITE_CIVILE', 'ASSURANCE_AUTOMOBILE', 'CAUTIONNEMENT',
     'CERTIFICATIONS', 'SIGNATAIRE_AUTORISE', 'REPRESENTANT_NOM', 'REPRESENTANT_TITRE',
@@ -596,6 +598,8 @@ const SYSTEM_INFOS_ENTREPRISE = `Tu extrais les informations d'entreprise de Toi
 === CHAMPS ===
 - NEQ : Numéro d'Entreprise du Québec (10 chiffres) DE TOITURES TROIS ÉTOILES INC. — cherche "Registre des entreprises" / "NEQ". ATTENTION : la base contient aussi des documents pour une entité JURIDIQUE DIFFÉRENTE, "Service d'entretien Toitures Trois Étoiles Inc." (NEQ différent) — ne confonds jamais les deux.
 - RBQ : numéro de licence RBQ (Régie du bâtiment du Québec) DE TOITURES TROIS ÉTOILES INC. spécifiquement (pas de l'entité "Service")
+- CCQ : numéro de licence CCQ (Commission de la construction du Québec)
+- CNESST_NUMERO : numéro d'employeur CNESST/CSST (distinct de CNESST_STATUT, qui est le statut de conformité, pas le numéro)
 - NOM_ENTREPRISE, ADRESSE_ENTREPRISE, TELEPHONE_ENTREPRISE, TELECOPIEUR_ENTREPRISE, SITE_WEB, COURRIEL_ENTREPRISE : coordonnées officielles de T3E (jamais celles d'un client, d'un assureur/courtier, ou d'un tiers)
 - TPS_TVH : numéro d'inscription TPS/TVH de T3E, si mentionné (distinct du NEQ et du RBQ)
 - TVQ : numéro d'inscription TVQ de T3E, si mentionné

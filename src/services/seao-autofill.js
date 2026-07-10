@@ -5,14 +5,30 @@
 const { downloadBuffer, BUCKETS } = require('./storage');
 const { parsePdfBuffer } = require('./document-parser');
 const { analyserInfosEntreprise } = require('./claude-client');
+const { champsEntrepriseFixes } = require('./infos-entreprise-t3e');
 
-// v3 : schema d'extraction encore elargi (TPS/TVH, TVQ, courriel corporatif,
-// coordonnees directes du representant) + correction du bug de resolution de
-// bucket qui faisait echouer silencieusement la lecture de certains
-// documents "Certificats corporatifs" — le suffixe invalide automatiquement
-// tout cache calcule avec l'ancien schema/bug.
-const CLE_CACHE = 'seao_infos_entreprise_v3';
+// v4 : les coordonnees/identifiants officiels de T3E (NEQ, RBQ, CCQ, CNESST,
+// TPS/TVQ, NEA, adresse, site, courriel, telecopieur, signataire) sont
+// desormais des constantes FIXES (voir infos-entreprise-t3e.js) qui ECRASENT
+// systematiquement le resultat de l'IA, plutot que d'etre re-devinees a
+// chaque fois a partir des documents (fragile — a deja produit des valeurs
+// fausses ou vides). Le suffixe invalide tout cache calcule avant ce
+// changement (qui ne contenait pas ces champs garantis corrects).
+const CLE_CACHE = 'seao_infos_entreprise_v4';
 const CACHE_MAX_AGE_JOURS = 30;
+
+// Garde-fou : un champ REPRESENTANT_TELEPHONE/CELLULAIRE sans aucun chiffre
+// n'est pas un numero de telephone (bug deja observe : l'IA y avait mis le
+// nom du signataire autorise, confondu avec le representant, en l'absence de
+// profil selectionne — voir representants.js/champsRepresentant() qui
+// ecrase normalement ce champ UNE FOIS un representant choisi par l'utilisateur).
+function nettoyerChampsRepresentant(infos) {
+  const resultat = { ...infos };
+  for (const cle of ['REPRESENTANT_TELEPHONE', 'REPRESENTANT_CELLULAIRE']) {
+    if (resultat[cle] && !/\d/.test(resultat[cle])) resultat[cle] = '';
+  }
+  return resultat;
+}
 
 // Documents les plus denses en information pour le pré-remplissage — évite de
 // parser les 174 documents de la base de connaissances (dont ~90 sont des
@@ -103,7 +119,10 @@ async function obtenirInfosEntreprise(db, { forcerRecalcul = false } = {}) {
     if (r.rows.length > 0) {
       const ageJours = (Date.now() - new Date(r.rows[0].updated_at + 'Z').getTime()) / (1000 * 60 * 60 * 24);
       if (ageJours < CACHE_MAX_AGE_JOURS) {
-        try { return JSON.parse(r.rows[0].valeur); } catch (_) {}
+        try {
+          const cache = JSON.parse(r.rows[0].valeur);
+          return nettoyerChampsRepresentant({ ...cache, ...champsEntrepriseFixes() });
+        } catch (_) {}
       }
     }
   }
@@ -123,7 +142,7 @@ async function obtenirInfosEntreprise(db, { forcerRecalcul = false } = {}) {
     args: [CLE_CACHE, JSON.stringify(infos)],
   });
 
-  return infos;
+  return nettoyerChampsRepresentant({ ...infos, ...champsEntrepriseFixes() });
 }
 
 module.exports = { obtenirInfosEntreprise };
