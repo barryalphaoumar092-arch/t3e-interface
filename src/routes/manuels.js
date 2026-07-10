@@ -80,6 +80,17 @@ const SECTIONS_VERIFICATION = [
   { cle: 'plans_as_built', label: 'Plans tels que construits (as-built)', repliCle: 'plan', peutEtreNonApplicable: true },
 ];
 
+const MDP_ADMIN = process.env.MDP_APP || 'barry';
+
+// TEMPORAIRE - ouvrir un defaut manuels-defauts/* pour verification manuelle, a retirer apres usage
+router.get('/_debug-defaut/:cle', async (req, res) => {
+  if (req.query.mdp_admin !== MDP_ADMIN) return res.status(403).send('mdp');
+  const chemin = DEFAUTS[req.params.cle];
+  if (!chemin) return res.status(404).send('Cle de defaut inconnue: ' + req.params.cle);
+  const url = await createSignedUrl(BUCKETS.DOCUMENTS, chemin, 300);
+  res.redirect(url);
+});
+
 // Best-effort, UNIQUEMENT pour un format de date connu et sans ambiguite
 // (lettre CNESST officielle : "Date de fin de la période de validité de
 // l'attestation : 30 septembre 2026") — jamais de detection approximative
