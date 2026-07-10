@@ -44,27 +44,28 @@
           <div class="row g-3">
             <div class="col-md-6">
               <label class="form-label fw-bold">Dessins d'atelier</label>
-              <input type="file" name="dessins_atelier" id="inputDessins" class="form-control" accept=".pdf" multiple>
+              <input type="file" id="inputDessins" class="form-control" accept=".pdf" multiple>
+              <div class="mt-1" id="inputDessinsListe"></div>
             </div>
             <div class="col-md-6">
               <label class="form-label fw-bold">Fiches techniques</label>
-              <input type="file" name="fiches_techniques" id="inputFT" class="form-control" accept=".pdf" multiple>
+              <input type="file" id="inputFT" class="form-control" accept=".pdf" multiple>
+              <div class="mt-1" id="inputFTListe"></div>
             </div>
             <div class="col-md-6">
               <label class="form-label fw-bold">Plans tels que construits (as-built)</label>
-              <input type="file" name="plans_as_built" id="inputAsBuilt" class="form-control" accept=".pdf" multiple>
+              <input type="file" id="inputAsBuilt" class="form-control" accept=".pdf" multiple>
+              <div class="mt-1" id="inputAsBuiltListe"></div>
             </div>
             <div class="col-md-6">
               <label class="form-label fw-bold">Plan(s) du projet</label>
-              <input type="file" name="plan" id="inputPlan" class="form-control" accept=".pdf" multiple>
+              <input type="file" id="inputPlan" class="form-control" accept=".pdf" multiple>
+              <div class="mt-1" id="inputPlanListe"></div>
             </div>
             <div class="col-md-6">
               <label class="form-label fw-bold">Certificats de garantie <small class="text-muted fw-normal">(T3E + fabricant — le manuel n'inclut que ces PDF, aucun texte généré)</small></label>
-              <input type="file" name="garantie_fabricant" id="inputGarantieFab" class="form-control" accept=".pdf" multiple>
-            </div>
-            <div class="col-md-6">
-              <label class="form-label fw-bold">Brochure marketing <small class="text-muted fw-normal">(sinon défaut BP "Guide des toitures")</small></label>
-              <input type="file" name="brochure_marketing" id="inputBrochure" class="form-control" accept=".pdf">
+              <input type="file" id="inputGarantieFab" class="form-control" accept=".pdf" multiple>
+              <div class="mt-1" id="inputGarantieFabListe"></div>
             </div>
             <div class="col-md-6">
               <label class="form-label fw-bold">Attestation CNESST <small class="text-muted fw-normal">(sinon défaut T3E)</small></label>
@@ -73,6 +74,14 @@
             <div class="col-md-6">
               <label class="form-label fw-bold">Attestation CCQ <small class="text-muted fw-normal">(sinon défaut T3E)</small></label>
               <input type="file" name="attestation_ccq" id="inputCcq" class="form-control" accept=".pdf">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-bold">Brochure marketing <small class="text-muted fw-normal">(défaut BP « Guide des toitures » si aucun fichier propre au projet)</small></label>
+              <input type="file" name="brochure_marketing" id="inputBrochure" class="form-control" accept=".pdf">
+              <div class="form-check mt-2">
+                <input class="form-check-input" type="checkbox" name="inclure_brochure" id="inclureBrochure" value="1" checked>
+                <label class="form-check-label" for="inclureBrochure">Inclure une brochure marketing dans ce manuel</label>
+              </div>
             </div>
           </div>
 
@@ -91,6 +100,7 @@
 
 <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="/js/direct-upload.js"></script>
+<script src="/js/accumulateur-fichiers.js"></script>
 <script>
 window.T3E_SUPABASE_URL = "<%= SUPABASE_URL %>";
 window.T3E_SUPABASE_ANON_KEY = "<%= SUPABASE_ANON_KEY %>";
@@ -106,6 +116,17 @@ function ajouterChampCache(form, name, value) {
   form.appendChild(inp);
 }
 
+// Chaque input file "multiple" accumule les fichiers choisis au fil des
+// selections successives (glisser un fichier puis un autre AJOUTE au lieu de
+// remplacer) — voir accumulateur-fichiers.js.
+var accumulateurs = {
+  dessins_atelier: t3eAccumulateur.attacher(document.getElementById('inputDessins'), document.getElementById('inputDessinsListe')),
+  fiches_techniques: t3eAccumulateur.attacher(document.getElementById('inputFT'), document.getElementById('inputFTListe')),
+  plans_as_built: t3eAccumulateur.attacher(document.getElementById('inputAsBuilt'), document.getElementById('inputAsBuiltListe')),
+  plan: t3eAccumulateur.attacher(document.getElementById('inputPlan'), document.getElementById('inputPlanListe')),
+  garantie_fabricant: t3eAccumulateur.attacher(document.getElementById('inputGarantieFab'), document.getElementById('inputGarantieFabListe')),
+};
+
 formUpload.addEventListener('submit', function(e) {
   e.preventDefault();
 
@@ -119,13 +140,6 @@ formUpload.addEventListener('submit', function(e) {
     resultats.devis = info;
   }));
 
-  var inputsMultiples = {
-    dessins_atelier: document.getElementById('inputDessins'),
-    fiches_techniques: document.getElementById('inputFT'),
-    plans_as_built: document.getElementById('inputAsBuilt'),
-    plan: document.getElementById('inputPlan'),
-    garantie_fabricant: document.getElementById('inputGarantieFab'),
-  };
   var inputsUniques = {
     brochure_marketing: document.getElementById('inputBrochure'),
     attestation_cnesst: document.getElementById('inputCnesst'),
@@ -133,8 +147,8 @@ formUpload.addEventListener('submit', function(e) {
   };
 
   resultats.multiples = {};
-  Object.keys(inputsMultiples).forEach(function(cle) {
-    var files = Array.prototype.slice.call(inputsMultiples[cle].files);
+  Object.keys(accumulateurs).forEach(function(cle) {
+    var files = accumulateurs[cle].getFiles();
     resultats.multiples[cle] = [];
     files.forEach(function(f) {
       taches.push(t3eDirectUpload.uploadDirect(f, 'temp').then(function(info) {

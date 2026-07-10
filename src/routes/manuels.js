@@ -4,32 +4,10 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
-const { parseDevis, parsePdfBuffer, texteParPage } = require('../services/document-parser');
-const { remplirManuel } = require('../services/manuel-filler');
-const { convertirDocxEnPdf } = require('../services/docx-to-pdf');
+const { parseDevis, parsePdfBuffer } = require('../services/document-parser');
 const { analyserDevisManuel, extraireFournisseursDesFT } = require('../services/claude-client');
-const { PDFDocument } = require('pdf-lib');
-const {
-  preparerPolices, ajouterBufferAuDocument, creerPageTitre,
-  estamperPagesAsBuilt, construireSommaireEtNumeroter,
-} = require('../services/pdf-manuel-assembleur');
 const { downloadBuffer, uploadBuffer, createSignedUrl, removeFile, listFiles, sanitizeKey, BUCKETS } = require('../services/storage');
-
-// Documents par defaut (reutilises sur tous les manuels, sauf remplacement
-// projet par projet) — a uploader une fois dans le bucket "documents" via la
-// page Connaissances.
-// NOTE (2026-07-09) : attestation_ccq n'a PAS de defaut — contrairement a la
-// conformite CNESST (une lettre generale reutilisable pour toute l'entreprise),
-// les documents CCQ reels ("etat de situation") sont specifiques a CHAQUE
-// chantier (numero de projet, donneur d'ouvrage, dates du contrat...) — les
-// reutiliser d'un projet a l'autre serait FAUX, pas juste incomplet. Voir
-// calculerStatutSections() : la CCQ reste "obligatoire sans defaut possible".
-const DEFAUTS = {
-  manuel_entretien: 'manuels-defauts/manuel-entretien-preventif.pdf',
-  attestation_cnesst: 'manuels-defauts/attestation-cnesst.pdf',
-  garantie_t3e: 'manuels-defauts/garantie-t3e.pdf',
-  brochure_marketing: 'manuels-defauts/guide-toitures-bp.pdf',
-};
+const { chargerBuffersCategorie, genererEtSauvegarderManuel } = require('../services/manuel-generateur');
 
 // Categories de documents uploades par l'utilisateur. "multiple: true" =
 // plusieurs fichiers possibles. L'ORDRE de fusion réel n'est plus dérivé de
@@ -145,12 +123,6 @@ async function calculerStatutSections(documents, nonApplicables) {
   return resultats;
 }
 
-// Champs de garantie conservés en base pour référence interne (affichés sur
-// la page de révision) mais jamais imprimés dans le manuel — la section
-// Garanties ne doit contenir QUE les PDF réels des certificats (voir
-// scripts/generer-manuel-template.js, qui ne contient plus cette section).
-const CHAMPS_GARANTIE_NON_IMPRIMES = ['NUMERO_GARANTIE', 'SURFACE_GARANTIE', 'DUREE_GARANTIE', 'DATE_FIN_GARANTIE'];
-
 // Les fiches techniques réellement approuvées sont la source fiable de "qu'est
 // ce qui a vraiment été installé" — contrairement au devis, qui liste parfois
 // des matériaux finalement remplacés/non utilisés en chantier. Quand des FT
@@ -222,21 +194,6 @@ async function persisterCategorie(manuelId, categorie, cles, noms) {
   });
   const resultats = await Promise.all(taches);
   return resultats.filter(Boolean);
-}
-
-async function chargerBuffersCategorie(documents) {
-  const buffers = await Promise.all((documents || []).map((doc) => downloadBuffer(BUCKETS.MANUELS, doc.key)));
-  return buffers.filter(Boolean);
-}
-
-// Charge le PDF par defaut d'une categorie, sauf si l'utilisateur en a
-// uploade un pour CE manuel (override projet par projet).
-async function chargerAvecDefaut(documents, cleDefaut) {
-  const overrides = await chargerBuffersCategorie(documents);
-  if (overrides.length > 0) return overrides;
-  if (!cleDefaut) return [];
-  const buf = await downloadBuffer(BUCKETS.DOCUMENTS, cleDefaut);
-  return buf ? [buf] : [];
 }
 
 // Supprime tous les fichiers Supabase Storage stockes sous {manuelId}/ (toutes
@@ -342,9 +299,14 @@ router.post('/analyser', async (req, res) => {
   const fournisseursFT = await extraireFournisseursDepuisFT(documents.fiches_techniques);
   if (fournisseursFT) Object.assign(champs, fournisseursFT);
 
+  // Case a cocher "Brochure marketing" (voir manuel-nouveau.ejs) — cochee par
+  // defaut pour preserver le comportement historique (toujours incluse), mais
+  // desormais desactivable explicitement.
+  const inclureBrochure = req.body.inclure_brochure === '1';
+
   await db.execute({
     sql: `UPDATE manuels SET contenu = ? WHERE id = ?`,
-    args: [JSON.stringify({ champs, documents, ia_erreur: iaErreur }), manuelId],
+    args: [JSON.stringify({ champs, documents, ia_erreur: iaErreur, inclure_brochure: inclureBrochure }), manuelId],
   });
 
   res.redirect('/manuels/reviser/' + manuelId);
@@ -368,6 +330,10 @@ router.get('/reviser/:id', async (req, res) => {
     iaErreur: data.ia_erreur || '',
     checklistItems: CHECKLIST_ITEMS,
     statutSections,
+    // Manuels crees avant l'ajout de cette case a cocher : comportement
+    // historique preserve (brochure toujours incluse par defaut).
+    inclureBrochure: data.inclure_brochure !== false,
+    generation: data.generation || null,
     blocageMessage: '',
   });
 });
@@ -411,6 +377,40 @@ router.post('/reviser/:id/documents', async (req, res) => {
   res.redirect('/manuels/reviser/' + id);
 });
 
+// Sur Vercel (plan Hobby, plafond DUR de 60s par fonction, non modifiable),
+// la fusion complete (surtout avec beaucoup de fiches techniques/dessins —
+// signale par l'utilisateur avec 27 FT : FUNCTION_INVOCATION_TIMEOUT) peut
+// depasser le temps disponible. On delegue alors la generation en
+// ARRIERE-PLAN a l'instance Render (meme service que la conversion docx->pdf,
+// voir docx-to-pdf.js), mais SANS attendre la fin : on ne recupere que
+// l'accuse de reception immediat (202), le traitement continue cote Render
+// independamment de la duree de vie de cette fonction serverless — Render est
+// un service persistant (pas une fonction a la demande), donc sans ce genre
+// de plafond. Voir /internal/generer-manuel (server.js) et
+// genererEtSauvegarderManuel (services/manuel-generateur.js).
+async function declencherGenerationDistante(id) {
+  const url = (process.env.CONVERT_SERVICE_URL || '').trim();
+  const secret = (process.env.CONVERT_SERVICE_SECRET || '').trim();
+  if (!url || !secret) throw new Error('service distant non configuré (CONVERT_SERVICE_URL/SECRET manquant)');
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  try {
+    const resp = await fetch(url.replace(/\/$/, '') + '/internal/generer-manuel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-convert-secret': secret },
+      body: JSON.stringify({ manuelId: id }),
+      signal: controller.signal,
+    });
+    if (!resp.ok) {
+      const corps = await resp.text().catch(() => '');
+      throw new Error(`service distant a répondu ${resp.status}: ${corps.slice(0, 200)}`);
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 // ── GÉNÉRER — remplir le .docx, convertir en PDF, fusionner tous les documents ──
 router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, res) => {
   const db = req.db;
@@ -428,6 +428,10 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
   for (const cleChamp of Object.keys(data.champs || {})) {
     champs[cleChamp] = (req.body[cleChamp] || '').trim();
   }
+  // Brochure marketing desormais optionnelle (case a cocher) — voir
+  // genererEtSauvegarderManuel, qui lit inclure_brochure depuis les donnees
+  // sauvegardees plutot que de recevoir la valeur en parametre.
+  const inclureBrochure = req.body.inclure_brochure === '1';
 
   // ── Vérification avant génération (priorité #1) : une section obligatoire
   // manquante ne doit JAMAIS produire un manuel incomplet en silence. Les
@@ -449,7 +453,7 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
   // on bloque — pour ne jamais faire perdre la saisie de l'utilisateur.
   await db.execute({
     sql: `UPDATE manuels SET contenu = ? WHERE id = ?`,
-    args: [JSON.stringify({ ...data, champs, documents, non_applicable: nonApplicables }), id],
+    args: [JSON.stringify({ ...data, champs, documents, non_applicable: nonApplicables, inclure_brochure: inclureBrochure }), id],
   });
 
   if (sectionsBloquantes.length > 0) {
@@ -460,160 +464,36 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
       iaErreur: data.ia_erreur || '',
       checklistItems: CHECKLIST_ITEMS,
       statutSections,
+      inclureBrochure,
+      generation: null,
       blocageMessage: 'Impossible de générer le manuel final : ' + sectionsBloquantes.map((s) => `« ${s.label} » est manquante`).join(', ') + '. Fournissez le document manquant, ou cochez « Non applicable » avec une note si la section ne s\'applique pas à ce projet.',
     });
   }
 
-  // Les 4 champs de garantie restent en base pour reference interne mais ne
-  // doivent jamais etre imprimes (la section Garanties du .docx ne contient
-  // plus que le titre — voir CHAMPS_GARANTIE_NON_IMPRIMES).
-  const champsPourDocx = { ...champs };
-  for (const k of CHAMPS_GARANTIE_NON_IMPRIMES) delete champsPourDocx[k];
-
-  let docxBuf;
-  try {
-    docxBuf = await remplirManuel(champsPourDocx);
-  } catch (e) {
-    return res.status(500).send('Erreur lors du remplissage du manuel : ' + e.message);
-  }
-
-  let manuelPdfBuf;
-  try {
-    manuelPdfBuf = await convertirDocxEnPdf(docxBuf);
-  } catch (e) {
-    return res.status(500).send('Erreur lors de la conversion PDF du manuel (le .docx genere est disponible mais pas la fusion complete) : ' + e.message);
-  }
-
-  // Telechargements Supabase de toutes les categories EN PARALLELE (Promise.all)
-  // plutot que les uns apres les autres : avec beaucoup de fiches techniques/
-  // dessins/plans, la somme des temps sequentiels depassait le delai maximal
-  // de la fonction. Voir aussi persisterCategorie ci-dessus, meme principe
-  // pour /analyser.
-  //
-  // Plans tels que construits : dedoublonnage — si des plans as-built ont ete
-  // uploades, ils font foi ; sinon on retombe sur les plans du projet (meme
-  // dessins, aucun changement structurel constate) plutot que d'afficher les
-  // deux sections avec les memes images (voir feedback utilisateur, projet 26-009).
-  const plansSourceDocs = (documents.plans_as_built && documents.plans_as_built.length > 0)
-    ? documents.plans_as_built
-    : (documents.plan || []);
-
-  const [
-    manuelEntretienBuf,
-    attestationCnesstBufs,
-    attestationCcqBufs,
-    garantieT3EBufs,
-    garantieBufs,
-    dessinsAtelierBufs,
-    fichesTechniquesBufs,
-    fichesSecuriteBufs,
-    plansAsBuiltBufs,
-    brochureBufs,
-  ] = await Promise.all([
-    downloadBuffer(BUCKETS.DOCUMENTS, DEFAUTS.manuel_entretien),
-    chargerAvecDefaut(documents.attestation_cnesst, DEFAUTS.attestation_cnesst),
-    // Pas de defaut pour la CCQ (voir commentaire sur DEFAUTS ci-dessus) —
-    // uniquement le document specifique a CE projet, s'il a ete uploade.
-    chargerBuffersCategorie(documents.attestation_ccq),
-    chargerAvecDefaut(documents.garantie_t3e, DEFAUTS.garantie_t3e),
-    chargerBuffersCategorie(documents.garantie_fabricant),
-    chargerBuffersCategorie(documents.dessins_atelier),
-    chargerBuffersCategorie(documents.fiches_techniques),
-    chargerBuffersCategorie(documents.fiches_securite),
-    chargerBuffersCategorie(plansSourceDocs),
-    chargerAvecDefaut(documents.brochure_marketing, DEFAUTS.brochure_marketing),
-  ]);
-
-  let pdfFinal;
-  try {
-    const pdfDoc = await PDFDocument.load(manuelPdfBuf);
-    const fonts = await preparerPolices(pdfDoc);
-    const tailleStandard = pdfDoc.getPage(0).getSize();
-
-    // Sections 1 a 5 deja dans le .docx : leur page de depart reelle est
-    // localisee par titre exact (pdf-parse) plutot que supposee fixe, car
-    // Description/Details/Directives ont une longueur variable.
-    const pagesTexteBase = await texteParPage(manuelPdfBuf);
-    const HEADINGS_BASE = [
-      'Liste des intervenants',
-      'Liste des fournisseurs et sous-traitants',
-      'Description des travaux exécutés',
-      'Détails et imprévus',
-      "Directives d'exploitation et d'entretien",
-    ];
-    // La page 2 (sommaire placeholder) contient déjà les mêmes titres de
-    // section — la recherche doit commencer à la page 3 pour éviter de s'y
-    // arrêter au lieu de trouver la vraie page du contenu.
-    const sections = HEADINGS_BASE.map((label, i) => {
-      const idx = pagesTexteBase.findIndex((t, pageIdx) => pageIdx >= 2 && t.includes(label));
-      return { label, pageDebut: idx === -1 ? (3 + i) : idx + 1 };
-    });
-
-    // Garde-fou : les pages des sections 1 a 5 doivent toujours etre
-    // strictement croissantes (chaque section commence forcement apres la
-    // precedente). Si ce n'est pas le cas — ex: un champ texte contient par
-    // coincidence le titre d'une autre section, ou toute autre defaillance
-    // de detection non prevue — on ne livre jamais un sommaire avec des
-    // numeros de page faux : on retombe sur la numerotation sequentielle par
-    // defaut et on logue l'anomalie pour qu'elle soit visible dans les
-    // journaux serveur (voir piege corrige le 2026-07-07 : la recherche
-    // trouvait le titre dans le sommaire statique de la page 2 au lieu de la
-    // vraie page de contenu).
-    const sectionsCroissantes = sections.every((s, i) => i === 0 || s.pageDebut > sections[i - 1].pageDebut);
-    if (!sectionsCroissantes) {
-      console.error('[manuels] ANOMALIE sommaire : pages des sections 1-5 non croissantes (%s) - repli sur la numerotation sequentielle par defaut.',
-        JSON.stringify(sections));
-      sections.forEach((s, i) => { s.pageDebut = 3 + i; });
+  if (process.env.VERCEL) {
+    try {
+      // Marque "en cours" AVANT de declencher, pour que la page de revision
+      // (rechargee juste apres la redirection) affiche le bon statut meme si
+      // Render n'a pas encore eu le temps de commencer le traitement.
+      await db.execute({
+        sql: `UPDATE manuels SET contenu = ? WHERE id = ?`,
+        args: [JSON.stringify({
+          ...data, champs, documents, non_applicable: nonApplicables, inclure_brochure: inclureBrochure,
+          generation: { statut: 'en_cours', demarre_le: new Date().toISOString() },
+        }), id],
+      });
+      await declencherGenerationDistante(id);
+      return res.redirect('/manuels/reviser/' + id);
+    } catch (e) {
+      console.error('[manuels] Délégation Render impossible, tentative en local :', e.message);
+      // On continue ci-dessous en synchrone plutôt que d'échouer silencieusement
+      // — risque de re-timeout sur un gros manuel, mais un manuel de petite
+      // taille passera quand même, et l'échec sera visible si ça timeout.
     }
-
-    // Sections 6+ : presence variable d'un manuel a l'autre — une page de
-    // titre + entree de sommaire n'est ajoutee que si du contenu existe.
-    async function ajouterSection(label, buffers, { tamponner = false } = {}) {
-      if (!buffers || buffers.length === 0) return;
-      sections.push({ label, pageDebut: pdfDoc.getPageCount() + 1 });
-      creerPageTitre(pdfDoc, fonts, label, tailleStandard);
-      for (const buf of buffers) {
-        const pagesAjoutees = await ajouterBufferAuDocument(pdfDoc, buf);
-        if (tamponner) estamperPagesAsBuilt(fonts, pagesAjoutees);
-      }
-    }
-
-    // Brochure marketing : materiel accessoire, sans titre ni entree de
-    // sommaire, toujours juste apres Directives d'exploitation et d'entretien.
-    for (const buf of brochureBufs) await ajouterBufferAuDocument(pdfDoc, buf);
-
-    await ajouterSection('Garantie T3E', garantieT3EBufs);
-    await ajouterSection('Garantie du fabricant', garantieBufs);
-    await ajouterSection("Manuel d'entretien préventif", manuelEntretienBuf ? [manuelEntretienBuf] : []);
-    await ajouterSection('Attestation de conformité CNESST', attestationCnesstBufs);
-    await ajouterSection('Attestation de conformité CCQ', attestationCcqBufs);
-    await ajouterSection("Dessins d'atelier", dessinsAtelierBufs);
-    await ajouterSection('Fiches techniques', fichesTechniquesBufs);
-    await ajouterSection('Fiches de sécurité (SDS)', fichesSecuriteBufs);
-    await ajouterSection('Plans tels que construits (as-built)', plansAsBuiltBufs, { tamponner: true });
-
-    await construireSommaireEtNumeroter(pdfDoc, sections);
-
-    pdfFinal = Buffer.from(await pdfDoc.save());
-  } catch (e) {
-    return res.status(500).send('Erreur lors de l\'assemblage final du manuel : ' + e.message);
   }
 
-  try {
-    await uploadBuffer(BUCKETS.MANUELS, `${id}/manuel-final.pdf`, pdfFinal, 'application/pdf');
-  } catch (e) {
-    return res.status(500).send('Le manuel a ete genere et fusionne (' + pdfFinal.length + ' octets) mais son enregistrement dans le stockage a echoue : ' + e.message);
-  }
-
-  await db.execute({
-    sql: `UPDATE manuels SET statut = 'approuve', contenu = ?, titre = ?, numero_dossier = ? WHERE id = ?`,
-    args: [JSON.stringify({ champs, documents, non_applicable: nonApplicables, ia_erreur: data.ia_erreur || '' }), champs.NOM_DU_PROJET || row.titre, champs.NUMERO_DOSSIER || row.numero_dossier, id],
-  });
-
-  // Redirection vers une URL signee Supabase plutot que d'envoyer le buffer
-  // dans la reponse : un manuel avec beaucoup de fiches techniques/dessins
-  // depasse facilement les 4.5 Mo de limite de reponse d'une fonction
-  // serverless Vercel (meme limite que pour l'upload — voir storage.js).
+  const resultat = await genererEtSauvegarderManuel(db, id);
+  if (!resultat.ok) return res.status(500).send('Erreur : ' + resultat.erreur);
   res.redirect('/manuels/telecharger/' + id);
 });
 

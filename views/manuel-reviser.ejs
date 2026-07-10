@@ -28,6 +28,25 @@
     <div class="alert alert-danger"><i class="bi bi-exclamation-octagon"></i> <%= blocageMessage %></div>
     <% } %>
 
+    <% if (manuel.statut === 'approuve' && (!generation || generation.statut !== 'en_cours')) { %>
+    <div class="alert alert-success d-flex justify-content-between align-items-center">
+      <span><i class="bi bi-check-circle"></i> Manuel déjà généré.</span>
+      <a href="/manuels/telecharger/<%= manuel.id %>" class="btn btn-success btn-sm"><i class="bi bi-download"></i> Télécharger</a>
+    </div>
+    <% } %>
+
+    <% if (generation && generation.statut === 'en_cours') { %>
+    <div class="alert alert-info">
+      <i class="bi bi-hourglass-split"></i> Génération en cours en arrière-plan (démarrée à <%= new Date(generation.demarre_le).toLocaleTimeString('fr-CA') %>).
+      Ça peut prendre quelques minutes avec beaucoup de documents — actualisez cette page pour voir le résultat.
+      <button type="button" class="btn btn-outline-primary btn-sm ms-2" onclick="location.reload()"><i class="bi bi-arrow-clockwise"></i> Actualiser</button>
+    </div>
+    <% } else if (generation && generation.statut === 'erreur') { %>
+    <div class="alert alert-danger">
+      <i class="bi bi-exclamation-octagon"></i> La dernière génération a échoué : <%= generation.erreur %>. Corrigez si besoin puis relancez « Générer ».
+    </div>
+    <% } %>
+
     <!-- Verification avant generation : statut de chaque section obligatoire,
          pour ne jamais livrer un manuel avec une section vide sans le savoir. -->
     <div class="card mb-3 border-warning">
@@ -205,10 +224,16 @@
           <strong><%= labelsDocs[cle] %> :</strong>
           <% if (documents[cle] && documents[cle].length > 0) { %>
             <% documents[cle].forEach(function(d) { %><span class="badge bg-success bg-opacity-75 me-1"><i class="bi bi-file-earmark-pdf"></i> <%= d.nom %></span><% }); %>
-          <% } else if (avecDefaut.indexOf(cle) !== -1) { %>
+          <% } else if (avecDefaut.indexOf(cle) !== -1 && cle !== 'brochure_marketing') { %>
             <span class="badge bg-secondary">Défaut T3E</span>
-          <% } else { %>
+          <% } else if (cle !== 'brochure_marketing') { %>
             <span class="text-muted small">Aucun</span>
+          <% } %>
+          <% if (cle === 'brochure_marketing') { %>
+            <div class="form-check form-check-inline ms-1">
+              <input class="form-check-input" type="checkbox" name="inclure_brochure" value="1" id="inclureBrochure" form="formGenerer" <%= inclureBrochure ? 'checked' : '' %>>
+              <label class="form-check-label small" for="inclureBrochure">Inclure dans le manuel <% if (!(documents[cle] && documents[cle].length > 0)) { %>(défaut BP « Guide des toitures »)<% } %></label>
+            </div>
           <% } %>
         </div>
         <% }); %>
@@ -218,13 +243,13 @@
         <p class="text-muted small mb-2"><i class="bi bi-plus-circle"></i> Ajouter des documents à ce manuel (aucune perte de ce qui est déjà rempli ci-dessus) :</p>
         <form id="formAjoutDocs" action="/manuels/reviser/<%= manuel.id %>/documents" method="POST">
           <div class="row g-2">
-            <div class="col-md-6"><label class="form-label small">Dessins d'atelier</label><input type="file" id="ajoutDessins" class="form-control form-control-sm" accept=".pdf" multiple></div>
-            <div class="col-md-6"><label class="form-label small">Fiches techniques</label><input type="file" id="ajoutFT" class="form-control form-control-sm" accept=".pdf" multiple></div>
-            <div class="col-md-6"><label class="form-label small">Fiches de sécurité (SDS)</label><input type="file" id="ajoutSDS" class="form-control form-control-sm" accept=".pdf" multiple></div>
-            <div class="col-md-6"><label class="form-label small">Plans tels que construits</label><input type="file" id="ajoutAsBuilt" class="form-control form-control-sm" accept=".pdf" multiple></div>
-            <div class="col-md-6"><label class="form-label small">Plan(s) du projet</label><input type="file" id="ajoutPlan" class="form-control form-control-sm" accept=".pdf" multiple></div>
-            <div class="col-md-6"><label class="form-label small">Garantie T3E (si différente du défaut)</label><input type="file" id="ajoutGarantieT3E" class="form-control form-control-sm" accept=".pdf" multiple></div>
-            <div class="col-md-6"><label class="form-label small">Garantie fabricant</label><input type="file" id="ajoutGarantieFab" class="form-control form-control-sm" accept=".pdf" multiple></div>
+            <div class="col-md-6"><label class="form-label small">Dessins d'atelier</label><input type="file" id="ajoutDessins" class="form-control form-control-sm" accept=".pdf" multiple><div class="mt-1" id="ajoutDessinsListe"></div></div>
+            <div class="col-md-6"><label class="form-label small">Fiches techniques</label><input type="file" id="ajoutFT" class="form-control form-control-sm" accept=".pdf" multiple><div class="mt-1" id="ajoutFTListe"></div></div>
+            <div class="col-md-6"><label class="form-label small">Fiches de sécurité (SDS)</label><input type="file" id="ajoutSDS" class="form-control form-control-sm" accept=".pdf" multiple><div class="mt-1" id="ajoutSDSListe"></div></div>
+            <div class="col-md-6"><label class="form-label small">Plans tels que construits</label><input type="file" id="ajoutAsBuilt" class="form-control form-control-sm" accept=".pdf" multiple><div class="mt-1" id="ajoutAsBuiltListe"></div></div>
+            <div class="col-md-6"><label class="form-label small">Plan(s) du projet</label><input type="file" id="ajoutPlan" class="form-control form-control-sm" accept=".pdf" multiple><div class="mt-1" id="ajoutPlanListe"></div></div>
+            <div class="col-md-6"><label class="form-label small">Garantie T3E (si différente du défaut)</label><input type="file" id="ajoutGarantieT3E" class="form-control form-control-sm" accept=".pdf" multiple><div class="mt-1" id="ajoutGarantieT3EListe"></div></div>
+            <div class="col-md-6"><label class="form-label small">Garantie fabricant</label><input type="file" id="ajoutGarantieFab" class="form-control form-control-sm" accept=".pdf" multiple><div class="mt-1" id="ajoutGarantieFabListe"></div></div>
             <div class="col-md-6"><label class="form-label small">Brochure marketing</label><input type="file" id="ajoutBrochure" class="form-control form-control-sm" accept=".pdf"></div>
             <div class="col-md-6"><label class="form-label small">Attestation CNESST</label><input type="file" id="ajoutCnesst" class="form-control form-control-sm" accept=".pdf"></div>
             <div class="col-md-6"><label class="form-label small">Attestation CCQ (spécifique à ce projet)</label><input type="file" id="ajoutCcq" class="form-control form-control-sm" accept=".pdf"></div>
@@ -241,6 +266,7 @@
 
 <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="/js/direct-upload.js"></script>
+<script src="/js/accumulateur-fichiers.js"></script>
 <script>
 window.T3E_SUPABASE_URL = "<%= SUPABASE_URL %>";
 window.T3E_SUPABASE_ANON_KEY = "<%= SUPABASE_ANON_KEY %>";
@@ -262,18 +288,22 @@ function ajouterChampCache(form, name, value) {
   form.appendChild(inp);
 }
 
+// Chaque input file "multiple" accumule les fichiers choisis au fil des
+// selections successives (glisser un fichier puis un autre AJOUTE au lieu de
+// remplacer) — voir accumulateur-fichiers.js.
+var accumulateursAjout = {
+  dessins_atelier: t3eAccumulateur.attacher(document.getElementById('ajoutDessins'), document.getElementById('ajoutDessinsListe')),
+  fiches_techniques: t3eAccumulateur.attacher(document.getElementById('ajoutFT'), document.getElementById('ajoutFTListe')),
+  fiches_securite: t3eAccumulateur.attacher(document.getElementById('ajoutSDS'), document.getElementById('ajoutSDSListe')),
+  plans_as_built: t3eAccumulateur.attacher(document.getElementById('ajoutAsBuilt'), document.getElementById('ajoutAsBuiltListe')),
+  plan: t3eAccumulateur.attacher(document.getElementById('ajoutPlan'), document.getElementById('ajoutPlanListe')),
+  garantie_t3e: t3eAccumulateur.attacher(document.getElementById('ajoutGarantieT3E'), document.getElementById('ajoutGarantieT3EListe')),
+  garantie_fabricant: t3eAccumulateur.attacher(document.getElementById('ajoutGarantieFab'), document.getElementById('ajoutGarantieFabListe')),
+};
+
 formAjoutDocs.addEventListener('submit', function(e) {
   e.preventDefault();
 
-  var inputsMultiples = {
-    dessins_atelier: document.getElementById('ajoutDessins'),
-    fiches_techniques: document.getElementById('ajoutFT'),
-    fiches_securite: document.getElementById('ajoutSDS'),
-    plans_as_built: document.getElementById('ajoutAsBuilt'),
-    plan: document.getElementById('ajoutPlan'),
-    garantie_t3e: document.getElementById('ajoutGarantieT3E'),
-    garantie_fabricant: document.getElementById('ajoutGarantieFab'),
-  };
   var inputsUniques = {
     brochure_marketing: document.getElementById('ajoutBrochure'),
     attestation_cnesst: document.getElementById('ajoutCnesst'),
@@ -283,9 +313,9 @@ formAjoutDocs.addEventListener('submit', function(e) {
   var taches = [];
   var resultats = { multiples: {}, uniques: {} };
 
-  Object.keys(inputsMultiples).forEach(function(cle) {
+  Object.keys(accumulateursAjout).forEach(function(cle) {
     resultats.multiples[cle] = [];
-    Array.prototype.slice.call(inputsMultiples[cle].files).forEach(function(f) {
+    accumulateursAjout[cle].getFiles().forEach(function(f) {
       taches.push(t3eDirectUpload.uploadDirect(f, 'temp').then(function(info) {
         resultats.multiples[cle].push(info);
       }));

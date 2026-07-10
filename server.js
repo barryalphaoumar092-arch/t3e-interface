@@ -83,6 +83,46 @@ app.post('/internal/convertir-doc-docx', express.raw({ type: '*/*', limit: '25mb
   }
 });
 
+// Meme principe que /internal/convertir-docx-pdf, mais pour la GENERATION
+// COMPLETE d'un manuel de fin de chantier (remplissage + fusion de tous les
+// documents) — trop long pour tenir dans le plafond dur de 60s d'une fonction
+// serverless Vercel (plan Hobby) des qu'il y a beaucoup de fiches techniques/
+// dessins (signale par l'utilisateur : FUNCTION_INVOCATION_TIMEOUT avec 27
+// FT). Repond immediatement (202) puis continue le traitement en
+// arriere-plan : Render est un service persistant (pas une fonction a la
+// demande), le code apres res.status(202) continue de s'executer normalement
+// — contrairement a une fonction serverless qui gele apres la reponse.
+// genererEtSauvegarderManuel() met a jour la base directement une fois
+// termine (ou en cas d'echec), sans dependre d'une reponse HTTP attendue par
+// quiconque.
+app.post('/internal/generer-manuel', async (req, res) => {
+  const secret = (process.env.CONVERT_SERVICE_SECRET || '').trim();
+  const fourni = typeof req.headers['x-convert-secret'] === 'string'
+    ? req.headers['x-convert-secret'].trim() : '';
+  const valide = secret.length > 0 && fourni.length > 0
+    && Buffer.byteLength(fourni) === Buffer.byteLength(secret)
+    && crypto.timingSafeEqual(Buffer.from(fourni), Buffer.from(secret));
+  if (!valide) {
+    console.error(`[convert-auth] refuse — secret configure: ${secret.length} caracteres, recu: ${fourni.length} caracteres`);
+    return res.status(403).send('Forbidden');
+  }
+
+  const manuelId = parseInt(req.body && req.body.manuelId);
+  if (!manuelId) return res.status(400).json({ error: 'manuelId manquant' });
+
+  res.status(202).json({ ok: true });
+
+  try {
+    await initDb();
+    const db = getDb();
+    const { genererEtSauvegarderManuel } = require('./src/services/manuel-generateur');
+    const resultat = await genererEtSauvegarderManuel(db, manuelId);
+    if (!resultat.ok) console.error('[internal/generer-manuel] echec pour', manuelId, ':', resultat.erreur);
+  } catch (e) {
+    console.error('[internal/generer-manuel] exception pour', manuelId, ':', e.message);
+  }
+});
+
 // Synchronisation hebdomadaire des appels d'offres SEAO (voir vercel.json,
 // section "crons"). Vercel ajoute automatiquement l'en-tete
 // "Authorization: Bearer $CRON_SECRET" sur les appels cron declenches par sa
