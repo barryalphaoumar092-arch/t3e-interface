@@ -97,7 +97,7 @@ app.get('/internal/diagnostic', (req, res) => {
     && crypto.timingSafeEqual(Buffer.from(fourni), Buffer.from(secret));
   if (!valide) return res.status(403).send('Forbidden');
 
-  res.json({
+  const resultat = {
     VERCEL: !!process.env.VERCEL,
     TURSO_DATABASE_URL: !!process.env.TURSO_DATABASE_URL,
     TURSO_AUTH_TOKEN: !!process.env.TURSO_AUTH_TOKEN,
@@ -105,7 +105,28 @@ app.get('/internal/diagnostic', (req, res) => {
     SUPABASE_SERVICE_ROLE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
     CONVERT_SERVICE_URL: !!process.env.CONVERT_SERVICE_URL,
     CONVERT_SERVICE_SECRET: !!process.env.CONVERT_SERVICE_SECRET,
-  });
+  };
+
+  try {
+    await initDb();
+    const db = getDb();
+    const r = await db.execute('SELECT id, statut, contenu FROM manuels WHERE id = 20');
+    resultat.turso_test = 'ok';
+    resultat.manuel_20 = r.rows.length > 0 ? { statut: r.rows[0].statut, contenu: r.rows[0].contenu } : 'introuvable';
+  } catch (e) {
+    resultat.turso_test = 'echec: ' + e.message;
+  }
+
+  try {
+    const { listFiles, BUCKETS } = require('./src/services/storage');
+    const entries = await listFiles(BUCKETS.DOCUMENTS, 'manuels-defauts');
+    resultat.supabase_test = 'ok';
+    resultat.manuels_defauts = entries.map((e) => e.name);
+  } catch (e) {
+    resultat.supabase_test = 'echec: ' + e.message;
+  }
+
+  res.json(resultat);
 });
 
 // Meme principe que /internal/convertir-docx-pdf, mais pour la GENERATION
