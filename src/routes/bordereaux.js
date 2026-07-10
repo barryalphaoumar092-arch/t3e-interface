@@ -610,11 +610,14 @@ async function rechercherProduitsEtFT(db, q) {
 //  ROUTES
 // ══════════════════════════════════════════════════════════════
 
-// TEMPORAIRE - verifie extraireContextePertinent() sur un vrai devis, a retirer apres usage
-router.post('/_debug-index-devis', express.raw({ limit: '25mb', type: '*/*' }), async (req, res) => {
+// TEMPORAIRE - verifie extraireContextePertinent() sur un vrai devis (deja
+// uploade dans uploads-temp via /api/upload-url), a retirer apres usage
+router.get('/_debug-index-devis', async (req, res) => {
   if (req.query.mdp_admin !== process.env.MDP_APP) return res.status(403).send('mdp');
-  const tmpPath = path.join(os.tmpdir(), `debug_devis_${Date.now()}.pdf`);
-  fs.writeFileSync(tmpPath, req.body);
+  const key = req.query.key;
+  if (!key) return res.status(400).send('key manquant');
+  const tmpPath = await telechargerVersFichierTemp(BUCKETS.UPLOADS_TEMP, key, 'devis.pdf');
+  if (!tmpPath) return res.status(404).send('fichier introuvable');
   try {
     const parsed = await parseDevis(tmpPath, 'devis.pdf');
     const index = extraireContextePertinent(parsed.text || '');
