@@ -129,17 +129,24 @@ async function calculerStatutSections(documents, nonApplicables) {
 // sont disponibles, leurs fabricants remplacent FOURNISSEUR_1..4 issus du devis.
 async function extraireFournisseursDepuisFT(fichesTechniquesDocs) {
   if (!fichesTechniquesDocs || fichesTechniquesDocs.length === 0) return null;
-  const fiches = [];
-  for (const doc of fichesTechniquesDocs) {
+  // Telechargement + parsing EN PARALLELE (Promise.all) plutot qu'un par un :
+  // meme piege que persisterCategorie (voir plus haut) — avec beaucoup de
+  // fiches techniques reelles (27 signalees par l'utilisateur), la version
+  // sequentielle depassait le plafond de 60s de la fonction Vercel des
+  // l'etape /analyser, AVANT meme d'atteindre /generer/:id (dont le timeout a
+  // ete corrige separement, voir declencherGenerationDistante plus bas — ceci
+  // est un point d'entree DIFFERENT, jamais couvert par ce fix-la).
+  const fiches = (await Promise.all(fichesTechniquesDocs.map(async (doc) => {
     const buf = await downloadBuffer(BUCKETS.MANUELS, doc.key);
-    if (!buf) continue;
+    if (!buf) return null;
     try {
       const { text } = await parsePdfBuffer(buf);
-      if (text && text.trim()) fiches.push({ nom: doc.nom, texte: text });
+      return (text && text.trim()) ? { nom: doc.nom, texte: text } : null;
     } catch (e) {
       console.error('[manuels] Lecture FT échouée pour extraction fournisseurs:', doc.nom, e.message);
+      return null;
     }
-  }
+  }))).filter(Boolean);
   if (fiches.length === 0) return null;
 
   try {
