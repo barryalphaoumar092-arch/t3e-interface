@@ -533,10 +533,23 @@ router.get('/_debug-forme-juridique/:id/:formId', async (req, res) => {
   const infos = await obtenirInfosEntreprise(db);
   const pagesLignes = await extraireLignesParPage(buf);
   const lignesAvecCheckbox = [];
+  const REGEX_CASE_A_COCHER = /^[☐□❑▢]/;
+  const REGEX_DIACRITIQUES = new RegExp('[' + String.fromCharCode(0x0300) + '-' + String.fromCharCode(0x036f) + ']', 'g');
+  function normaliserTexte(s) { return String(s || '').normalize('NFD').replace(REGEX_DIACRITIQUES, '').toLowerCase().trim(); }
+  const valeurNorm = normaliserTexte(infos.FORME_JURIDIQUE);
   pagesLignes.forEach((lignes, p) => lignes.forEach((l) => {
-    if (/[☐□❑▢]/.test(l.texte)) lignesAvecCheckbox.push({ page: p, x: l.x, y: l.y, texte: l.texte });
+    if (!/[☐□❑▢]/.test(l.texte)) return;
+    const texte = l.texte.trim();
+    const testeDebut = REGEX_CASE_A_COCHER.test(texte);
+    const morceaux = testeDebut ? texte.split(/(?=[☐□❑▢])/).filter(Boolean) : [];
+    const analyseMorceaux = morceaux.map((m) => {
+      const label = m.replace(REGEX_CASE_A_COCHER, '').trim();
+      const labelNorm = normaliserTexte(label);
+      return { morceau: m, label, labelNorm, match: labelNorm.length >= 4 && valeurNorm.includes(labelNorm) };
+    });
+    lignesAvecCheckbox.push({ page: p, x: l.x, y: l.y, texte: l.texte, testeDebut, analyseMorceaux });
   }));
-  res.json({ formeJuridique: infos.FORME_JURIDIQUE, lignesAvecCheckbox });
+  res.json({ formeJuridique: infos.FORME_JURIDIQUE, valeurNorm, lignesAvecCheckbox });
 });
 
 // Confirmation manuelle (priorité #5) : le formulaire ne devient "valide"
