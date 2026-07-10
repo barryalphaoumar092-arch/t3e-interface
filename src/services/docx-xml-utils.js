@@ -42,7 +42,21 @@ function labelVariants(label) {
 // la même cellule, cas du gabarit T3E) fait alors déborder la cellule étroite
 // et laisse la vraie zone de saisie vide — d'où le symptôme observé : gros
 // espace vide + texte tronqué/empilé sur plusieurs lignes.
-function resoudrePositionInsertion(xml, closeIdx) {
+// `texteApresLabel` : contenu du MEME run que le libelle, entre le ":" et la
+// fermeture du <w:t> (closeIdx). Certains gabarits (dont bordereau-template.docx
+// de T3E lui-meme : "NOM : __________________________________________")
+// mettent la zone a remplir sous forme de SOULIGNES dans ce meme run plutot
+// que dans une cellule separee — dans ce cas il ne faut JAMAIS partir a la
+// recherche d'une cellule pointillee ailleurs dans le document : la recherche
+// peut alors atterrir plusieurs lignes plus loin (bug constate : la valeur de
+// "NOM" affichee sous "ADRESSE", plusieurs lignes en dessous, car aucune
+// cellule de CETTE section n'a de bordure pointillee et la recherche
+// continue jusqu'a la premiere trouvee ailleurs dans le document).
+function resoudrePositionInsertion(xml, closeIdx, texteApresLabel) {
+  if (texteApresLabel && /_{3,}/.test(texteApresLabel)) {
+    return { pos: closeIdx, inline: true };
+  }
+
   const finCelluleLabel = xml.indexOf('</w:tc>', closeIdx);
   const celluleSeparee = finCelluleLabel !== -1
     && finCelluleLabel < closeIdx + 40
@@ -108,7 +122,7 @@ function remplirChampDansXml(xml, label, valeur) {
     if (closeIdx === -1) continue;
     if (!valeur) return { xml, trouve: true };
 
-    const { pos, inline } = resoudrePositionInsertion(xml, closeIdx);
+    const { pos, inline } = resoudrePositionInsertion(xml, closeIdx, xml.substring(colonIdx, closeIdx));
     xml = inserer(xml, pos, inline, valeur);
     return { xml, trouve: true };
   }
