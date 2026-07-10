@@ -115,23 +115,6 @@ router.post('/ajouter', async (req, res) => {
   res.redirect('/connaissances?success=added');
 });
 
-// TEMPORAIRE - verifie SECTION/ARTICLE/SOUMIS_PAR/date/case, a retirer apres usage
-router.get('/_debug-test-bordereau-fill', async (req, res) => {
-  if (req.query.mdp_admin !== process.env.MDP_APP) return res.status(403).send('mdp');
-  const { remplirBordereau } = require('../services/bordereau-filler');
-  const docxBuf = await remplirBordereau({
-    NOM_DU_PROJET: 'TEST-PROJET', NUMERO_DU_PROJET: 'T-001',
-    NOM: 'Toitures Trois Étoiles', SPECIALITE: 'COUVREUR',
-    ADRESSE: '7550 Rue Saint-Patrick, Montréal, QC H8N 1V1',
-    TITRE: 'Membrane test', SECTION: '07 52 00', ARTICLE: '2.3',
-    SOUMIS_PAR: 'Alpha Oumar Barry',
-    RECU_ENTREPRENEUR_DATE: '10 juillet 2026',
-  });
-  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-  res.setHeader('Content-Disposition', 'attachment; filename="test-fill3.docx"');
-  res.send(docxBuf);
-});
-
 router.get('/fichier/:id', async (req, res) => {
   const db = req.db;
   const r = await db.execute({ sql: 'SELECT nom_fichier, chemin_fichier FROM documents WHERE id = ?', args: [parseInt(req.params.id)] });
