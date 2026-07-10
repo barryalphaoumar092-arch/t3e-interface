@@ -640,25 +640,6 @@ async function rechercherProduitsEtFT(db, q) {
 //  ROUTES
 // ══════════════════════════════════════════════════════════════
 
-// TEMPORAIRE - verifie extraireContextePertinent() sur un vrai devis (deja
-// uploade dans uploads-temp via /api/upload-url), a retirer apres usage
-router.get('/_debug-index-devis', async (req, res) => {
-  if (req.query.mdp_admin !== process.env.MDP_APP) return res.status(403).send('mdp');
-  const key = req.query.key;
-  if (!key) return res.status(400).send('key manquant');
-  const tmpPath = await telechargerVersFichierTemp(BUCKETS.UPLOADS_TEMP, key, 'devis.pdf');
-  if (!tmpPath) return res.status(404).send('fichier introuvable');
-  try {
-    const parsed = await parseDevis(tmpPath, 'devis.pdf');
-    const index = extraireContextePertinent(parsed.text || '');
-    res.type('text/plain').send(index);
-  } catch (e) {
-    res.status(500).send('Erreur: ' + e.message);
-  } finally {
-    try { fs.unlinkSync(tmpPath); } catch (_) {}
-  }
-});
-
 router.get('/api/rechercher-produits', async (req, res) => {
   const q = (req.query.q || '').trim();
   if (q.length < 2) return res.json([]);
