@@ -88,7 +88,7 @@ app.post('/internal/convertir-doc-docx', express.raw({ type: '*/*', limit: '25mb
 // et confirmer que Render a bien les identifiants Turso/Supabase necessaires
 // a genererEtSauvegarderManuel) — ne revele que la PRESENCE, jamais la
 // valeur. Meme secret que les autres routes /internal/*. A retirer apres usage.
-app.get('/internal/diagnostic', (req, res) => {
+app.get('/internal/diagnostic', async (req, res) => {
   const secret = (process.env.CONVERT_SERVICE_SECRET || '').trim();
   const fourni = typeof req.headers['x-convert-secret'] === 'string'
     ? req.headers['x-convert-secret'].trim() : '';
