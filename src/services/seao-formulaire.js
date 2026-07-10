@@ -438,6 +438,41 @@ async function remplirFormulairePdfPlat(buf, infosEntreprise) {
     return idx >= 0 ? idx : 0;
   }
 
+  // Certaines valeurs (assurances, certifications...) sont trop longues pour
+  // tenir sur la largeur restante de la ligne a partir de x — les dessiner
+  // telles quelles a taille fixe les faisait deborder de la page ou
+  // chevaucher le texte voisin. Reduit la taille de police par paliers, puis
+  // si meme la plus petite taille deborde encore, decoupe en plusieurs
+  // lignes empilees sous le point de depart plutot que de laisser deborder.
+  const TAILLES_TEXTE = [9, 8, 7, 6];
+  function dessinerTexteAdapte(page, texte, x, y) {
+    const margeDroite = 40;
+    const largeurDisponible = page.getWidth() - x - margeDroite;
+    if (largeurDisponible <= 20) { page.drawText(texte, { x, y, size: 6, font, color: ROUGE }); return; }
+    for (const taille of TAILLES_TEXTE) {
+      if (font.widthOfTextAtSize(texte, taille) <= largeurDisponible) {
+        page.drawText(texte, { x, y, size: taille, font, color: ROUGE });
+        return;
+      }
+    }
+    // Meme la plus petite taille deborde : decoupe en mots sur plusieurs lignes.
+    const taille = TAILLES_TEXTE[TAILLES_TEXTE.length - 1];
+    const mots = texte.split(' ');
+    let ligne = '';
+    let yCourant = y;
+    for (const mot of mots) {
+      const essai = ligne ? `${ligne} ${mot}` : mot;
+      if (font.widthOfTextAtSize(essai, taille) > largeurDisponible && ligne) {
+        page.drawText(ligne, { x, y: yCourant, size: taille, font, color: ROUGE });
+        yCourant -= taille + 2;
+        ligne = mot;
+      } else {
+        ligne = essai;
+      }
+    }
+    if (ligne) page.drawText(ligne, { x, y: yCourant, size: taille, font, color: ROUGE });
+  }
+
   for (const cle of Object.keys(champs)) {
     if (cle === 'FORME_JURIDIQUE') {
       const nbCochees = cocherCasesFormeJuridique(champs[cle]);
@@ -473,9 +508,7 @@ async function remplirFormulairePdfPlat(buf, infosEntreprise) {
           decalageX = font.widthOfTextAtSize(entree.ligne.texte, 9) + 12;
         }
       }
-      page.drawText(String(champs[cle]), {
-        x: ligneCible.x + decalageX, y: ligneCible.y, size: 9, font, color: ROUGE,
-      });
+      dessinerTexteAdapte(page, String(champs[cle]), ligneCible.x + decalageX, ligneCible.y);
       champsPlaces.push(NOMS_LISIBLES[cle] || cle);
     } catch (e) {
       console.error('[seao-formulaire] Champ PDF plat non dessine:', cle, e.message);

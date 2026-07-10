@@ -479,7 +479,13 @@ router.post('/:id/formulaire/:formId/remplir', async (req, res) => {
       try {
         const pdfFinal = await PDFDocument.load(resultat.buffer);
         const { annexesJointes, annexesNonTrouvees } = await joindreAnnexesReelles(db, pdfFinal);
-        const avertissements = Array.isArray(infos.AVERTISSEMENTS) ? [...infos.AVERTISSEMENTS] : [];
+        // infos.AVERTISSEMENTS (ex. "certificat pour l'entite X non utilise")
+        // n'est plus affiche ici sur demande de l'utilisateur : une donnee
+        // ecartee a tort (entite differente, etc.) doit simplement ne pas
+        // etre utilisee, sans qu'il soit necessaire de le signaler a chaque
+        // formulaire genere. On garde seulement les avertissements
+        // actionnables (annexe non trouvee, a joindre manuellement).
+        const avertissements = [];
         annexesNonTrouvees.forEach((lib) => avertissements.push(
           `Aucun document trouvé dans la base de connaissances pour joindre à l'annexe « ${lib} » — à ajouter manuellement.`
         ));
