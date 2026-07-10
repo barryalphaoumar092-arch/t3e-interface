@@ -369,7 +369,13 @@ async function remplirFormulairePdfPlat(buf, infosEntreprise) {
           cocherCase(pdfDoc.getPage(entree.page), { x: xCumul, y: entree.ligne.y, texte: morceau });
           nbCochees++;
         }
-        xCumul += font.widthOfTextAtSize(morceau, 9);
+        // widthOfTextAtSize() sur le morceau BRUT (glyphe ☐/□/❑/▢ inclus)
+        // fait planter pdf-lib ("WinAnsi cannot encode") — la police
+        // standard WinAnsi ne sait pas encoder ces symboles. Mesurer le
+        // libelle seul (deja debarrasse du glyphe) suffit, l'ecart de
+        // largeur du glyphe lui-meme sur l'estimation cumulee est
+        // negligeable face a la marge d'erreur deja assumee ici.
+        xCumul += font.widthOfTextAtSize(label, 9);
       }
     }
     return nbCochees;
@@ -439,5 +445,4 @@ module.exports = {
   remplirFormulaireDocx, remplirFormulairePdfAcroForm, remplirFormulairePdfPlat,
   aplatirInfosEntreprise, NOMS_LISIBLES, genererPageNotePreparation,
   ZONES, classifierZone, construireDetailChamps,
-  extraireLignesParPage, // TEMPORAIRE - debug cases a cocher, a retirer
 };
