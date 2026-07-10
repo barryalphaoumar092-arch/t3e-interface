@@ -110,15 +110,45 @@ function extraireContextePertinent(texteDevis) {
     // PARTIE 2 = PRODUITS/MATÉRIAUX dans la quasi-totalité des devis
     // québécois (convention AMCQ/CSTC) — c'est la seule partie utile pour
     // faire correspondre un produit à un numéro d'article.
-    const articleRegex = /\n\s*(2\.\d{1,2})\s+([A-ZÉÈÀÇ][^\n.]{2,50})/g;
     const articles = [];
     const vusArt = new Set();
+
+    // Convention A (gabarit T3E et certains devis AMCQ) : articles numérotés
+    // directement "2.1", "2.2"... (le "2" indique déjà la PARTIE 2).
+    const articleRegexA = /\n\s*(2\.\d{1,2})\s+([A-ZÉÈÀÇ][^\n.]{2,50})/g;
     let am;
-    while ((am = articleRegex.exec(bloc))) {
+    while ((am = articleRegexA.exec(bloc))) {
       if (vusArt.has(am[1])) continue;
       vusArt.add(am[1]);
       articles.push(`${am[1]} ${am[2].trim()}`);
     }
+
+    // Convention B (devis d'architectes type CIMAISE, observée en 2026-07) :
+    // "PARTIE 2 PRODUITS" est un en-tête séparé, et les articles repartent à
+    // "1.", "2.", "3."... (pas de préfixe "2."). Restreindre la recherche au
+    // texte ENTRE "PARTIE 2 ... PRODUITS" et "PARTIE 3" pour ne pas capturer
+    // les articles de la PARTIE 1 ou 3 (numérotés pareil). Les VRAIS titres
+    // d'article de premier niveau sont en MAJUSCULES (ex: "ISOLANT RIGIDE |
+    // MURS EXTÉRIEURS...") — les sous-points imbriqués sous un article
+    // (texte descriptif, ex: "Pour l'ensemble des panneaux...") contiennent
+    // des minuscules et sont exclus par ce filtre.
+    const partieMatch = /PARTIE\s*2\b[\s\S]{0,30}?PRODUITS/i.exec(bloc);
+    if (partieMatch) {
+      const debutPartie2 = partieMatch.index + partieMatch[0].length;
+      const finPartie2Match = /PARTIE\s*3\b/i.exec(bloc.substring(debutPartie2));
+      const finPartie2 = finPartie2Match ? debutPartie2 + finPartie2Match.index : bloc.length;
+      const blocPartie2 = bloc.substring(debutPartie2, finPartie2);
+      const articleRegexB = /\n\s*(\d{1,2})\.\s+([^\n]{2,80})/g;
+      let bm;
+      while ((bm = articleRegexB.exec(blocPartie2))) {
+        const titre = bm[2].trim();
+        if (/[a-zàâäéèêëîïôùûüÿœæç]/.test(titre)) continue;
+        if (vusArt.has(bm[1])) continue;
+        vusArt.add(bm[1]);
+        articles.push(`${bm[1]} ${titre}`);
+      }
+    }
+
     if (articles.length === 0) continue; // section sans PARTIE 2 identifiable (ex: administrative)
 
     morceaux.push(`SECTION ${numeroLisible(positions[i].numero)} (${positions[i].titre}) : ${articles.join(' | ')}`);
