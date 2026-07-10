@@ -130,16 +130,6 @@ router.get('/fichier/:id', async (req, res) => {
   res.send(buffer);
 });
 
-// TEMPORAIRE - ouvrir bordereau-template.docx pour diagnostic, a retirer apres usage
-router.get('/_debug-bordereau-template', async (req, res) => {
-  if (req.query.mdp_admin !== MDP_ADMIN) return res.status(403).send('mdp');
-  const buffer = await downloadBuffer(BUCKETS.DOCUMENTS, 'bordereau-template.docx');
-  if (!buffer) return res.status(404).send('introuvable');
-  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-  res.setHeader('Content-Disposition', 'attachment; filename="bordereau-template.docx"');
-  res.send(buffer);
-});
-
 router.post('/supprimer/:id', async (req, res) => {
   if (req.body.mdp_admin !== MDP_ADMIN) return res.redirect('/connaissances?error=mdp');
   const db = req.db;
