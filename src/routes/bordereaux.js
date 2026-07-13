@@ -39,7 +39,7 @@ On te fournit un INDEX COMPACT du devis : pour chaque section réelle de CE devi
 Pour CHAQUE produit de la liste, dans l'ORDRE donné :
 1. Trouve la SECTION (numéro 6 chiffres, ex: "07 52 00") dont le contenu correspond à la catégorie du produit. Le numéro VARIE d'un devis à l'autre (un projet peut utiliser "07 52 21", un autre "07 52 00" pour un contenu similaire) — ne réutilise JAMAIS un numéro "typique" que tu connais par ailleurs sans l'avoir vu explicitement dans l'index fourni.
 2. Trouve l'ARTICLE dont le TITRE correspond le mieux à la fonction du produit (ex: un membrane de finition granulée → l'article dont le titre est "Couche de finition" ou équivalent). Les devis QUÉBÉCOIS NOMMENT RAREMENT LES MARQUES dans les titres d'article : ne t'attends PAS à voir "Soprastar" ou toute autre marque — c'est le TITRE FONCTIONNEL de l'article qui doit correspondre à la catégorie du produit (membrane de finition, pare-vapeur, isolant, adhésif, apprêt, sous-couche, drain, évent, etc.). C'est NORMAL et ATTENDU de devoir déduire à partir du titre plutôt que du nom exact. Choisis PARMI les articles listés dans l'index pour la section identifiée à l'étape 1 — n'invente jamais un numéro absent de l'index.
-3. Retourne une chaîne vide pour SECTION et ARTICLE UNIQUEMENT si aucune section de l'index ne correspond, même en substance, à la catégorie de ce produit (ex: un produit électrique alors que l'index ne couvre que la toiture). Ne retourne JAMAIS vide simplement parce que la marque n'est pas nommée mot pour mot — c'est la situation normale, pas une raison de renoncer (voir point 2).
+3. SECTION et ARTICLE sont OBLIGATOIRES pour chaque produit : chaque bordereau soumis DOIT référencer le devis. Choisis TOUJOURS la section et l'article de l'index qui correspondent le MIEUX au produit, même si la correspondance n'est qu'approximative (catégorie voisine, article générique de la même section). Ne retourne JAMAIS vide simplement parce que la marque n'est pas nommée mot pour mot — c'est la situation normale, pas une raison de renoncer (voir point 2). La chaîne vide n'est permise QUE dans le cas extrême où l'index ne contient AUCUNE section applicable de près ou de loin (ex: index totalement vide).
 4. Compose un USAGE très court (une seule phrase courte, 3 à 10 mots, PAS un paragraphe) décrivant simplement ce qu'est le produit, du style "Une membrane de sous-couche", "Un panneau isolant thermique de polyisocyanurate", "Une bande de recouvrement"
 
 Aussi, extrais du devis :
@@ -159,6 +159,69 @@ function extraireContextePertinent(texteDevis) {
   }
 
   return morceaux.join('\n');
+}
+
+// ── Filet de sécurité SECTION/ARTICLE ───────────────────────────────────────
+// Un bordereau doit TOUJOURS référencer le devis (demande utilisateur) : si
+// l'IA a laissé SECTION ou ARTICLE vide pour un produit, on choisit
+// nous-mêmes, dans l'index compact du devis (même source que l'IA), la
+// section et l'article dont le TITRE partage le plus de mots avec le nom du
+// produit — à défaut, la première section/le premier article de l'index.
+// Résultat garanti : jamais vide dès que le devis contient au moins une
+// section indexée.
+function parserIndexSections(indexTexte) {
+  const sections = [];
+  const ligneRegex = /^SECTION (\d{2} \d{2} \d{2}) \((.*?)\) : (.*)$/gm;
+  let m;
+  while ((m = ligneRegex.exec(indexTexte))) {
+    const articles = m[3].split(' | ').map((a) => {
+      const am = a.trim().match(/^(\S+)\s+(.*)$/);
+      return am ? { numero: am[1], titre: am[2] } : { numero: a.trim(), titre: '' };
+    }).filter((a) => a.numero);
+    if (articles.length > 0) sections.push({ numero: m[1], titre: m[2], articles });
+  }
+  return sections;
+}
+
+function motsCles(texte) {
+  return String(texte || '').toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .split(/[^a-z0-9]+/).filter((w) => w.length > 2);
+}
+
+function completerSectionArticle(indexTexte, produitsBase, contexteProduits) {
+  const sections = parserIndexSections(indexTexte);
+  if (sections.length === 0) return; // devis sans index exploitable — rien à garantir
+
+  for (let i = 0; i < produitsBase.length; i++) {
+    const ctx = contexteProduits[i] = contexteProduits[i] || {};
+    if (ctx.SECTION && ctx.ARTICLE) continue;
+
+    const motsProduit = motsCles(`${produitsBase[i]?.nom || ''} ${ctx.USAGE || ''}`);
+    const score = (titre) => {
+      const mots = new Set(motsCles(titre));
+      return motsProduit.reduce((n, w) => n + (mots.has(w) ? 1 : 0), 0);
+    };
+
+    // Si l'IA a donné la SECTION mais pas l'ARTICLE, on reste dans SA section.
+    let candidates = sections;
+    if (ctx.SECTION) {
+      const s = sections.find((x) => x.numero.replace(/\s/g, '') === ctx.SECTION.replace(/\s/g, ''));
+      if (s) candidates = [s];
+    }
+
+    let meilleur = { section: candidates[0], article: candidates[0].articles[0], points: -1 };
+    for (const s of candidates) {
+      for (const a of s.articles) {
+        const points = score(a.titre) * 2 + score(s.titre);
+        if (points > meilleur.points) meilleur = { section: s, article: a, points };
+      }
+    }
+
+    if (!ctx.SECTION) ctx.SECTION = meilleur.section.numero;
+    if (!ctx.ARTICLE) ctx.ARTICLE = meilleur.article.numero;
+    console.log(`[analyser] SECTION/ARTICLE complétés par correspondance de mots pour "${produitsBase[i]?.nom}" → ${ctx.SECTION} / ${ctx.ARTICLE}`);
+  }
 }
 
 // Schéma strict (Structured Outputs OpenAI) : sans lui, response_format
@@ -797,6 +860,15 @@ router.post('/analyser', async (req, res) => {
       console.warn(`[analyser] SECTION/ARTICLE vides pour "${produitsBase[i]?.nom}" — l'IA n'a trouvé aucune correspondance dans l'index du devis.`);
     }
   });
+
+  // Garantie : SECTION/ARTICLE toujours remplis depuis le devis quand son
+  // index contient au moins une section — couvre les vides laissés par l'IA
+  // ET les produits au-delà du décalage (contexteProduits plus court).
+  try {
+    completerSectionArticle(extraireContextePertinent(texteDevis), produitsBase, contexteProduits);
+  } catch (e) {
+    console.error('[analyser] Filet SECTION/ARTICLE échoué:', e.message);
+  }
 
   // Champs additionnels que le devis contient parfois mais que le gabarit T3E
   // n'a pas (donc absents des 16 libellés fixes) — utiles pour les gabarits
