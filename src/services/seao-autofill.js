@@ -125,36 +125,42 @@ async function chargerDocumentsPertinents(db) {
 }
 
 async function construireContexteTexte(documents) {
-  const morceaux = [];
-  // Relevé (60000 → 150000) : avec jusqu'à 60 documents de 3000 caractères
-  // chacun (voir LIMITE_DOCUMENTS), l'ancien budget de 60000 pouvait couper
-  // silencieusement les documents en fin de liste, y compris des certificats
-  // pertinents. gpt-4o supporte largement ce volume de contexte.
-  let budget = 150000;
-  for (const doc of documents) {
-    if (budget <= 0) {
-      console.warn(`[seao-autofill] Budget de contexte épuisé, ${documents.length - morceaux.length} document(s) restant(s) non lus.`);
-      break;
-    }
-    // Meme piege que connaissances.js/seao-annexes.js : deviner une cle a
-    // plat dans le bucket "documents" plutot que resoudre le vrai
-    // bucket/chemin faisait echouer silencieusement la lecture d'un
-    // document pourtant present dans la base de connaissances — l'IA se
-    // retrouvait alors sans le contenu du document pour en extraire les
-    // champs, meme si "Certificats corporatifs" contenait bien l'info.
-    const { resoudreBucketEtCle } = require('./storage');
-    const { bucket, key } = resoudreBucketEtCle(doc.chemin_fichier, doc.nom_fichier);
-    const buf = await downloadBuffer(bucket, key);
-    if (!buf) continue;
+  // Telechargement + parsing en PARALLELE (Promise.all), pas en sequence.
+  // Meme piege que persisterCategorie()/chargerBuffersCategorie() dans
+  // manuels.js (voir memoire projet-manuel-fin-chantier, piege #9.6) : une
+  // boucle for...await sur une liste de fichiers (ici jusqu'a 60 PDF a
+  // telecharger ET parser un par un) peut facilement depasser le delai
+  // maximal d'une fonction serverless — le temps total devient la SOMME de
+  // chaque fichier plutot que le temps du plus lent. Avant ce fix, relever le
+  // plafond de documents de 35 a 60 faisait planter la route en production
+  // (500 FUNCTION_INVOCATION_FAILED sur /formulaire/:formId/remplir et
+  // /editeur, constate le 2026-07-13).
+  const { resoudreBucketEtCle } = require('./storage');
+  const resultats = await Promise.all(documents.map(async (doc) => {
     try {
+      const { bucket, key } = resoudreBucketEtCle(doc.chemin_fichier, doc.nom_fichier);
+      const buf = await downloadBuffer(bucket, key);
+      if (!buf) return null;
       const { text } = await parsePdfBuffer(buf);
-      if (!text || !text.trim()) continue;
-      const extrait = text.substring(0, Math.min(3000, budget));
-      morceaux.push(`=== ${doc.titre} (${doc.categorie}) ===\n${extrait}`);
-      budget -= extrait.length;
+      if (!text || !text.trim()) return null;
+      return { doc, text };
     } catch (e) {
       console.error('[seao-autofill] Lecture document échouée:', doc.titre, e.message);
+      return null;
     }
+  }));
+
+  const morceaux = [];
+  let budget = 150000;
+  for (const r of resultats) {
+    if (!r) continue;
+    if (budget <= 0) {
+      console.warn('[seao-autofill] Budget de contexte épuisé, document(s) restant(s) non inclus.');
+      break;
+    }
+    const extrait = r.text.substring(0, Math.min(3000, budget));
+    morceaux.push(`=== ${r.doc.titre} (${r.doc.categorie}) ===\n${extrait}`);
+    budget -= extrait.length;
   }
   return morceaux.join('\n\n---\n\n');
 }

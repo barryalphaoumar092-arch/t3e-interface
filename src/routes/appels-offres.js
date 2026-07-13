@@ -359,7 +359,13 @@ router.get('/:id/formulaire/:formId/editeur', async (req, res) => {
   const appelR = await db.execute({ sql: 'SELECT * FROM appels_offres_seao WHERE id = ?', args: [id] });
   if (appelR.rows.length === 0) return res.redirect('/appels-offres');
 
-  const infos = await obtenirInfosEntreprise(db);
+  let infos = {};
+  try {
+    infos = await obtenirInfosEntreprise(db);
+  } catch (e) {
+    console.error('[appels-offres] obtenirInfosEntreprise échoué (éditeur):', e.message);
+    infos = { error: e.message };
+  }
   const valeursConnues = infos.error ? {} : aplatirInfosEntreprise(infos);
 
   let positions = {};
