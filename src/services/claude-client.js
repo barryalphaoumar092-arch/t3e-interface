@@ -622,7 +622,7 @@ const SYSTEM_INFOS_ENTREPRISE = `Tu extrais les informations d'entreprise de Toi
 === RÈGLES ===
 - Remplis TOUJOURS chaque champ avec ta meilleure estimation à partir des extraits fournis — même si l'info n'est pas mot pour mot présente, déduis-la du contexte disponible (ex: si un seul assureur/montant de couverture apparaît dans les documents, utilise-le même s'il n'est pas explicitement étiqueté "assurance responsabilité civile"). Ne retourne "" que si absolument aucune donnée exploitable n'existe dans les extraits pour ce champ précis.
 - Ne réutilise JAMAIS une donnée (NEQ, RBQ, numéro de taxe, adresse) qui appartient clairement à une entité différente de "Toitures Trois Étoiles Inc." — utilise plutôt la meilleure donnée disponible pour T3E elle-même et ajoute un AVERTISSEMENT signalant l'ambiguïté, plutôt que de laisser le champ vide.
-- confiance : "haute", "moyenne" ou "basse" selon la clarté des extraits fournis — utilise "basse" pour signaler une valeur déduite/approximative plutôt que de la retenir
+- confiance : "haute", "moyenne" ou "basse" selon la clarté des extraits fournis — utilise "basse" pour signaler une valeur déduite/approximative plutôt que de la retenir`;
 
 async function analyserInfosEntreprise(texteCertificats) {
   const userContent = `EXTRAITS DE CERTIFICATS/DOCUMENTS CORPORATIFS T3E :
