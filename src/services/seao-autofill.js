@@ -14,7 +14,12 @@ const { champsEntrepriseFixes } = require('./infos-entreprise-t3e');
 // chaque fois a partir des documents (fragile — a deja produit des valeurs
 // fausses ou vides). Le suffixe invalide tout cache calcule avant ce
 // changement (qui ne contenait pas ces champs garantis corrects).
-const CLE_CACHE = 'seao_infos_entreprise_v4';
+// v5 : correction du filtre de selection des certificats (categories/titres
+// desormais compares sans egard aux accents/majuscules, plafonds de
+// documents/caracteres releves — voir chargerDocumentsPertinents). Le
+// suffixe invalide tout cache v4 qui avait pu se calculer avec des
+// certificats manquants silencieusement.
+const CLE_CACHE = 'seao_infos_entreprise_v5';
 const CACHE_MAX_AGE_JOURS = 30;
 
 // Garde-fou : un champ REPRESENTANT_TELEPHONE/CELLULAIRE sans aucun chiffre
@@ -56,40 +61,81 @@ const TITRES_PERTINENTS = [
   "Fiche d'identite",
 ];
 
+// Comparaison de texte insensible aux accents ET aux majuscules — un titre ou
+// nom de categorie saisi sans accent ("identite", "departement") doit matcher
+// la meme chose accentuee ("identité", "département") et vice-versa. Bug deja
+// observe une fois avec "Fiche d'identité"/"identite" (voir commentaire plus
+// bas) : plutot que de corriger au cas par cas a chaque nouvel accent
+// divergent, on normalise une fois pour toutes les comparaisons de ce fichier.
+function normaliser(s) {
+  return (s || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase();
+}
+
+const CATEGORIES_CERTIFICATS = ['Certificats corporatifs', 'Assurances', 'Département Service'];
+
 async function chargerDocumentsPertinents(db) {
+  // On ne filtre plus par c.nom IN (...) au niveau SQL (comparaison exacte,
+  // sensible aux accents/majuscules — un document classe sous une variante
+  // orthographique de ces categories devenait invisible sans aucune erreur).
+  // On recupere tout et on compare normalise en JS.
   const r = await db.execute(`
     SELECT d.id, d.titre, d.nom_fichier, d.chemin_fichier, c.nom as categorie
     FROM documents d JOIN categories c ON d.categorie_id = c.id
-    WHERE c.nom IN ('Certificats corporatifs', 'Assurances', 'Département Service')
-      AND d.statut = 'actif'
+    WHERE d.statut = 'actif'
   `);
-  const pertinents = r.rows.filter((doc) =>
-    TITRES_PERTINENTS.some((t) => doc.titre.toLowerCase().includes(t.toLowerCase()))
+  const categoriesNorm = CATEGORIES_CERTIFICATS.map(normaliser);
+  const dansCategorieCertificat = r.rows.filter((doc) =>
+    categoriesNorm.includes(normaliser(doc.categorie))
+  );
+
+  const pertinents = dansCategorieCertificat.filter((doc) =>
+    TITRES_PERTINENTS.some((t) => normaliser(doc.titre).includes(normaliser(t)))
   );
   // La Fiche d'identite est toujours placee en tete : avec ~121 certificats
   // dans ces categories (dont beaucoup matchent deja les mots-cles larges
-  // ci-dessus), le plafond de 35 documents plus bas coupait silencieusement
-  // ce document precis des lors qu'il n'etait pas parmi les 35 premiers
-  // retournes par la requete (sans ORDER BY, donc par ordre d'insertion —
-  // un document ajoute apres coup se retrouve toujours en dernier).
+  // ci-dessus), le plafond plus bas coupait silencieusement ce document
+  // precis des lors qu'il n'etait pas parmi les premiers retournes par la
+  // requete (sans ORDER BY, donc par ordre d'insertion — un document ajoute
+  // apres coup se retrouve toujours en dernier).
   pertinents.sort((a, b) => {
-    const aFiche = a.titre.toLowerCase().includes("fiche d'identite") ? 0 : 1;
-    const bFiche = b.titre.toLowerCase().includes("fiche d'identite") ? 0 : 1;
+    const aFiche = normaliser(a.titre).includes("fiche d'identite") ? 0 : 1;
+    const bFiche = normaliser(b.titre).includes("fiche d'identite") ? 0 : 1;
     return aFiche - bFiche;
   });
   // Toujours inclure au moins les certificats corporatifs meme si le filtre
   // par titre est trop strict (garde-fou pour ne jamais partir d'un contexte vide).
-  if (pertinents.length === 0) {
-    return r.rows.filter((d) => d.categorie === 'Certificats corporatifs').slice(0, 20);
+  let retenus = pertinents;
+  if (retenus.length === 0) {
+    retenus = dansCategorieCertificat.filter((d) => normaliser(d.categorie) === normaliser('Certificats corporatifs')).slice(0, 20);
   }
-  return pertinents.slice(0, 35); // plafond raisonnable pour le budget de tokens OpenAI
+  // Plafond relevé (35 → 60) : avec ~121 certificats potentiels et des
+  // mots-clés larges (RBQ, ISO...), 35 pouvait encore couper des documents
+  // pertinents ajoutés après coup. On logge explicitement ce qui est exclu
+  // plutôt que de le couper silencieusement (voir aussi le budget de
+  // caractères dans construireContexteTexte, qui peut couper plus tôt encore).
+  const LIMITE_DOCUMENTS = 60;
+  if (retenus.length > LIMITE_DOCUMENTS) {
+    const exclus = retenus.slice(LIMITE_DOCUMENTS).map((d) => d.titre);
+    console.warn(`[seao-autofill] ${exclus.length} document(s) pertinent(s) exclus par le plafond de ${LIMITE_DOCUMENTS} :`, exclus);
+  }
+  return retenus.slice(0, LIMITE_DOCUMENTS);
 }
 
 async function construireContexteTexte(documents) {
   const morceaux = [];
-  let budget = 60000;
+  // Relevé (60000 → 150000) : avec jusqu'à 60 documents de 3000 caractères
+  // chacun (voir LIMITE_DOCUMENTS), l'ancien budget de 60000 pouvait couper
+  // silencieusement les documents en fin de liste, y compris des certificats
+  // pertinents. gpt-4o supporte largement ce volume de contexte.
+  let budget = 150000;
   for (const doc of documents) {
-    if (budget <= 0) break;
+    if (budget <= 0) {
+      console.warn(`[seao-autofill] Budget de contexte épuisé, ${documents.length - morceaux.length} document(s) restant(s) non lus.`);
+      break;
+    }
     // Meme piege que connaissances.js/seao-annexes.js : deviner une cle a
     // plat dans le bucket "documents" plutot que resoudre le vrai
     // bucket/chemin faisait echouer silencieusement la lecture d'un

@@ -302,7 +302,10 @@ async function extraireLignesParPage(buf) {
   return pages;
 }
 
-const LIMITE_LIGNES_IA = 400; // meme plafond que placerChampsRestantsViaIA (docx-xml-utils.js)
+// Relevé (400 → 1200, même raisonnement que docx-xml-utils.js) : au-delà de
+// 400 lignes, tout le texte des pages suivantes d'un formulaire SEAO long
+// n'était jamais transmis à l'IA — aucun champ ne pouvait s'y placer.
+const LIMITE_LIGNES_IA = 1200;
 
 async function remplirFormulairePdfPlat(buf, infosEntreprise) {
   const pagesLignes = await extraireLignesParPage(buf);
@@ -315,6 +318,9 @@ async function remplirFormulairePdfPlat(buf, infosEntreprise) {
   const entries = [];
   pagesLignes.forEach((lignes, p) => lignes.forEach((ligne, i) => entries.push({ page: p, ligne, texte: ligne.texte })));
   const entriesLimitees = entries.slice(0, LIMITE_LIGNES_IA);
+  if (entries.length > LIMITE_LIGNES_IA) {
+    console.warn(`[seao-formulaire] ${entries.length - LIMITE_LIGNES_IA} ligne(s) de fin de document non transmises à l'IA (plafond ${LIMITE_LIGNES_IA}).`);
+  }
 
   const champsPlaces = [];
   const champsNonPlaces = [];

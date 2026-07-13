@@ -620,9 +620,9 @@ const SYSTEM_INFOS_ENTREPRISE = `Tu extrais les informations d'entreprise de Toi
 - AVERTISSEMENTS : liste de mises en garde COURTES et concrètes à afficher à l'utilisateur — notamment chaque fois que tu remarques un NEQ, une adresse, ou un numéro de taxes (TPS/TVQ) qui semble appartenir à une entité DIFFÉRENTE de Toitures Trois Étoiles Inc. (ex: à "Service d'entretien Toitures Trois Étoiles Inc.") dans les documents fournis — précise alors clairement que cette donnée n'a PAS été utilisée pour cette raison. Ajoute aussi un avertissement pour toute donnée requise mais introuvable de façon fiable (ex: attestation de Revenu Québec manquante). Retourne [] si rien à signaler.
 
 === RÈGLES ===
-- N'INVENTE RIEN — si une info n'est pas clairement présente dans les extraits fournis, retourne "" (ou [] pour les champs de type liste)
-- Ne réutilise JAMAIS une donnée (NEQ, RBQ, numéro de taxe, adresse) qui appartient clairement à une entité différente de "Toitures Trois Étoiles Inc." — dans le doute, laisse le champ vide et ajoute un AVERTISSEMENT plutôt que de deviner
-- confiance : "haute", "moyenne" ou "basse" selon la clarté des extraits fournis`;
+- Remplis TOUJOURS chaque champ avec ta meilleure estimation à partir des extraits fournis — même si l'info n'est pas mot pour mot présente, déduis-la du contexte disponible (ex: si un seul assureur/montant de couverture apparaît dans les documents, utilise-le même s'il n'est pas explicitement étiqueté "assurance responsabilité civile"). Ne retourne "" que si absolument aucune donnée exploitable n'existe dans les extraits pour ce champ précis.
+- Ne réutilise JAMAIS une donnée (NEQ, RBQ, numéro de taxe, adresse) qui appartient clairement à une entité différente de "Toitures Trois Étoiles Inc." — utilise plutôt la meilleure donnée disponible pour T3E elle-même et ajoute un AVERTISSEMENT signalant l'ambiguïté, plutôt que de laisser le champ vide.
+- confiance : "haute", "moyenne" ou "basse" selon la clarté des extraits fournis — utilise "basse" pour signaler une valeur déduite/approximative plutôt que de la retenir
 
 async function analyserInfosEntreprise(texteCertificats) {
   const userContent = `EXTRAITS DE CERTIFICATS/DOCUMENTS CORPORATIFS T3E :
@@ -652,8 +652,8 @@ async function mapperChampsFormulairePdf(nomsChamps, donneesDisponibles) {
   };
 
   const systemPrompt = `Tu remplis un formulaire PDF de soumission (appel d'offres public au Québec) pour Toitures Trois Étoiles Inc. (T3E), à partir des informations d'entreprise disponibles ci-dessous.
-Pour CHAQUE champ du formulaire (identifié par son nom technique PDF, qui reflète généralement son intitulé), retourne soit la valeur exacte à inscrire (tirée UNIQUEMENT des informations fournies, jamais inventée), soit null si aucune information disponible ne correspond clairement à ce champ (ex: prix, exclusions, dates de dépôt — à remplir manuellement).
-Ne remplis JAMAIS un champ avec une valeur incertaine ou approximative — null est toujours préférable à une mauvaise réponse sur un document officiel.`;
+Pour CHAQUE champ du formulaire (identifié par son nom technique PDF, qui reflète généralement son intitulé), retourne ta MEILLEURE valeur à inscrire — déduis-la du contexte disponible si elle n'est pas mot pour mot présente (ex: utilise le représentant désigné pour tout champ "nom du soumissionnaire"/"personne-ressource", l'adresse/coordonnées T3E pour tout champ d'adresse générique, la forme juridique ou le nombre d'employés si mentionnés même approximativement).
+Retourne null UNIQUEMENT pour les champs strictement propres à CET appel d'offres précis et qu'aucune information d'entreprise ne peut combler par nature (le prix soumissionné, les exclusions techniques, une date de dépôt choisie par l'utilisateur, une quantité de matériaux) — pas parce que la correspondance est imparfaite. Dans le doute entre remplir approximativement et retourner null, remplis.`;
 
   const userContent = `INFORMATIONS D'ENTREPRISE DISPONIBLES :
 ${JSON.stringify(donneesDisponibles, null, 2)}

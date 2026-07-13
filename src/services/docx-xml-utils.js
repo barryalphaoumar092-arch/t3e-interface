@@ -163,8 +163,11 @@ async function placerChampsRestantsViaIA(xml, champsNonTrouves) {
     positions.push(m.index + m[0].length - '</w:t>'.length);
   }
   if (runs.length === 0) return { xml, restants: { ...champsNonTrouves } };
-  if (runs.length > 400) {
-    console.warn(`[docx-xml-utils] Document trop volumineux pour le mapping IA (${runs.length} textes > 400) — champs non placés:`, Object.keys(champsNonTrouves).join(', '));
+  // Relevé (400 → 1200) : ce plafond etait "tout ou rien" — au-dela, AUCUN
+  // champ n'etait place via l'IA (formulaires SEAO longs a plusieurs pages),
+  // meme ceux au debut du document. gpt-4o supporte largement ce volume.
+  if (runs.length > 1200) {
+    console.warn(`[docx-xml-utils] Document trop volumineux pour le mapping IA (${runs.length} textes > 1200) — champs non placés:`, Object.keys(champsNonTrouves).join(', '));
     return { xml, restants: { ...champsNonTrouves } };
   }
 
