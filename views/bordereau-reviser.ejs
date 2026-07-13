@@ -96,6 +96,14 @@
               <label class="form-label fw-bold">ARCHITECTE <small class="text-muted fw-normal">(firme / contact — si présent sur certains gabarits)</small></label>
               <input type="text" name="ARCHITECTE" class="form-control" value="<%= identification.ARCHITECTE || '' %>">
             </div>
+            <div class="col-md-6">
+              <label class="form-label fw-bold">ENTREPRENEUR GÉNÉRAL <small class="text-muted fw-normal">(si présent sur certains gabarits, ex. fiche d'identification)</small></label>
+              <input type="text" name="ENTREPRENEUR_GENERAL" class="form-control" value="<%= identification.ENTREPRENEUR_GENERAL || '' %>">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-bold">INGÉNIEUR <small class="text-muted fw-normal">(si présent sur certains gabarits)</small></label>
+              <input type="text" name="INGENIEUR" class="form-control" value="<%= identification.INGENIEUR || '' %>">
+            </div>
           </div>
         </div>
       </div>

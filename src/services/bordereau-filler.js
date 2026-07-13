@@ -3,6 +3,8 @@ const { downloadBuffer, BUCKETS } = require('./storage');
 const {
   normalizeXmlText,
   remplirChampDansXml,
+  epislerApresLibelle,
+  cocherCaseSymbole,
   placerChampsRestantsViaIA,
   ajouterChampsNonPlaces,
   cocherCaseACocher,
@@ -18,7 +20,121 @@ const NOMS_LISIBLES = {
   ARTICLE: 'Article', REMARQUE: 'Remarque',
   NOM_ETABLISSEMENT: 'Établissement', ARCHITECTE: 'Architecte',
   SOUMIS_PAR: 'Soumis par', RECU_ENTREPRENEUR_DATE: "Reçu de l'entrepreneur le",
+  INGENIEUR: 'Ingénieur', ENTREPRENEUR_GENERAL: 'Entrepreneur général',
+  TELEPHONE: 'Téléphone', TELECOPIEUR: 'Télécopieur',
+  NB_PAGES: 'Nombre de pages', SOUS_SECTION: 'Section',
 };
+
+// ── Gabarit « DESSINS D'ATELIER – FICHE D'IDENTIFICATION » ──────────────────
+// Deuxième famille de gabarits reconnue (ex. « Bordereau de transmission des
+// FT&DA 2.doc », devis type CSS des Patriotes / Senterre). Structure très
+// différente du gabarit T3E : blocs PROJET / SOUS-TRAITANT / FOURNISSEUR /
+// FABRICANT / ENTREPRENEUR dont les sous-libellés (« Adresse : »,
+// « Responsable : », « Tél. : », « Téléc. : ») se RÉPÈTENT — le remplissage
+// générique au premier indexOf plaçait les valeurs dans le mauvais bloc.
+// Ici chaque sous-libellé est recherché À PARTIR de l'ancre de son bloc
+// (ordre des cellules vérifié sur le gabarit réel : la 1re occurrence de
+// chaque sous-libellé après « SOUS-TRAITANT : » appartient bien au bloc
+// sous-traitant).
+const APO = '’'; // apostrophe courbe Word
+
+function estFicheIdentification(xml) {
+  return xml.includes(`FICHE D${APO}IDENTIFICATION`)
+    || (xml.includes('SOUS-TRAITANT') && xml.includes('SPÉCIALITÉ (discipline)'));
+}
+
+async function remplirFicheIdentification(champs, xml, zip) {
+  const nonTrouves = {};
+  const fill = (cle, label, valeur, depart = 0) => {
+    const r = remplirChampDansXml(xml, label, valeur, depart);
+    xml = r.xml;
+    if (!r.trouve && valeur) nonTrouves[cle] = valeur;
+  };
+  const episser = (cle, label, valeur, depart = 0, nettoyerParens = false) => {
+    const r = epislerApresLibelle(xml, label, valeur, depart, nettoyerParens);
+    xml = r.xml;
+    if (!r.trouve && valeur) nonTrouves[cle] = valeur;
+  };
+
+  // Bloc PROJET (nom + établissement sur 2 lignes, comme sur les exemples réels)
+  const projet = [champs.NOM_DU_PROJET, champs.NOM_ETABLISSEMENT].filter(Boolean).join('\n');
+  fill('NOM_DU_PROJET', 'PROJET', projet);
+  fill('NUMERO_DU_PROJET', 'No. Projet', champs.NUMERO_DU_PROJET);
+
+  // Blocs intervenants (extraits du devis à l'étape /analyser, éditables)
+  fill('NOM_ETABLISSEMENT', 'PROPRIÉTAIRE (CLIENT)', champs.NOM_ETABLISSEMENT);
+  fill('ARCHITECTE', 'ARCHITECTE', champs.ARCHITECTE);
+  fill('INGENIEUR', 'INGÉNIEUR', champs.INGENIEUR);
+  fill('ENTREPRENEUR_GENERAL', 'ENTREPRENEUR GÉNÉRAL', champs.ENTREPRENEUR_GENERAL);
+
+  // Bloc SOUS-TRAITANT = T3E. Sous-libellés scopés après l'ancre du bloc.
+  fill('NOM', 'SOUS-TRAITANT', champs.NOM);
+  const ancreST = xml.indexOf('SOUS-TRAITANT');
+  if (ancreST !== -1) {
+    fill('ADRESSE', 'Adresse', champs.ADRESSE, ancreST);
+    fill('SOUMIS_PAR', 'Responsable', champs.SOUMIS_PAR, ancreST);
+    // « Tél. : (   ) Téléc. : (   ) » cohabitent dans la même cellule → épissure
+    // directe après chaque ":" + suppression des parenthèses vides pré-imprimées.
+    episser('TELEPHONE', 'Tél.', champs.TELEPHONE, ancreST, true);
+    episser('TELECOPIEUR', 'Téléc.', champs.TELECOPIEUR, ancreST, true);
+  }
+
+  fill('FOURNISSEUR', 'FOURNISSEUR', champs.FOURNISSEUR);
+  fill('FABRICANT', 'FABRICANT', champs.FABRICANT);
+
+  // Sur ce gabarit la discipline attendue est « TOITURES » (vu sur les
+  // exemples remplis) — « COUVREUR » est le défaut du gabarit T3E.
+  const specialite = (!champs.SPECIALITE || /^couvreur$/i.test(champs.SPECIALITE.trim()))
+    ? 'TOITURES' : champs.SPECIALITE;
+  fill('SPECIALITE', 'SPÉCIALITÉ (discipline)', specialite);
+
+  // NBRE DE PAGES = pages du document final soumis : ce gabarit fait 2 pages
+  // + les pages des fiches techniques jointes (calculées par la route).
+  if (Number.isFinite(champs.NB_PAGES_FT)) {
+    fill('NB_PAGES', 'NBRE DE PAGES', String(2 + champs.NB_PAGES_FT));
+  }
+
+  // Produit
+  const description = [champs.TITRE, champs.DESCRIPTION && champs.DESCRIPTION !== champs.TITRE ? champs.DESCRIPTION : '']
+    .filter(Boolean).join('\n');
+  fill('DESCRIPTION', `DESCRIPTION DU DESSIN D${APO}ATELIER`, description);
+
+  // Référence au devis : numéro de section (ex. « 07 52 16 ») après le
+  // libellé principal ; « Section : ... Articles : ... » partagent la même
+  // cellule → épissure. Section parente dérivée de l'article (2.4.1.2 → 2.4).
+  fill('SECTION', 'RÉFÉRENCE AU DEVIS', champs.SECTION);
+  const ancreDevis = xml.indexOf('RÉFÉRENCE AU DEVIS');
+  if (ancreDevis !== -1 && champs.ARTICLE) {
+    const sousSection = champs.ARTICLE.split('.').slice(0, 2).join('.');
+    episser('ARTICLE', 'Articles', champs.ARTICLE, ancreDevis);
+    if (sousSection && sousSection !== champs.ARTICLE) {
+      episser('SOUS_SECTION', 'Section', sousSection, ancreDevis);
+    }
+  }
+
+  fill('REMARQUE', 'REMARQUES', champs.REMARQUE);
+
+  // Cases (symboles Wingdings ❒, pas des FORMCHECKBOX) : le produit est
+  // toujours soumis TEL QUEL (jamais une équivalence proposée par T3E) et le
+  // dessin est émis pour EXAMEN. Le libellé « EXAMEN DU PROFESSIONNEL » plus
+  // bas n'a pas de case dans sa cellule — pas de risque de collision.
+  xml = cocherCaseSymbole(xml, 'TEL QUEL');
+  xml = cocherCaseSymbole(xml, 'EXAMEN');
+
+  // Mêmes filets de sécurité que le chemin générique : IA pour les libellés
+  // introuvables, puis bloc « Renseignements complémentaires » garanti.
+  if (Object.keys(nonTrouves).length > 0) {
+    console.log('[bordereau-filler] (fiche identification) libellés non trouvés, tentative IA pour:', Object.keys(nonTrouves).join(', '));
+    const resultat = await placerChampsRestantsViaIA(xml, nonTrouves);
+    xml = resultat.xml;
+    if (Object.keys(resultat.restants).length > 0) {
+      xml = ajouterChampsNonPlaces(xml, resultat.restants, NOMS_LISIBLES);
+    }
+  }
+
+  zip.file('word/document.xml', xml);
+  return zip.generateAsync({ type: 'nodebuffer' });
+}
 
 async function remplirBordereau(champs, buf) {
   const templateBuf = buf || await downloadBuffer(BUCKETS.DOCUMENTS, TEMPLATE_KEY);
@@ -27,6 +143,12 @@ async function remplirBordereau(champs, buf) {
   let xml = await zip.file('word/document.xml').async('string');
 
   xml = normalizeXmlText(xml);
+
+  // Gabarit « FICHE D'IDENTIFICATION » (architectes tiers) → chemin dédié,
+  // les libellés/blocs étant trop différents du gabarit T3E.
+  if (estFicheIdentification(xml)) {
+    return remplirFicheIdentification(champs, xml, zip);
+  }
 
   // Cocher les cases toujours applicables aux bordereaux T3E : discipline
   // "Architecture", produit soumis "Fiche technique", et le produit est

@@ -98,9 +98,15 @@ function inserer(xml, pos, inline, valeur) {
   return xml.substring(0, pos) + runs + xml.substring(pos);
 }
 
-function remplirChampDansXml(xml, label, valeur) {
+// `depart` (optionnel) : index à partir duquel chercher le libellé — permet de
+// cibler la BONNE occurrence quand le même libellé se répète dans plusieurs
+// blocs du gabarit (ex. gabarit "FICHE D'IDENTIFICATION" : "Adresse :",
+// "Responsable :", "Tél. :" apparaissent dans les blocs SOUS-TRAITANT,
+// FOURNISSEUR, FABRICANT et ENTREPRENEUR — on ancre la recherche sur le titre
+// du bloc voulu).
+function remplirChampDansXml(xml, label, valeur, depart = 0) {
   for (const variant of labelVariants(label)) {
-    const idx = xml.indexOf(variant);
+    const idx = xml.indexOf(variant, depart);
     if (idx === -1) continue;
 
     const colonIdx = idx + variant.length - 1;
@@ -305,6 +311,46 @@ function cocherCaseACocher(xml, label) {
   return xml;
 }
 
+// Insère la valeur DIRECTEMENT après le ":" du libellé, par épissure du texte
+// brut (pas de logique de cellule). Nécessaire quand PLUSIEURS libellés
+// cohabitent dans le MÊME run/cellule (ex. "Tél. : (   ) Téléc. : (   )" ou
+// "Section : ____ Articles : ____") : remplirChampDansXml insérerait à la fin
+// du <w:t> entier, donc après le DERNIER libellé de la paire — mauvaise
+// position pour le premier. Optionnellement, supprime un "(    )" vide qui
+// suit immédiatement le libellé (zones téléphone pré-imprimées).
+function epislerApresLibelle(xml, label, valeur, depart = 0, nettoyerParens = false) {
+  if (!valeur) return { xml, trouve: true };
+  for (const variant of labelVariants(label)) {
+    const idx = xml.indexOf(variant, depart);
+    if (idx === -1) continue;
+    const pos = idx + variant.length;
+    let fin = pos;
+    if (nettoyerParens) {
+      const m = xml.substring(pos, pos + 40).match(/^[\s ]*\([\s ]*\)/);
+      if (m) fin = pos + m[0].length;
+    }
+    return { xml: xml.substring(0, pos) + ' ' + escapeXml(valeur) + xml.substring(fin), trouve: true };
+  }
+  return { xml, trouve: false };
+}
+
+// Coche une case dessinée avec un SYMBOLE Wingdings 2 "❒" (<w:sym w:char="F0A3"/>)
+// plutôt qu'un champ FORMCHECKBOX — format observé sur le gabarit
+// "DESSINS D'ATELIER – FICHE D'IDENTIFICATION" (cases TEL QUEL / EXAMEN /
+// ÉQUIVALENT...). On remplace le symbole "case vide" situé dans la MÊME
+// cellule que le libellé par un ☒ en texte, la police du run s'appliquant.
+function cocherCaseSymbole(xml, label) {
+  const idx = xml.indexOf(label);
+  if (idx === -1) return xml;
+  const finCellule = xml.indexOf('</w:tc>', idx);
+  const limite = finCellule === -1 ? xml.length : finCellule;
+  const symRegex = /<w:sym\s[^>]*w:char="F0A3"[^>]*\/>/gi;
+  symRegex.lastIndex = idx;
+  const m = symRegex.exec(xml);
+  if (!m || m.index > limite) return xml;
+  return xml.substring(0, m.index) + '<w:t xml:space="preserve">☒</w:t>' + xml.substring(m.index + m[0].length);
+}
+
 module.exports = {
   escapeXml,
   normalizeXmlText,
@@ -313,6 +359,8 @@ module.exports = {
   trouverCelluleDeSaisie,
   inserer,
   remplirChampDansXml,
+  epislerApresLibelle,
+  cocherCaseSymbole,
   placerChampsRestantsViaIA,
   ajouterChampsNonPlaces,
   cocherCaseACocher,

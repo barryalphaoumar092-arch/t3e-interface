@@ -12,6 +12,7 @@ const { PDFDocument } = require('pdf-lib');
 const JSZip = require('jszip');
 const { downloadBuffer, uploadBuffer, removeFile, listFiles, stripAccents, sanitizeKey, ensureBucket, BUCKETS } = require('../services/storage');
 const { listerRepresentants, obtenirRepresentant } = require('../services/representants');
+const { INFOS_ENTREPRISE_T3E } = require('../services/infos-entreprise-t3e');
 
 // Les fichiers devis/bordereau sont uploades par le navigateur DIRECTEMENT
 // vers Supabase Storage (bucket "uploads-temp", voir /api/upload-url) pour
@@ -47,6 +48,8 @@ Aussi, extrais du devis :
 - NOM_ETABLISSEMENT : le nom du propriétaire/établissement/école/bâtiment (ex: "Polytechnique Montréal", "École Laval Senior Academy") — PAS le nom du projet lui-même, mais l'entité propriétaire. Vide si absent du devis.
 - ARCHITECTE_FIRME : le nom de la firme d'architectes qui a préparé le devis (souvent en page de garde ou page des sceaux/signatures). Vide si absent.
 - ARCHITECTE_CONTACT : le nom de la personne (architecte associé/responsable) si mentionné, sinon vide.
+- ENTREPRENEUR_GENERAL : nom (+ adresse et téléphone si mentionnés) de l'entrepreneur GÉNÉRAL du chantier, sous la forme "Nom — Adresse — Téléphone" (compose ce que tu trouves). Souvent absent des devis d'architecte — vide si absent. NE JAMAIS y mettre T3E/Toitures Trois Étoiles (T3E est le sous-traitant couvreur, pas l'entrepreneur général).
+- INGENIEUR : nom de la firme d'ingénierie (+ coordonnées si mentionnées) si le devis en mentionne une, sinon vide.
 
 Beaucoup de bordereaux d'architectes tiers (différents du gabarit T3E) ont des champs comme "Nom de l'école ou de l'établissement" ou "ARCHITECTE" qui n'existent pas dans le gabarit T3E — ces informations, quand elles sont dans le devis, DOIVENT être extraites même si tu ne sais pas encore où elles seront utilisées.
 
@@ -172,6 +175,8 @@ const SCHEMA_CONTEXTE = {
     NOM_ETABLISSEMENT: { type: 'string' },
     ARCHITECTE_FIRME: { type: 'string' },
     ARCHITECTE_CONTACT: { type: 'string' },
+    ENTREPRENEUR_GENERAL: { type: 'string' },
+    INGENIEUR: { type: 'string' },
     produits: {
       type: 'array',
       items: {
@@ -186,7 +191,7 @@ const SCHEMA_CONTEXTE = {
       },
     },
   },
-  required: ['NOM_DU_PROJET', 'NUMERO_DU_PROJET', 'NOM_ETABLISSEMENT', 'ARCHITECTE_FIRME', 'ARCHITECTE_CONTACT', 'produits'],
+  required: ['NOM_DU_PROJET', 'NUMERO_DU_PROJET', 'NOM_ETABLISSEMENT', 'ARCHITECTE_FIRME', 'ARCHITECTE_CONTACT', 'ENTREPRENEUR_GENERAL', 'INGENIEUR', 'produits'],
   additionalProperties: false,
 };
 
@@ -213,6 +218,8 @@ Retourne ce JSON :
   "NOM_ETABLISSEMENT": "nom du propriétaire/établissement (du DEVIS), ou chaîne vide si absent",
   "ARCHITECTE_FIRME": "nom de la firme d'architectes (du DEVIS), ou chaîne vide si absent",
   "ARCHITECTE_CONTACT": "nom de la personne architecte (du DEVIS), ou chaîne vide si absent",
+  "ENTREPRENEUR_GENERAL": "entrepreneur général du chantier (du DEVIS), ou chaîne vide si absent",
+  "INGENIEUR": "firme d'ingénierie (du DEVIS), ou chaîne vide si absent",
   "produits": [
     { "SECTION": "...", "ARTICLE": "...", "USAGE": "..." }
   ]
@@ -804,6 +811,8 @@ router.post('/analyser', async (req, res) => {
     ADRESSE: adresse?.trim() || '7550 Rue Saint-Patrick, Montréal, QC H8N 1V1',
     NOM_ETABLISSEMENT: iaResult.NOM_ETABLISSEMENT || '',
     ARCHITECTE: architecteTexte,
+    ENTREPRENEUR_GENERAL: iaResult.ENTREPRENEUR_GENERAL || '',
+    INGENIEUR: iaResult.INGENIEUR || '',
   };
 
   const produits = [];
@@ -1034,6 +1043,8 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
   // "ARCHITECTE") — extraits du devis a l'etape /analyser, editables ici.
   const nomEtablissement = req.body.NOM_ETABLISSEMENT || '';
   const architecte = req.body.ARCHITECTE || '';
+  const entrepreneurGeneral = req.body.ENTREPRENEUR_GENERAL || '';
+  const ingenieur = req.body.INGENIEUR || '';
   // "Soumis par" (bas de page) : le representant T3E qui soumet le bordereau,
   // choisi dans le menu deroulant de la page de revision (les 4 profils de
   // representants.js — memes personnes que pour les soumissions SEAO). Si aucun
@@ -1083,6 +1094,12 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
       RECU_ENTREPRENEUR_DATE: recuEntrepreneurDate,
       NOM_ETABLISSEMENT: nomEtablissement,
       ARCHITECTE: architecte,
+      ENTREPRENEUR_GENERAL: entrepreneurGeneral,
+      INGENIEUR: ingenieur,
+      // Coordonnées du bloc SOUS-TRAITANT sur les gabarits tiers (fiche
+      // d'identification) : tél. du représentant choisi, téléc. corporatif T3E.
+      TELEPHONE: representant ? representant.telephone : '',
+      TELECOPIEUR: INFOS_ENTREPRISE_T3E.TELECOPIEUR_ENTREPRISE,
     };
 
     // Compléter FABRICANT/FOURNISSEUR si vides, via la DB matériaux (filet de sécurité)
@@ -1097,21 +1114,32 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
     const num = String(i + 1).padStart(2, '0');
     const nomFichier = (titres[i] || 'Produit').replace(/[^a-zA-Z0-9àâäéèêëîïôùûüÀÉ _-]/g, '').substring(0, 40).trim();
 
-    // Étape 1 — Remplir le .docx
-    let docxBuf = null;
-    try {
-      docxBuf = await remplirBordereau(champs, bordereauBuffer);
-    } catch (e) {
-      console.error(`[generer] ${num} Erreur remplissage:`, e.message);
-    }
-
-    // Étape 2 — Charger les FT
+    // Étape 1 — Charger les FT D'ABORD : certains gabarits tiers (fiche
+    // d'identification) ont un champ « NBRE DE PAGES » qui doit refléter le
+    // document soumis (bordereau + FT) — on compte donc les pages FT avant
+    // de remplir le .docx.
     let ftBuffers = [];
     try {
       ftBuffers = await resoudreFichesTechniquesAvecSelection(db, champs.FABRICANT, champs.TITRE, ftSelections[i]);
       if (ftBuffers.length === 0) console.log(`[generer] ${num} Aucune FT pour`, champs.TITRE, '/', champs.FABRICANT);
     } catch (e) {
       console.error(`[generer] ${num} Erreur FT:`, e.message);
+    }
+    let nbPagesFT = 0;
+    for (const buf of ftBuffers) {
+      try {
+        const doc = await PDFDocument.load(buf, { ignoreEncryption: true });
+        nbPagesFT += doc.getPageCount();
+      } catch (_) {}
+    }
+    champs.NB_PAGES_FT = nbPagesFT;
+
+    // Étape 2 — Remplir le .docx
+    let docxBuf = null;
+    try {
+      docxBuf = await remplirBordereau(champs, bordereauBuffer);
+    } catch (e) {
+      console.error(`[generer] ${num} Erreur remplissage:`, e.message);
     }
 
     // Étape 3 — Convertir le .docx en PDF via LibreOffice
