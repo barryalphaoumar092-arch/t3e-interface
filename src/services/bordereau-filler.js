@@ -23,6 +23,8 @@ const NOMS_LISIBLES = {
   INGENIEUR: 'Ingénieur', ENTREPRENEUR_GENERAL: 'Entrepreneur général',
   TELEPHONE: 'Téléphone', TELECOPIEUR: 'Télécopieur',
   NB_PAGES: 'Nombre de pages', SOUS_SECTION: 'Section',
+  FOURNISSEUR_ADRESSE: 'Adresse du fournisseur', FOURNISSEUR_TEL: 'Tél. du fournisseur',
+  FABRICANT_ADRESSE: 'Adresse du fabricant', FABRICANT_TEL: 'Tél. du fabricant',
 };
 
 // ── Gabarit « DESSINS D'ATELIER – FICHE D'IDENTIFICATION » ──────────────────
@@ -37,6 +39,25 @@ const NOMS_LISIBLES = {
 // chaque sous-libellé après « SOUS-TRAITANT : » appartient bien au bloc
 // sous-traitant).
 const APO = '’'; // apostrophe courbe Word
+
+// Coordonnées OFFICIELLES FIXES des fabricants/fournisseurs connus — quand le
+// nom saisi/extrait correspond, on utilise TOUJOURS ces valeurs telles
+// quelles (nom normalisé + adresse + téléphone), demande utilisateur 2026-07 :
+// la base matériaux ne stocke pas les adresses, et l'IA ne doit pas les
+// deviner. Ajouter ici les autres fabricants au besoin.
+const COORDONNEES_FABRICANTS = [
+  {
+    regex: /soprema/i,
+    nom: 'Soprema Canada',
+    adresse: '1295, rue Newton, #200\nBoucherville, Québec\nJ4B 5H2 Canada',
+    telephone: '450-655-6676',
+  },
+];
+
+function coordonneesConnues(nom) {
+  if (!nom) return null;
+  return COORDONNEES_FABRICANTS.find((c) => c.regex.test(nom)) || null;
+}
 
 function estFicheIdentification(xml) {
   return xml.includes(`FICHE D${APO}IDENTIFICATION`)
@@ -79,8 +100,25 @@ async function remplirFicheIdentification(champs, xml, zip) {
     episser('TELECOPIEUR', 'Téléc.', champs.TELECOPIEUR, ancreST, true);
   }
 
-  fill('FOURNISSEUR', 'FOURNISSEUR', champs.FOURNISSEUR);
-  fill('FABRICANT', 'FABRICANT', champs.FABRICANT);
+  // Blocs FOURNISSEUR et FABRICANT : nom + (si fabricant connu, ex. Soprema)
+  // adresse et téléphone officiels, scopés après l'ancre de chaque bloc —
+  // ordre des cellules vérifié : la 1re occurrence de « Adresse : »/« Tél. : »
+  // après chaque titre appartient bien à son bloc.
+  const infoFournisseur = coordonneesConnues(champs.FOURNISSEUR);
+  fill('FOURNISSEUR', 'FOURNISSEUR', infoFournisseur ? infoFournisseur.nom : champs.FOURNISSEUR);
+  const ancreFournisseur = xml.indexOf('FOURNISSEUR');
+  if (infoFournisseur && ancreFournisseur !== -1) {
+    fill('FOURNISSEUR_ADRESSE', 'Adresse', infoFournisseur.adresse, ancreFournisseur);
+    episser('FOURNISSEUR_TEL', 'Tél.', infoFournisseur.telephone, ancreFournisseur, true);
+  }
+
+  const infoFabricant = coordonneesConnues(champs.FABRICANT);
+  fill('FABRICANT', 'FABRICANT', infoFabricant ? infoFabricant.nom : champs.FABRICANT);
+  const ancreFabricant = xml.indexOf('FABRICANT');
+  if (infoFabricant && ancreFabricant !== -1) {
+    fill('FABRICANT_ADRESSE', 'Adresse', infoFabricant.adresse, ancreFabricant);
+    episser('FABRICANT_TEL', 'Tél.', infoFabricant.telephone, ancreFabricant, true);
+  }
 
   // Sur ce gabarit la discipline attendue est « TOITURES » (vu sur les
   // exemples remplis) — « COUVREUR » est le défaut du gabarit T3E.
@@ -143,6 +181,14 @@ async function remplirBordereau(champs, buf) {
   let xml = await zip.file('word/document.xml').async('string');
 
   xml = normalizeXmlText(xml);
+
+  // Nom officiel des fabricants/fournisseurs connus (ex. « Soprema Canada »),
+  // quel que soit le gabarit — la variante saisie/extraite peut différer
+  // (« Soprema », « SOPREMA inc. », etc.).
+  const four = coordonneesConnues(champs.FOURNISSEUR);
+  if (four) champs = { ...champs, FOURNISSEUR: four.nom };
+  const fab = coordonneesConnues(champs.FABRICANT);
+  if (fab) champs = { ...champs, FABRICANT: fab.nom };
 
   // Gabarit « FICHE D'IDENTIFICATION » (architectes tiers) → chemin dédié,
   // les libellés/blocs étant trop différents du gabarit T3E.
