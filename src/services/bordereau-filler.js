@@ -143,12 +143,15 @@ async function remplirFicheIdentification(champs, xml, zip) {
   fill('SECTION', 'RÉFÉRENCE AU DEVIS', champs.SECTION);
   const ancreDevis = xml.indexOf('RÉFÉRENCE AU DEVIS');
   if (ancreDevis !== -1 && champs.ARTICLE) {
-    // « Section : » reçoit TOUJOURS une valeur en chiffres : le préfixe à
-    // 2 segments de l'article (2.4.1.2 → 2.4) — et l'article lui-même quand
-    // il n'a déjà que 2 segments (2.8 → Section 2.8, Articles 2.8). Avant, ce
-    // second cas laissait « Section : » vide (bug signalé).
-    const sousSection = champs.ARTICLE.split('.').slice(0, 2).join('.') || champs.ARTICLE;
-    episser('ARTICLE', 'Articles', champs.ARTICLE, ancreDevis);
+    // « Section : » et « Articles : » reçoivent TOUJOURS des valeurs EN
+    // CHIFFRES (comme sur les exemples remplis : Section 2.4 / Articles
+    // 2.4.1.2). L'IA renvoie parfois l'article avec son TITRE complet
+    // (« 5 MEMBRANE ET SOLIN DE FINITION ÉLASTOMÈRE ») — on extrait la
+    // partie numérique (5, 2.8, 2.4.1.2…) et on dérive la section parente
+    // (préfixe à 2 segments ; l'article lui-même s'il est déjà court).
+    const numerique = (String(champs.ARTICLE).match(/\d+(?:\.\d+)*/) || [String(champs.ARTICLE).trim()])[0];
+    const sousSection = numerique.split('.').slice(0, 2).join('.') || numerique;
+    episser('ARTICLE', 'Articles', numerique, ancreDevis);
     episser('SOUS_SECTION', 'Section', sousSection, ancreDevis);
   }
 
