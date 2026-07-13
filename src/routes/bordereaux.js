@@ -11,6 +11,7 @@ const { convertirDocEnDocx, estDocLegacy, estDocxValide } = require('../services
 const { PDFDocument } = require('pdf-lib');
 const JSZip = require('jszip');
 const { downloadBuffer, uploadBuffer, removeFile, listFiles, stripAccents, sanitizeKey, ensureBucket, BUCKETS } = require('../services/storage');
+const { listerRepresentants, obtenirRepresentant } = require('../services/representants');
 
 // Les fichiers devis/bordereau sont uploades par le navigateur DIRECTEMENT
 // vers Supabase Storage (bucket "uploads-temp", voir /api/upload-url) pour
@@ -916,6 +917,7 @@ router.get('/reviser/:id', async (req, res) => {
     fournisseursListe: fournisseurs,
     ftParFabricant,
     historique,
+    representants: listerRepresentants(),
   });
 });
 
@@ -1032,11 +1034,17 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
   // "ARCHITECTE") — extraits du devis a l'etape /analyser, editables ici.
   const nomEtablissement = req.body.NOM_ETABLISSEMENT || '';
   const architecte = req.body.ARCHITECTE || '';
-  // "Soumis par" (bas de page) : nom de la personne qui genere le bordereau,
-  // deja saisi plus bas dans le formulaire pour l'historique (genere_par) —
-  // reutilise ici pour remplir le meme champ dans le document. "Reçu de
-  // l'entrepreneur le" : date de soumission, toujours la date du jour.
-  const soumisPar = (req.body.genere_par || '').trim();
+  // "Soumis par" (bas de page) : le representant T3E qui soumet le bordereau,
+  // choisi dans le menu deroulant de la page de revision (les 4 profils de
+  // representants.js — memes personnes que pour les soumissions SEAO). Si aucun
+  // representant n'est selectionne, on retombe sur le nom libre saisi pour
+  // l'historique (genere_par). Le meme nom sert au champ SOUMIS_PAR du document
+  // ET a la tracabilite (effectue_par) plus bas. "Reçu de l'entrepreneur le" :
+  // date de soumission, toujours la date du jour.
+  const representant = obtenirRepresentant(req.body.representant_id);
+  const soumisPar = representant
+    ? `${representant.prenom} ${representant.nom}`
+    : (req.body.genere_par || '').trim();
   const recuEntrepreneurDate = new Date().toLocaleDateString('fr-CA', { year: 'numeric', month: 'long', day: 'numeric' });
 
   // Les champs produit arrivent comme tableaux (TITRE[], FABRICANT[], etc.)
@@ -1161,7 +1169,9 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
   // POST /confirmer/:id) est désormais nécessaire avant l'approbation.
   // Le PDF/ZIP reste immédiatement téléchargeable (envoyé ci-dessous, comme
   // avant) — seule la mention du statut en base change.
-  const generePar = (req.body.genere_par || '').trim();
+  // Tracabilite : le representant choisi (ou, a defaut, le nom libre) — meme
+  // valeur que "Soumis par" pour rester coherent dans l'historique.
+  const generePar = soumisPar;
   try {
     await db.execute({
       sql: `UPDATE bordereaux SET statut = 'revise', session_actif = 0, numero_projet = ?, titre = ? WHERE id = ?`,

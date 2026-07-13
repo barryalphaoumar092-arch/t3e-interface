@@ -212,8 +212,17 @@
 
       <div class="row g-2 align-items-end mb-2">
         <div class="col-md-4">
-          <label class="form-label small text-muted">Votre nom (optionnel, pour l'historique)</label>
-          <input type="text" name="genere_par" class="form-control form-control-sm" placeholder="Qui génère ?">
+          <label class="form-label small text-muted">Représentant qui soumet <span class="text-muted">(« Soumis par »)</span></label>
+          <select name="representant_id" class="form-select form-select-sm">
+            <option value="">— Choisir un représentant —</option>
+            <% (representants || []).forEach(function(r) { %>
+            <option value="<%= r.id %>"><%= r.prenom %> <%= r.nom %> — <%= r.poste %></option>
+            <% }); %>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small text-muted">Ou autre nom (optionnel)</label>
+          <input type="text" name="genere_par" class="form-control form-control-sm" placeholder="Si absent de la liste ci-contre">
         </div>
       </div>
       <div class="d-flex gap-3 mb-4">
