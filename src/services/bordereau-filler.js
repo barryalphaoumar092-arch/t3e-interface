@@ -143,11 +143,13 @@ async function remplirFicheIdentification(champs, xml, zip) {
   fill('SECTION', 'RÉFÉRENCE AU DEVIS', champs.SECTION);
   const ancreDevis = xml.indexOf('RÉFÉRENCE AU DEVIS');
   if (ancreDevis !== -1 && champs.ARTICLE) {
-    const sousSection = champs.ARTICLE.split('.').slice(0, 2).join('.');
+    // « Section : » reçoit TOUJOURS une valeur en chiffres : le préfixe à
+    // 2 segments de l'article (2.4.1.2 → 2.4) — et l'article lui-même quand
+    // il n'a déjà que 2 segments (2.8 → Section 2.8, Articles 2.8). Avant, ce
+    // second cas laissait « Section : » vide (bug signalé).
+    const sousSection = champs.ARTICLE.split('.').slice(0, 2).join('.') || champs.ARTICLE;
     episser('ARTICLE', 'Articles', champs.ARTICLE, ancreDevis);
-    if (sousSection && sousSection !== champs.ARTICLE) {
-      episser('SOUS_SECTION', 'Section', sousSection, ancreDevis);
-    }
+    episser('SOUS_SECTION', 'Section', sousSection, ancreDevis);
   }
 
   fill('REMARQUE', 'REMARQUES', champs.REMARQUE);
