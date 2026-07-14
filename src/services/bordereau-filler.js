@@ -8,6 +8,9 @@ const {
   placerChampsRestantsViaIA,
   ajouterChampsNonPlaces,
   cocherCaseACocher,
+  labelVariants,
+  inserer,
+  escapeXml,
 } = require('./docx-xml-utils');
 
 const TEMPLATE_KEY = 'bordereau-template.docx';
@@ -179,6 +182,111 @@ async function remplirFicheIdentification(champs, xml, zip) {
   return zip.generateAsync({ type: 'nodebuffer' });
 }
 
+// ── Blocs d'intervenants génériques (gabarits tiers, ex. Leclerc/HEC) ───────
+// Beaucoup de gabarits d'architectes organisent la page en TABLEAU à deux
+// colonnes de blocs titrés (« SOUS-TRAITANT » à gauche, « FOURNISSEUR » à
+// droite, etc.), chacun avec ses sous-libellés répétés (« Nom : »,
+// « Coordonnées : », « Responsable : », « Tél. : »). Le repli IA se trompait
+// régulièrement de bloc (constaté : le fournisseur écrit dans le Nom du
+// sous-traitant) et n'est PAS déterministe d'une exécution à l'autre.
+// Ici on parcourt les lignes/cellules du tableau en suivant le bloc actif PAR
+// COLONNE : un titre de bloc rencontré dans la colonne c s'applique aux
+// cellules suivantes de cette même colonne, jusqu'au titre suivant. Chaque
+// sous-libellé est alors rempli d'après le bloc de SA colonne — zéro IA.
+const BLOC_TITRE_REGEX = /^(SOUS-TRAITANT|FOURNISSEUR|FABRICANT|MANUFACTURIER|ENTREPRENEUR(?:\s+GÉNÉRAL)?|PROFESSIONNEL|INGÉNIEUR|ARCHITECTE|PROPRIÉTAIRE)\b/;
+
+function remplirBlocsIntervenants(xml, champs, champsNonTrouves) {
+  const clesPlacees = new Set();
+  const infoFour = coordonneesConnues(champs.FOURNISSEUR);
+  const infoFab = coordonneesConnues(champs.FABRICANT);
+  const enLigne = (info) => (info ? info.adresse.replace(/\n/g, ', ') : '');
+  const coordonnees = (info) => [enLigne(info), info && info.telephone ? 'Tél. : ' + info.telephone : ''].filter(Boolean).join(' — ');
+
+  // Par bloc : sous-libellé → [clé champs, valeur]. Les clés faisant partie
+  // des libellés fixes (NOM, ADRESSE...) ne sont remplies ici que si le
+  // passage par libellés exacts ne les a PAS déjà placées (champsNonTrouves).
+  const CLES_LIBELLES_FIXES = new Set(['NOM', 'ADRESSE', 'SOUMIS_PAR', 'FOURNISSEUR', 'FABRICANT']);
+  const blocs = {
+    'SOUS-TRAITANT': {
+      'Nom': ['NOM', champs.NOM],
+      'Adresse': ['ADRESSE', champs.ADRESSE],
+      'Coordonnées': ['ADRESSE', [champs.ADRESSE, champs.TELEPHONE ? 'Tél. : ' + champs.TELEPHONE : ''].filter(Boolean).join(' — ')],
+      'Responsable': ['SOUMIS_PAR', champs.SOUMIS_PAR],
+      'Tél.': ['TELEPHONE', champs.TELEPHONE],
+      'Téléc.': ['TELECOPIEUR', champs.TELECOPIEUR],
+    },
+    'FOURNISSEUR': {
+      'Nom': ['FOURNISSEUR', champs.FOURNISSEUR],
+      'Adresse': ['FOURNISSEUR_ADRESSE', infoFour ? infoFour.adresse : ''],
+      'Coordonnées': ['FOURNISSEUR_ADRESSE', coordonnees(infoFour)],
+      'Tél.': ['FOURNISSEUR_TEL', infoFour ? infoFour.telephone : ''],
+    },
+    'FABRICANT': {
+      'Nom': ['FABRICANT', champs.FABRICANT],
+      'Adresse': ['FABRICANT_ADRESSE', infoFab ? infoFab.adresse : ''],
+      'Coordonnées': ['FABRICANT_ADRESSE', coordonnees(infoFab)],
+      'Tél.': ['FABRICANT_TEL', infoFab ? infoFab.telephone : ''],
+    },
+  };
+  blocs.MANUFACTURIER = blocs.FABRICANT;
+
+  const ops = [];
+  const blocParColonne = {};
+  const trRegex = /<w:tr(?:\s[^>]*)?>[\s\S]*?<\/w:tr>/g;
+  let tr;
+  while ((tr = trRegex.exec(xml))) {
+    const tcRegex = /<w:tc(?:\s[^>]*)?>[\s\S]*?<\/w:tc>/g;
+    let tc;
+    let colonne = 0;
+    while ((tc = tcRegex.exec(tr[0]))) {
+      const debutCellule = tr.index + tc.index;
+      const finCellule = debutCellule + tc[0].length;
+      const texte = tc[0].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      const titre = texte.length <= 60 ? BLOC_TITRE_REGEX.exec(texte) : null;
+      if (titre) {
+        // Tout titre (même un bloc qu'on ne remplit pas, ex. ENTREPRENEUR)
+        // remplace le bloc actif de la colonne — évite de déborder plus bas.
+        blocParColonne[colonne] = titre[1];
+      } else if (blocParColonne[colonne] && blocs[blocParColonne[colonne]]) {
+        const sousLibelles = blocs[blocParColonne[colonne]];
+        for (const [label, [cle, valeur]] of Object.entries(sousLibelles)) {
+          if (!valeur) continue;
+          if (CLES_LIBELLES_FIXES.has(cle) && !(cle in champsNonTrouves)) continue;
+          if (clesPlacees.has(cle)) continue;
+          for (const variant of labelVariants(label)) {
+            const idx = xml.indexOf(variant, debutCellule);
+            if (idx === -1 || idx >= finCellule) continue;
+            ops.push({ idx, variant, cle, valeur, label });
+            clesPlacees.add(cle);
+            break;
+          }
+        }
+      }
+      colonne++;
+    }
+  }
+
+  // Application en ordre décroissant de position pour ne pas décaler les
+  // positions restantes. « Tél./Téléc. » partagent souvent la même cellule →
+  // épissure directe après le ":" (+ retrait des parenthèses vides) ; les
+  // autres via insertion multi-lignes standard.
+  ops.sort((a, b) => b.idx - a.idx);
+  for (const op of ops) {
+    const pos = op.idx + op.variant.length;
+    if (op.label === 'Tél.' || op.label === 'Téléc.') {
+      let fin = pos;
+      const m = xml.substring(pos, pos + 40).match(/^[\s ]*\([\s ]*\)/);
+      if (m) fin = pos + m[0].length;
+      xml = xml.substring(0, pos) + ' ' + escapeXml(op.valeur) + xml.substring(fin);
+    } else {
+      const closeIdx = xml.indexOf('</w:t>', pos);
+      if (closeIdx === -1) continue;
+      xml = inserer(xml, closeIdx, true, op.valeur);
+    }
+  }
+  return { xml, clesPlacees };
+}
+
 async function remplirBordereau(champs, buf) {
   const templateBuf = buf || await downloadBuffer(BUCKETS.DOCUMENTS, TEMPLATE_KEY);
   if (!templateBuf) throw new Error('Template bordereau introuvable (Supabase Storage).');
@@ -272,6 +380,19 @@ async function remplirBordereau(champs, buf) {
   // dans le champ Description d'un gabarit Leclerc).
   for (const [cle, valeur] of Object.entries(champsNonTrouves)) {
     if (valeursPlacees.has(valeur)) delete champsNonTrouves[cle];
+  }
+
+  // Blocs d'intervenants titrés en colonnes (gabarits tiers) : remplissage
+  // déterministe AVANT le repli IA — les clés placées ici lui sont retirées.
+  try {
+    const blocRes = remplirBlocsIntervenants(xml, champs, champsNonTrouves);
+    xml = blocRes.xml;
+    for (const cle of blocRes.clesPlacees) delete champsNonTrouves[cle];
+    if (blocRes.clesPlacees.size > 0) {
+      console.log('[bordereau-filler] Blocs intervenants remplis (déterministe):', [...blocRes.clesPlacees].join(', '));
+    }
+  } catch (e) {
+    console.error('[bordereau-filler] remplirBlocsIntervenants échoué (repli IA conservé):', e.message);
   }
 
   if (Object.keys(champsNonTrouves).length > 0) {
