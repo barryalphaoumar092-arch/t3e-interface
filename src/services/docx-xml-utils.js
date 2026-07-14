@@ -169,6 +169,21 @@ async function placerChampsRestantsViaIA(xml, champsNonTrouves) {
     positions.push(m.index + m[0].length - '</w:t>'.length);
   }
   if (runs.length === 0) return { xml, restants: { ...champsNonTrouves } };
+
+  // Annoter chaque libellé avec son BLOC d'appartenance (dernier titre de
+  // section en MAJUSCULES rencontré : « SOUS-TRAITANT », « FOURNISSEUR »,
+  // « ENTREPRENEUR »…) : sans cette annotation, l'IA doit deviner à quel
+  // intervenant appartient chaque « Nom : » / « Responsable : » répété, et se
+  // trompe régulièrement (constaté : FOURNISSEUR placé sous le Nom du
+  // SOUS-TRAITANT, ARCHITECTE sous « Date de transmission » de
+  // l'ENTREPRENEUR sur un gabarit Leclerc).
+  let blocCourant = '';
+  const runsAnnotes = runs.map((t) => {
+    const sansDeuxPoints = !/[:：]\s*$/.test(t);
+    const toutMajuscules = t.length >= 4 && t.length <= 60 && !/[a-zà-öø-ÿ]/.test(t) && /[A-ZÀ-ÖØ-Þ]/.test(t);
+    if (sansDeuxPoints && toutMajuscules) { blocCourant = t; return t; }
+    return blocCourant ? `${t}   [bloc: ${blocCourant}]` : t;
+  });
   // Relevé (400 → 1200) : ce plafond etait "tout ou rien" — au-dela, AUCUN
   // champ n'etait place via l'IA (formulaires SEAO longs a plusieurs pages),
   // meme ceux au debut du document. gpt-4o supporte largement ce volume.
@@ -179,7 +194,7 @@ async function placerChampsRestantsViaIA(xml, champsNonTrouves) {
 
   let mapping;
   try {
-    mapping = await mapperChampsBordereau(runs, champsNonTrouves);
+    mapping = await mapperChampsBordereau(runsAnnotes, champsNonTrouves);
   } catch (e) {
     console.error('[docx-xml-utils] Mapping IA échoué:', e.message);
     return { xml, restants: { ...champsNonTrouves } };
@@ -287,31 +302,21 @@ function cocherCaseACocher(xml, label) {
   }
   if (!champ) return xml;
 
-  // Bornes du champ : du "begin" de CE checkbox jusqu'au prochain "begin"
-  // (ou fin de document), pour ne jamais déborder sur un autre champ voisin.
-  const prochainBegin = xml.indexOf('fldCharType="begin"', champ.ffEnd);
-  const limite = prochainBegin === -1 ? xml.length : prochainBegin;
-  const sepIdx = xml.indexOf('fldCharType="separate"', champ.ffEnd);
-
-  // 1. Rendu visuel : insérer ☒ juste après le run "separate" (position la
-  // plus tardive dans le document → appliqué en premier pour ne pas décaler
-  // la position du <w:ffData>, traité ensuite).
-  if (sepIdx !== -1 && sepIdx < limite) {
-    const finRunSepIdx = xml.indexOf('</w:r>', sepIdx);
-    if (finRunSepIdx !== -1) {
-      const insertPos = finRunSepIdx + '</w:r>'.length;
-      const dejaCoche = xml.substring(insertPos, Math.min(insertPos + 40, limite)).includes('☒');
-      if (!dejaCoche) {
-        xml = xml.substring(0, insertPos) + '<w:r><w:t>☒</w:t></w:r>' + xml.substring(insertPos);
-      }
-    }
+  // État du champ : « checked » (état courant) ET « default » (état initial).
+  // On ne rajoute PLUS de ☒ en texte après le run "separate" : LibreOffice
+  // rend le widget du checkbox À PARTIR de son état — l'ancien ☒ texte
+  // s'affichait EN PLUS du widget coché, d'où le « ☒☒ » doublé constaté sur
+  // les PDF générés (gabarits T3E et Leclerc).
+  let patched = champ.ffXml;
+  if (!patched.includes('w:default w:val="1"')) {
+    patched = /<w:default[^/]*\/>/.test(patched)
+      ? patched.replace(/<w:default[^/]*\/>/, '<w:default w:val="1"/>')
+      : patched.replace('<w:checkBox>', '<w:checkBox><w:default w:val="1"/>');
   }
-
-  // 2. Coché par défaut (au cas où Word recalcule le champ)
-  if (!champ.ffXml.includes('w:default w:val="1"')) {
-    const patched = /<w:default[^/]*\/>/.test(champ.ffXml)
-      ? champ.ffXml.replace(/<w:default[^/]*\/>/, '<w:default w:val="1"/>')
-      : champ.ffXml.replace('<w:checkBox>', '<w:checkBox><w:default w:val="1"/>');
+  if (!patched.includes('w:checked')) {
+    patched = patched.replace('<w:checkBox>', '<w:checkBox><w:checked w:val="1"/>');
+  }
+  if (patched !== champ.ffXml) {
     xml = xml.substring(0, champ.ffStart) + patched + xml.substring(champ.ffEnd);
   }
 
