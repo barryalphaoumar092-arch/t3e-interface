@@ -250,7 +250,9 @@ RÈGLE IMPORTANTE : préfère toujours un libellé de champ précis qui se termi
 Utilise ces titres de section comme contexte pour choisir la bonne occurrence quand un libellé comme "Nom :" apparaît plusieurs fois dans le document — FOURNISSEUR/FABRICANT va sous le "Nom :" de la section fournisseur/manufacturier, jamais sous celui de SOUS-TRAITANT ou ENTREPRENEUR (qui désignent T3E elle-même).
 EXCEPTION : certains champs demandés (ex: ARCHITECTE, NOM_ETABLISSEMENT) correspondent eux-mêmes à un titre de section ou une case du document (ex: un bloc "ARCHITECTE" tout seul, sans sous-champ ":" en dessous, prévu pour recevoir directement le nom/coordonnées de la firme). Dans ce cas précis — quand AUCUN sous-champ ":" n'existe sous ce titre pour ce type d'information — utilise directement ce titre comme point d'insertion.
 Si deux champs correspondent au même libellé combiné (ex: "Devis (section et article)"), donne le même index aux deux.
-Ne réponds jamais avec un index qui n'est pas un libellé (évite les longs paragraphes de texte légal).`;
+Ne réponds jamais avec un index qui n'est pas un libellé (évite les longs paragraphes de texte légal).
+RÈGLE STRICTE : si AUCUN emplacement de la BONNE section n'existe pour un champ (ex: FABRICANT alors que le document n'a aucune case Fabricant/Manufacturier), réponds null pour ce champ — ne le place JAMAIS dans une section d'un autre intervenant (mettre le fabricant sous SOUS-TRAITANT ou ENTREPRENEUR est une erreur grave sur un document officiel). null vaut toujours mieux qu'une mauvaise section.
+Ne donne jamais à deux champs DIFFÉRENTS (hors cas du libellé combiné ci-dessus) le même index : leurs valeurs s'écriraient l'une par-dessus l'autre.`;
 
   const userContent = `Textes du document (index) texte :
 ${runsTexte.map((t, i) => `[${i}] ${t}`).join('\n')}

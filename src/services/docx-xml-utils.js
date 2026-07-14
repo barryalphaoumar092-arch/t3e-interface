@@ -191,8 +191,13 @@ async function placerChampsRestantsViaIA(xml, champsNonTrouves) {
 
   // Plusieurs champs peuvent partager le même libellé combiné (ex: "Devis
   // (section et article)" pour SECTION + ARTICLE) — on les regroupe pour ne
-  // faire qu'une seule insertion par run.
-  const valeursParRun = {};
+  // faire qu'une seule insertion. Le regroupement se fait sur la POSITION
+  // D'INSERTION RÉSOLUE et non sur l'index de run : deux runs différents
+  // peuvent se résoudre vers la MÊME cellule de saisie (pointillée), et deux
+  // insertions séparées au même endroit collaient les valeurs sans séparateur
+  // (bug constaté : « Soprema CanadaToitures Trois Étoiles » dans le même
+  // champ Nom sur un gabarit Leclerc).
+  const insertions = {};
   const restants = {};
   for (const champ of Object.keys(champsNonTrouves)) {
     const idxRun = mapping[champ];
@@ -200,18 +205,20 @@ async function placerChampsRestantsViaIA(xml, champsNonTrouves) {
       restants[champ] = champsNonTrouves[champ];
       continue;
     }
-    (valeursParRun[idxRun] = valeursParRun[idxRun] || []).push(champsNonTrouves[champ]);
+    const { pos, inline } = resoudrePositionInsertion(xml, positions[idxRun]);
+    (insertions[pos] = insertions[pos] || { inline, valeurs: [] }).valeurs.push(champsNonTrouves[champ]);
   }
   if (Object.keys(restants).length > 0) {
     console.warn('[docx-xml-utils] IA n\'a pas trouvé d\'emplacement pour:', Object.keys(restants).join(', '));
   }
 
   // Insertion en partant de la fin du document pour ne pas décaler les
-  // positions déjà calculées pour les runs précédents.
-  const indices = Object.keys(valeursParRun).map(Number).sort((a, b) => b - a);
-  for (const idx of indices) {
-    const valeurTexte = valeursParRun[idx].join(' / ');
-    const { pos, inline } = resoudrePositionInsertion(xml, positions[idx]);
+  // positions déjà calculées ; les valeurs partageant une position sont
+  // dédupliquées puis jointes par « / ».
+  const positionsTriees = Object.keys(insertions).map(Number).sort((a, b) => b - a);
+  for (const pos of positionsTriees) {
+    const { inline, valeurs } = insertions[pos];
+    const valeurTexte = [...new Set(valeurs)].join(' / ');
     xml = inserer(xml, pos, inline, valeurTexte);
   }
   return { xml, restants };

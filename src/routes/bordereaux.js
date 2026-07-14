@@ -896,7 +896,9 @@ router.post('/analyser', async (req, res) => {
       FABRICANT: mat.fabricant || '',
       FOURNISSEUR: mat.fournisseur || '',
       SECTION: ctx.SECTION || '',
-      ARTICLE: ctx.ARTICLE || '',
+      // Numéro seul (« 2.4.1.2 », « 5 ») même si l'IA a renvoyé le numéro
+      // suivi du titre de l'article — même règle que bordereau-filler.
+      ARTICLE: ((ctx.ARTICLE || '').match(/\d+(?:\.\d+)*/) || [ctx.ARTICLE || ''])[0],
       DESCRIPTION: mat.nom,
       USAGE: ctx.USAGE || '',
       REMARQUE: '',

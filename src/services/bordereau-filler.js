@@ -195,6 +195,15 @@ async function remplirBordereau(champs, buf) {
   const fab = coordonneesConnues(champs.FABRICANT);
   if (fab) champs = { ...champs, FABRICANT: fab.nom };
 
+  // ARTICLE toujours EN CHIFFRES, quel que soit le gabarit : l'IA renvoie
+  // parfois le numéro suivi du titre complet (« 5 MEMBRANE ET SOLIN DE
+  // FINITION ÉLASTOMÈRE ») — sur le document final on ne veut que « 5 »
+  // (ou « 2.4.1.2 »), comme sur les bordereaux remplis à la main.
+  if (champs.ARTICLE) {
+    const num = String(champs.ARTICLE).match(/\d+(?:\.\d+)*/);
+    if (num) champs = { ...champs, ARTICLE: num[0] };
+  }
+
   // Gabarit « FICHE D'IDENTIFICATION » (architectes tiers) → chemin dédié,
   // les libellés/blocs étant trop différents du gabarit T3E.
   if (estFicheIdentification(xml)) {
@@ -208,6 +217,10 @@ async function remplirBordereau(champs, buf) {
   xml = cocherCaseACocher(xml, 'Architecture');
   xml = cocherCaseACocher(xml, 'Fiche technique');
   xml = cocherCaseACocher(xml, 'Tel que plans et devis');
+  // Variante du même concept sur les gabarits d'architectes tiers (ex.
+  // Leclerc : « Tel que documents ») — au plus une des deux formulations
+  // existe dans un gabarit donné, donc aucune double coche possible.
+  xml = cocherCaseACocher(xml, 'Tel que documents');
 
   // Labels plus longs EN PREMIER pour eviter correspondances partielles
   const NBSP = ' ';
@@ -244,10 +257,21 @@ async function remplirBordereau(champs, buf) {
   ];
 
   const champsNonTrouves = {};
+  const valeursPlacees = new Set();
   for (const [champKey, label, valeur] of remplacements) {
     const resultat = remplirChampDansXml(xml, label, valeur);
     xml = resultat.xml;
     if (!resultat.trouve && valeur) champsNonTrouves[champKey] = valeur;
+    else if (resultat.trouve && valeur) valeursPlacees.add(valeur);
+  }
+
+  // Un champ introuvable dont la valeur est IDENTIQUE à celle d'un champ déjà
+  // placé ne passe pas au repli IA : celui-ci réécrirait le même texte à un
+  // second endroit — souvent le même run (bug constaté : TITRE === DESCRIPTION
+  // sur la plupart des produits → « Soprastar Flam GR FRSoprastar Flam GR FR »
+  // dans le champ Description d'un gabarit Leclerc).
+  for (const [cle, valeur] of Object.entries(champsNonTrouves)) {
+    if (valeursPlacees.has(valeur)) delete champsNonTrouves[cle];
   }
 
   if (Object.keys(champsNonTrouves).length > 0) {
