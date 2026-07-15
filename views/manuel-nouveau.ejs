@@ -76,6 +76,10 @@
               <input type="file" name="attestation_ccq" id="inputCcq" class="form-control" accept=".pdf">
             </div>
             <div class="col-md-6">
+              <label class="form-label fw-bold">Photo de couverture <small class="text-muted fw-normal">(image du bâtiment, affichée sur la page couverture)</small></label>
+              <input type="file" name="photo_couverture" id="inputPhotoCouv" class="form-control" accept=".jpg,.jpeg,.png">
+            </div>
+            <div class="col-md-6">
               <label class="form-label fw-bold">Brochure marketing <small class="text-muted fw-normal">(défaut BP « Guide des toitures » si aucun fichier propre au projet)</small></label>
               <input type="file" name="brochure_marketing" id="inputBrochure" class="form-control" accept=".pdf">
               <div class="form-check mt-2">
@@ -144,6 +148,7 @@ formUpload.addEventListener('submit', function(e) {
     brochure_marketing: document.getElementById('inputBrochure'),
     attestation_cnesst: document.getElementById('inputCnesst'),
     attestation_ccq: document.getElementById('inputCcq'),
+    photo_couverture: document.getElementById('inputPhotoCouv'),
   };
 
   resultats.multiples = {};

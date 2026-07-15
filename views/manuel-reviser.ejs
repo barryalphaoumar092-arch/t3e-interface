@@ -217,7 +217,7 @@
     <div class="card mb-4">
       <div class="card-header bg-light py-2"><h6 class="mb-0"><i class="bi bi-paperclip"></i> Documents fournis</h6></div>
       <div class="card-body">
-        <% var labelsDocs = { dessins_atelier: 'Dessins d\'atelier', fiches_techniques: 'Fiches techniques', fiches_securite: 'Fiches de sécurité (SDS)', plans_as_built: 'Plans tels que construits', plan: 'Plan(s) du projet (repli si pas d\'as-built)', garantie_t3e: 'Garantie T3E', garantie_fabricant: 'Garantie fabricant', attestation_cnesst: 'Attestation CNESST', attestation_ccq: 'Attestation CCQ (aucun défaut — par projet)', brochure_marketing: 'Brochure marketing' }; %>
+        <% var labelsDocs = { dessins_atelier: 'Dessins d\'atelier', fiches_techniques: 'Fiches techniques', fiches_securite: 'Fiches de sécurité (SDS)', plans_as_built: 'Plans tels que construits', plan: 'Plan(s) du projet (repli si pas d\'as-built)', garantie_t3e: 'Garantie T3E', garantie_fabricant: 'Garantie fabricant', attestation_cnesst: 'Attestation CNESST', attestation_ccq: 'Attestation CCQ (aucun défaut — par projet)', brochure_marketing: 'Brochure marketing', photo_couverture: 'Photo de couverture (image)' }; %>
         <% var avecDefaut = ['attestation_cnesst', 'garantie_t3e', 'brochure_marketing']; %>
         <% Object.keys(labelsDocs).forEach(function(cle) { %>
         <div class="mb-1">
@@ -253,6 +253,7 @@
             <div class="col-md-6"><label class="form-label small">Brochure marketing</label><input type="file" id="ajoutBrochure" class="form-control form-control-sm" accept=".pdf"></div>
             <div class="col-md-6"><label class="form-label small">Attestation CNESST</label><input type="file" id="ajoutCnesst" class="form-control form-control-sm" accept=".pdf"></div>
             <div class="col-md-6"><label class="form-label small">Attestation CCQ (spécifique à ce projet)</label><input type="file" id="ajoutCcq" class="form-control form-control-sm" accept=".pdf"></div>
+          <div class="col-md-6"><label class="form-label small">Photo de couverture (jpg/png)</label><input type="file" id="ajoutPhotoCouv" class="form-control form-control-sm" accept=".jpg,.jpeg,.png"></div>
           </div>
           <button type="submit" class="btn btn-outline-primary btn-sm mt-3" id="btnAjoutDocs">
             <i class="bi bi-upload"></i> Ajouter ces documents
@@ -308,6 +309,7 @@ formAjoutDocs.addEventListener('submit', function(e) {
     brochure_marketing: document.getElementById('ajoutBrochure'),
     attestation_cnesst: document.getElementById('ajoutCnesst'),
     attestation_ccq: document.getElementById('ajoutCcq'),
+    photo_couverture: document.getElementById('ajoutPhotoCouv'),
   };
 
   var taches = [];

@@ -24,6 +24,9 @@ const CATEGORIES_DOCUMENTS = [
   { cle: 'attestation_ccq', multiple: false },
   { cle: 'plan', multiple: true },
   { cle: 'brochure_marketing', multiple: false },
+  // Image (jpg/png) affichée encadrée sur la page couverture du manuel —
+  // voir dessinerCouverture (manuel-mise-en-page.js).
+  { cle: 'photo_couverture', multiple: false },
 ];
 
 // ══════════════════════════════════════════════════════════════

@@ -10,10 +10,11 @@ const { downloadBuffer, uploadBuffer, BUCKETS } = require('./storage');
 const { parsePdfBuffer, texteParPage } = require('./document-parser');
 const { remplirManuel } = require('./manuel-filler');
 const { convertirDocxEnPdf } = require('./docx-to-pdf');
+const { ajouterBufferAuDocument, estamperPagesAsBuilt } = require('./pdf-manuel-assembleur');
 const {
-  preparerPolices, ajouterBufferAuDocument, creerPageTitre,
-  estamperPagesAsBuilt, construireSommaireEtNumeroter,
-} = require('./pdf-manuel-assembleur');
+  preparerPolices, dessinerCouverture, dessinerSectionRedigee,
+  dessinerPageSeparatrice, construireSommaireEtNumeroter,
+} = require('./manuel-mise-en-page');
 
 // Documents par defaut (reutilises sur tous les manuels, sauf remplacement
 // projet par projet) — a uploader une fois dans le bucket "documents" via la
@@ -130,58 +131,159 @@ async function genererEtSauvegarderManuel(db, id) {
 
   let pdfFinal;
   try {
-    const pdfDoc = await PDFDocument.load(manuelPdfBuf);
+    // ── Assemblage « modèle Norma McAlister » (2026-07-15) : le document
+    // final est reconstruit de zéro en pdf-lib (couverture avec photo,
+    // sections rédigées stylées, pages séparatrices, sommaire pointillé).
+    // Le .docx converti ne fournit plus QUE la section « Directives
+    // d'exploitation et d'entretien » (texte long + liste de contrôle avec
+    // les champs Commentaire 1-9), localisée par son titre.
+    const pdfDoc = await PDFDocument.create();
     const fonts = await preparerPolices(pdfDoc);
-    const tailleStandard = pdfDoc.getPage(0).getSize();
 
-    // Sections 1 a 5 deja dans le .docx : leur page de depart reelle est
-    // localisee par titre exact (pdf-parse) plutot que supposee fixe, car
-    // Description/Details/Directives ont une longueur variable.
-    const pagesTexteBase = await texteParPage(manuelPdfBuf);
-    const HEADINGS_BASE = [
-      'Liste des intervenants',
-      'Liste des fournisseurs et sous-traitants',
-      'Description des travaux exécutés',
-      'Détails et imprévus',
-      "Directives d'exploitation et d'entretien",
-    ];
-    const sections = HEADINGS_BASE.map((label, i) => {
-      const idx = pagesTexteBase.findIndex((t, pageIdx) => pageIdx >= 2 && t.includes(label));
-      return { label, pageDebut: idx === -1 ? (3 + i) : idx + 1 };
-    });
-
-    const sectionsCroissantes = sections.every((s, i) => i === 0 || s.pageDebut > sections[i - 1].pageDebut);
-    if (!sectionsCroissantes) {
-      console.error('[manuel-generateur] ANOMALIE sommaire : pages des sections 1-5 non croissantes (%s) - repli sur la numerotation sequentielle par defaut.',
-        JSON.stringify(sections));
-      sections.forEach((s, i) => { s.pageDebut = 3 + i; });
+    // Photo de couverture (catégorie photo_couverture, image jpg/png)
+    let photoImage = null;
+    try {
+      const photoBufs = await chargerBuffersCategorie(documents.photo_couverture);
+      const photoBuf = photoBufs[0];
+      if (photoBuf) {
+        if (photoBuf[0] === 0xFF && photoBuf[1] === 0xD8) photoImage = await pdfDoc.embedJpg(photoBuf);
+        else if (photoBuf[0] === 0x89 && photoBuf[1] === 0x50) photoImage = await pdfDoc.embedPng(photoBuf);
+      }
+    } catch (e) {
+      console.error('[manuel-generateur] Photo de couverture illisible, couverture sans photo :', e.message);
     }
 
-    async function ajouterSection(label, buffers, { tamponner = false } = {}) {
+    const dossier = champs.NUMERO_DOSSIER || '';
+    const sousTitre = champs.NOM_DU_PROJET || '';
+
+    // 1. Couverture + 2. placeholder du sommaire (remplacé à la fin)
+    dessinerCouverture(pdfDoc, fonts, champs, photoImage);
+    pdfDoc.addPage([612, 792]);
+
+    const sections = [];
+    const sectionRedigee = (label, options) => {
+      sections.push({ label, pageDebut: pdfDoc.getPageCount() + 1 });
+      dessinerSectionRedigee(pdfDoc, fonts, {
+        numero: sections.length, titre: label, sousTitre, dossier, ...options,
+      });
+    };
+
+    // Sections rédigées 1-4 (mêmes contenus que l'ancien .docx, mis en page)
+    sectionRedigee('Liste des intervenants', {
+      intro: { texte: "Principaux intervenants liés au projet et à l'exécution des travaux." },
+      blocs: [
+        { titre: 'Propriétaire', texte: champs.PROPRIETAIRE },
+        { titre: 'Consultant', texte: champs.CONSULTANT },
+        { titre: 'Entrepreneur général', texte: champs.ENTREPRENEUR_GENERAL },
+        { titre: 'Entrepreneur couvreur', texte: champs.ENTREPRENEUR_COUVREUR },
+      ].filter((b) => b.texte),
+    });
+
+    const blocsFournisseurs = [
+      { titre: 'Fournisseur 1', texte: champs.FOURNISSEUR_1 },
+      { titre: 'Fournisseur 2', texte: champs.FOURNISSEUR_2 },
+      { titre: 'Fournisseur 3', texte: champs.FOURNISSEUR_3 },
+      { titre: 'Fournisseur 4', texte: champs.FOURNISSEUR_4 },
+      { titre: 'Sous-traitant 1', texte: champs.SOUS_TRAITANT_1 },
+      { titre: 'Sous-traitant 2', texte: champs.SOUS_TRAITANT_2 },
+    ].filter((b) => b.texte);
+    if (blocsFournisseurs.length > 0) {
+      sectionRedigee('Liste des fournisseurs et sous-traitants', {
+        intro: { texte: 'Fournisseurs de matériaux et sous-traitants ayant participé aux travaux.' },
+        blocs: blocsFournisseurs,
+      });
+    }
+
+    const blocsDescription = [{ titre: 'Description', texte: champs.DESCRIPTION_TRAVAUX || '(à compléter)' }];
+    if (champs.ELEMENTS_CLES) {
+      const items = String(champs.ELEMENTS_CLES).split('\n').map((l) => l.trim()).filter(Boolean);
+      if (items.length > 0) blocsDescription.push({ titre: 'Éléments clés', items });
+    }
+    sectionRedigee('Description des travaux exécutés', {
+      intro: {
+        titre: 'Composition complète de la toiture installée',
+        texte: 'Telle que décrite au devis (coupe-vapeur, isolant et épaisseur/pente, panneaux de support, membrane(s), relevés, solins, etc.).',
+      },
+      blocs: blocsDescription,
+    });
+
+    sectionRedigee('Détails et imprévus', {
+      blocs: [{
+        titre: 'Détails et imprévus',
+        texte: champs.DETAILS_IMPREVUS || 'Aucun imprévu majeur — les travaux se sont déroulés conformément aux documents contractuels.',
+      }],
+    });
+
+    // 5. Directives d'exploitation et d'entretien : pages reprises du .docx
+    // converti (texte long + liste de contrôle Commentaire 1-9). On coupe
+    // avant l'éventuel titre « Garanties » résiduel du gabarit (section vide,
+    // remplacée ici par une vraie page séparatrice).
+    const pagesTexteBase = await texteParPage(manuelPdfBuf);
+    let debutDirectives = pagesTexteBase.findIndex((t) => /Directives d.exploitation/i.test(t || ''));
+    if (debutDirectives === -1) {
+      console.error('[manuel-generateur] Titre « Directives » introuvable dans le .docx converti — reprise des pages 3+ par défaut.');
+      debutDirectives = Math.min(2, pagesTexteBase.length - 1);
+    }
+    let finDirectives = pagesTexteBase.length;
+    for (let i = debutDirectives + 1; i < pagesTexteBase.length; i++) {
+      const t = (pagesTexteBase[i] || '').trim();
+      if (t.length < 220 && /Garanties/i.test(t)) { finDirectives = i; break; }
+    }
+    sections.push({ label: "Directives d'exploitation et d'entretien", pageDebut: pdfDoc.getPageCount() + 1 });
+    const docxDoc = await PDFDocument.load(manuelPdfBuf);
+    const indices = [];
+    for (let i = debutDirectives; i < finDirectives; i++) indices.push(i);
+    const pagesDirectives = await pdfDoc.copyPages(docxDoc, indices);
+    for (const p of pagesDirectives) pdfDoc.addPage(p);
+
+    // Brochure marketing : matériel accessoire, sans titre ni entrée de
+    // sommaire, toujours juste après les directives.
+    for (const buf of brochureBufs) await ajouterBufferAuDocument(pdfDoc, buf);
+
+    // Catégories de documents joints : page séparatrice stylée + contenu
+    async function ajouterSection(label, buffers, { tamponner = false, note } = {}) {
       if (!buffers || buffers.length === 0) return;
       sections.push({ label, pageDebut: pdfDoc.getPageCount() + 1 });
-      creerPageTitre(pdfDoc, fonts, label, tailleStandard);
+      dessinerPageSeparatrice(pdfDoc, fonts, {
+        numero: sections.length, titre: label,
+        sousTitre: [sousTitre, dossier ? 'Dossier ' + dossier : ''].filter(Boolean).join('  ·  '),
+        note,
+      });
       for (const buf of buffers) {
         const pagesAjoutees = await ajouterBufferAuDocument(pdfDoc, buf);
         if (tamponner) estamperPagesAsBuilt(fonts, pagesAjoutees);
       }
     }
 
-    // Brochure marketing : materiel accessoire, sans titre ni entree de
-    // sommaire, toujours juste apres Directives d'exploitation et d'entretien.
-    for (const buf of brochureBufs) await ajouterBufferAuDocument(pdfDoc, buf);
+    // Garanties fusionnées en UNE section (comme le modèle) : garantie de
+    // l'entrepreneur (T3E) puis garantie(s) du fabricant.
+    await ajouterSection('Garanties', [...garantieT3EBufs, ...garantieBufs], {
+      note: "Cette section contient les garanties émises pour ce projet : garantie de l'entrepreneur couvreur (Toitures Trois Étoiles Inc.) et garantie du fabricant.",
+    });
+    await ajouterSection("Manuel d'entretien préventif", manuelEntretienBuf ? [manuelEntretienBuf] : [], {
+      note: "Cette section contient le manuel d'entretien préventif joint au dossier.",
+    });
+    await ajouterSection('Attestation de conformité CNESST', attestationCnesstBufs, {
+      note: 'Cette section contient l\'attestation de conformité délivrée par la CNESST.',
+    });
+    await ajouterSection('Attestation de conformité CCQ', attestationCcqBufs, {
+      note: 'Cette section contient l\'attestation de conformité délivrée par la Commission de la construction du Québec.',
+    });
+    await ajouterSection("Dessins d'atelier", dessinsAtelierBufs, {
+      note: "Cette section contient les dessins d'atelier approuvés pour ce projet.",
+    });
+    await ajouterSection('Fiches techniques', fichesTechniquesBufs, {
+      note: 'Cette section contient les fiches techniques des matériaux installés.',
+    });
+    await ajouterSection('Fiches de sécurité (SDS)', fichesSecuriteBufs, {
+      note: 'Cette section contient les fiches de données de sécurité (SDS) des produits utilisés.',
+    });
+    await ajouterSection('Plans tels que construits (as-built)', plansAsBuiltBufs, {
+      tamponner: true,
+      note: 'Cette section contient les plans tels que construits (as-built) du projet.',
+    });
 
-    await ajouterSection('Garantie T3E', garantieT3EBufs);
-    await ajouterSection('Garantie du fabricant', garantieBufs);
-    await ajouterSection("Manuel d'entretien préventif", manuelEntretienBuf ? [manuelEntretienBuf] : []);
-    await ajouterSection('Attestation de conformité CNESST', attestationCnesstBufs);
-    await ajouterSection('Attestation de conformité CCQ', attestationCcqBufs);
-    await ajouterSection("Dessins d'atelier", dessinsAtelierBufs);
-    await ajouterSection('Fiches techniques', fichesTechniquesBufs);
-    await ajouterSection('Fiches de sécurité (SDS)', fichesSecuriteBufs);
-    await ajouterSection('Plans tels que construits (as-built)', plansAsBuiltBufs, { tamponner: true });
-
-    await construireSommaireEtNumeroter(pdfDoc, sections);
+    await construireSommaireEtNumeroter(pdfDoc, sections, { dossier, sousTitre });
 
     pdfFinal = Buffer.from(await pdfDoc.save());
   } catch (e) {
