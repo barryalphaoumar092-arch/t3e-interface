@@ -25,6 +25,7 @@ const BUCKETS = {
   MANUELS: 'manuels-fin-chantier',
   SEAO: 'appels-offres-seao',
   BORDEREAUX_FT_PROJET: 'bordereaux-fiches-projet',
+  BORDEREAUX_GENERES: 'bordereaux-generes',
 };
 
 // Supabase Storage rejette les cles avec accents/caracteres speciaux.

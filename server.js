@@ -123,6 +123,41 @@ app.post('/internal/generer-manuel', async (req, res) => {
   }
 });
 
+// Même principe que /internal/generer-manuel, mais pour la génération
+// complète des BORDEREAUX (N produits : téléchargement FT + remplissage .docx
+// + conversion LibreOffice + fusion pdf-lib + ZIP) — la boucle séquentielle
+// dépassait le plafond dur de 60 s des fonctions Vercel dès quelques produits
+// (FUNCTION_INVOCATION_TIMEOUT signalé avec 8 produits). Répond 202 puis
+// continue en arrière-plan ; genererEtSauvegarderBordereaux met à jour la DB
+// et dépose le ZIP dans Supabase Storage (bucket bordereaux-generes).
+app.post('/internal/generer-bordereaux', async (req, res) => {
+  const secret = (process.env.CONVERT_SERVICE_SECRET || '').trim();
+  const fourni = typeof req.headers['x-convert-secret'] === 'string'
+    ? req.headers['x-convert-secret'].trim() : '';
+  const valide = secret.length > 0 && fourni.length > 0
+    && Buffer.byteLength(fourni) === Buffer.byteLength(secret)
+    && crypto.timingSafeEqual(Buffer.from(fourni), Buffer.from(secret));
+  if (!valide) {
+    console.error(`[convert-auth] refuse — secret configure: ${secret.length} caracteres, recu: ${fourni.length} caracteres`);
+    return res.status(403).send('Forbidden');
+  }
+
+  const bordereauId = parseInt(req.body && req.body.bordereauId);
+  if (!bordereauId) return res.status(400).json({ error: 'bordereauId manquant' });
+
+  res.status(202).json({ ok: true });
+
+  try {
+    await initDb();
+    const db = getDb();
+    const { genererEtSauvegarderBordereaux } = require('./src/routes/bordereaux');
+    const resultat = await genererEtSauvegarderBordereaux(db, bordereauId);
+    if (!resultat.ok) console.error('[internal/generer-bordereaux] echec pour', bordereauId, ':', resultat.erreur);
+  } catch (e) {
+    console.error('[internal/generer-bordereaux] exception pour', bordereauId, ':', e.message);
+  }
+});
+
 // Synchronisation hebdomadaire des appels d'offres SEAO (voir vercel.json,
 // section "crons"). Vercel ajoute automatiquement l'en-tete
 // "Authorization: Bearer $CRON_SECRET" sur les appels cron declenches par sa

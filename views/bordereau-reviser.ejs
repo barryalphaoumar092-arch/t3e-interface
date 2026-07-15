@@ -20,6 +20,23 @@
       </span>
     </div>
 
+    <% if (generation && generation.statut === 'en_cours') { %>
+    <div class="alert alert-info">
+      <i class="bi bi-hourglass-split"></i> Génération en cours en arrière-plan (démarrée à <%= new Date(generation.demarre_le).toLocaleTimeString('fr-CA') %>).
+      Ça peut prendre quelques minutes avec plusieurs produits — actualisez cette page pour voir le résultat.
+      <button type="button" class="btn btn-outline-primary btn-sm ms-2" onclick="location.reload()"><i class="bi bi-arrow-clockwise"></i> Actualiser</button>
+    </div>
+    <% } else if (generation && generation.statut === 'erreur') { %>
+    <div class="alert alert-danger">
+      <i class="bi bi-exclamation-octagon"></i> La dernière génération a échoué : <%= generation.erreur %>. Corrigez si besoin puis relancez « Générer ».
+    </div>
+    <% } else if (generation && generation.statut === 'termine') { %>
+    <div class="alert alert-success d-flex justify-content-between align-items-center">
+      <span><i class="bi bi-check-circle"></i> Bordereaux générés (<%= generation.nom_fichier %>).</span>
+      <a href="/bordereaux/zip/<%= bordereau.id %>" class="btn btn-success btn-sm"><i class="bi bi-download"></i> Télécharger le ZIP</a>
+    </div>
+    <% } %>
+
     <% if (bordereau.statut === 'revise') { %>
     <div class="card border-warning mb-3">
       <div class="card-header bg-warning bg-opacity-25 py-2">

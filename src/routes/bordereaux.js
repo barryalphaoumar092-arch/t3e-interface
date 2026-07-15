@@ -10,7 +10,7 @@ const { convertirDocxEnPdf } = require('../services/docx-to-pdf');
 const { convertirDocEnDocx, estDocLegacy, estDocxValide } = require('../services/doc-to-docx');
 const { PDFDocument } = require('pdf-lib');
 const JSZip = require('jszip');
-const { downloadBuffer, uploadBuffer, removeFile, listFiles, stripAccents, sanitizeKey, ensureBucket, BUCKETS } = require('../services/storage');
+const { downloadBuffer, uploadBuffer, removeFile, listFiles, stripAccents, sanitizeKey, ensureBucket, createSignedUrl, BUCKETS } = require('../services/storage');
 const { listerRepresentants, obtenirRepresentant } = require('../services/representants');
 const { INFOS_ENTREPRISE_T3E } = require('../services/infos-entreprise-t3e');
 
@@ -1001,6 +1001,7 @@ router.get('/reviser/:id', async (req, res) => {
     ftParFabricant,
     historique,
     representants: listerRepresentants(),
+    generation: data.generation || null,
   });
 });
 
@@ -1092,55 +1093,51 @@ router.post('/importer-ft/:id', express.urlencoded({ extended: true }), async (r
   res.redirect('/bordereaux/reviser/' + id);
 });
 
-// ── GÉNÉRER — remplir N .docx + FT → ZIP ──
-router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, res) => {
-  const db = req.db;
-  const id = parseInt(req.params.id);
+// ── GÉNÉRATION COMPLÈTE (remplir N .docx + FT → ZIP) — même principe que
+// genererEtSauvegarderManuel (manuel-generateur.js) : la requête de génération
+// est sauvegardée dans contenu.generation_requete par POST /generer/:id, puis
+// cette fonction fait tout le travail lourd (téléchargements FT, conversions
+// LibreOffice, fusions pdf-lib) et dépose le ZIP dans Supabase Storage. Elle
+// peut donc tourner soit en synchrone (dev local / repli), soit en
+// ARRIÈRE-PLAN sur l'instance Render via /internal/generer-bordereaux
+// (server.js) — la boucle séquentielle dépassait le plafond dur de 60 s des
+// fonctions Vercel dès ~3-4 produits (un aller-retour Render par conversion) :
+// FUNCTION_INVOCATION_TIMEOUT signalé par l'utilisateur avec 8 produits.
+// Ne lève jamais d'exception : { ok, erreur? }, et consigne l'échec dans
+// contenu.generation pour la page de révision.
+async function genererEtSauvegarderBordereaux(db, id) {
   const r = await db.execute({ sql: 'SELECT * FROM bordereaux WHERE id = ?', args: [id] });
-  if (r.rows.length === 0) return res.status(404).send('Bordereau introuvable');
-
+  if (r.rows.length === 0) return { ok: false, erreur: 'Bordereau introuvable' };
   const row = r.rows[0];
-  if (!row.template_data) {
-    return res.status(400).send('Le template .docx est manquant. Veuillez recommencer.');
+
+  let data;
+  try { data = JSON.parse(row.contenu); } catch (_) { data = {}; }
+  const requete = data.generation_requete;
+
+  async function marquerErreur(message) {
+    console.error('[bordereaux] Echec generation', id, ':', message);
+    try {
+      await db.execute({
+        sql: `UPDATE bordereaux SET contenu = ? WHERE id = ?`,
+        args: [JSON.stringify({ ...data, generation: { statut: 'erreur', erreur: message, quand: new Date().toISOString() } }), id],
+      });
+    } catch (_) {}
+    return { ok: false, erreur: message };
   }
+
+  if (!requete) return marquerErreur('Requête de génération introuvable (relancez « Générer »).');
+  if (!row.template_data) return marquerErreur('Le template .docx est manquant. Veuillez recommencer.');
 
   const bordereauBuffer = Buffer.from(row.template_data, 'base64');
 
-  // Récupérer les champs du formulaire pour chaque produit
-  const nomProjet = req.body.NOM_DU_PROJET || '';
-  const numProjet = req.body.NUMERO_DU_PROJET || '';
-  const nom = req.body.NOM || 'Toitures Trois Étoiles';
-  const specialite = req.body.SPECIALITE || 'COUVREUR';
-  const adresse = req.body.ADRESSE || '7550 Rue Saint-Patrick, Montréal, QC H8N 1V1';
-  // Champs sans equivalent dans le gabarit T3E, mais presents sur beaucoup de
-  // gabarits d'architectes tiers (ex: "Nom de l'ecole ou de l'etablissement",
-  // "ARCHITECTE") — extraits du devis a l'etape /analyser, editables ici.
-  const nomEtablissement = req.body.NOM_ETABLISSEMENT || '';
-  const architecte = req.body.ARCHITECTE || '';
-  const entrepreneurGeneral = req.body.ENTREPRENEUR_GENERAL || '';
-  const ingenieur = req.body.INGENIEUR || '';
-  // "Soumis par" (bas de page) : le representant T3E qui soumet le bordereau,
-  // choisi dans le menu deroulant de la page de revision (les 4 profils de
-  // representants.js — memes personnes que pour les soumissions SEAO). Si aucun
-  // representant n'est selectionne, on retombe sur le nom libre saisi pour
-  // l'historique (genere_par). Le meme nom sert au champ SOUMIS_PAR du document
-  // ET a la tracabilite (effectue_par) plus bas. "Reçu de l'entrepreneur le" :
-  // date de soumission, toujours la date du jour.
-  const representant = obtenirRepresentant(req.body.representant_id);
-  const soumisPar = representant
-    ? `${representant.prenom} ${representant.nom}`
-    : (req.body.genere_par || '').trim();
-  const recuEntrepreneurDate = new Date().toLocaleDateString('fr-CA', { year: 'numeric', month: 'long', day: 'numeric' });
-
-  // Les champs produit arrivent comme tableaux (TITRE[], FABRICANT[], etc.)
-  const titres = [].concat(req.body.TITRE || []);
-  const fabricants = [].concat(req.body.FABRICANT || []);
-  const fournisseurs = [].concat(req.body.FOURNISSEUR || []);
-  const sections = [].concat(req.body.SECTION || []);
-  const articles = [].concat(req.body.ARTICLE || []);
-  const descriptions = [].concat(req.body.DESCRIPTION || []);
-  const usages = [].concat(req.body.USAGE || []);
-  const ftSelections = [].concat(req.body.FT_FICHIER || []);
+  const {
+    nomProjet = '', numProjet = '', nom = 'Toitures Trois Étoiles',
+    specialite = 'COUVREUR', adresse = '7550 Rue Saint-Patrick, Montréal, QC H8N 1V1',
+    nomEtablissement = '', architecte = '', entrepreneurGeneral = '', ingenieur = '',
+    soumisPar = '', telephoneRepresentant = '', recuEntrepreneurDate = '',
+    titres = [], fabricants = [], fournisseurs = [], sections = [], articles = [],
+    descriptions = [], usages = [], ftSelections = [],
+  } = requete;
 
   const nbProduits = titres.length;
   console.log('[generer] Génération de', nbProduits, 'bordereaux pour', nomProjet);
@@ -1172,7 +1169,7 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
       INGENIEUR: ingenieur,
       // Coordonnées du bloc SOUS-TRAITANT sur les gabarits tiers (fiche
       // d'identification) : tél. du représentant choisi, téléc. corporatif T3E.
-      TELEPHONE: representant ? representant.telephone : '',
+      TELEPHONE: telephoneRepresentant,
       TELECOPIEUR: INFOS_ENTREPRISE_T3E.TELECOPIEUR_ENTREPRISE,
     };
 
@@ -1266,18 +1263,34 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
     zip.file('_DIAGNOSTIC.txt', diagnostic.join('\n'));
   }
 
+  // Déposer le ZIP dans Supabase Storage (le disque Vercel/Render est
+  // éphémère, et la réponse HTTP de l'appelant est peut-être déjà terminée
+  // dans le mode arrière-plan) — clé fixe par bordereau : une regénération
+  // remplace simplement le ZIP précédent.
+  const section = (numProjet || nomProjet || 'T3E').replace(/[^a-zA-Z0-9_-]/g, '-').substring(0, 30);
+  const nomZip = `Bordereaux_${section}_${ts}.zip`;
+  let zipBuffer;
+  try {
+    zipBuffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+    await ensureBucket(BUCKETS.BORDEREAUX_GENERES);
+    await uploadBuffer(BUCKETS.BORDEREAUX_GENERES, `${id}/bordereaux.zip`, zipBuffer, 'application/zip');
+  } catch (e) {
+    return marquerErreur('Sauvegarde du ZIP échouée : ' + e.message);
+  }
+
   // Mettre à jour la DB — la génération place le bordereau "En révision"
   // plutôt que directement "Approuvé" : une vraie étape de contrôle (voir
   // POST /confirmer/:id) est désormais nécessaire avant l'approbation.
-  // Le PDF/ZIP reste immédiatement téléchargeable (envoyé ci-dessous, comme
-  // avant) — seule la mention du statut en base change.
   // Tracabilite : le representant choisi (ou, a defaut, le nom libre) — meme
   // valeur que "Soumis par" pour rester coherent dans l'historique.
   const generePar = soumisPar;
   try {
     await db.execute({
-      sql: `UPDATE bordereaux SET statut = 'revise', session_actif = 0, numero_projet = ?, titre = ? WHERE id = ?`,
-      args: [numProjet, nomProjet, id],
+      sql: `UPDATE bordereaux SET statut = 'revise', session_actif = 0, numero_projet = ?, titre = ?, contenu = ? WHERE id = ?`,
+      args: [numProjet, nomProjet, JSON.stringify({
+        ...data,
+        generation: { statut: 'termine', nom_fichier: nomZip, quand: new Date().toISOString(), diagnostic: diagnostic.join('\n') || null },
+      }), id],
     });
     await db.execute({
       sql: `INSERT INTO historique_bordereaux (bordereau_id, action, ancien_statut, nouveau_statut, commentaire, effectue_par) VALUES (?, 'genere', ?, 'revise', ?, ?)`,
@@ -1285,12 +1298,133 @@ router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, 
     });
   } catch (_) {}
 
-  const section = (numProjet || nomProjet || 'T3E').replace(/[^a-zA-Z0-9_-]/g, '-').substring(0, 30);
-  const zipBuffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+  return { ok: true, nomFichier: nomZip };
+}
 
-  res.setHeader('Content-Type', 'application/zip');
-  res.setHeader('Content-Disposition', `attachment; filename="Bordereaux_${section}_${ts}.zip"`);
-  res.send(zipBuffer);
+// Déclenche la génération en ARRIÈRE-PLAN sur l'instance Render (voir
+// /internal/generer-bordereaux dans server.js) — même mécanique que
+// declencherGenerationDistante des manuels : on n'attend que l'accusé de
+// réception (202), le traitement continue côté Render (service persistant,
+// pas de plafond 60 s).
+async function declencherGenerationDistanteBordereaux(id) {
+  const url = (process.env.CONVERT_SERVICE_URL || '').trim();
+  const secret = (process.env.CONVERT_SERVICE_SECRET || '').trim();
+  if (!url || !secret) throw new Error('service distant non configuré (CONVERT_SERVICE_URL/SECRET manquant)');
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  try {
+    const resp = await fetch(url.replace(/\/$/, '') + '/internal/generer-bordereaux', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-convert-secret': secret },
+      body: JSON.stringify({ bordereauId: id }),
+      signal: controller.signal,
+    });
+    if (!resp.ok) {
+      const corps = await resp.text().catch(() => '');
+      throw new Error(`service distant a répondu ${resp.status}: ${corps.slice(0, 200)}`);
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// ── GÉNÉRER — sauvegarde la requête puis délègue à Render (ou génère sur place) ──
+router.post('/generer/:id', express.urlencoded({ extended: true }), async (req, res) => {
+  const db = req.db;
+  const id = parseInt(req.params.id);
+  const r = await db.execute({ sql: 'SELECT * FROM bordereaux WHERE id = ?', args: [id] });
+  if (r.rows.length === 0) return res.status(404).send('Bordereau introuvable');
+
+  const row = r.rows[0];
+  if (!row.template_data) {
+    return res.status(400).send('Le template .docx est manquant. Veuillez recommencer.');
+  }
+
+  // "Soumis par" (bas de page) : le representant T3E qui soumet le bordereau,
+  // choisi dans le menu deroulant de la page de revision (les 4 profils de
+  // representants.js — memes personnes que pour les soumissions SEAO). Si aucun
+  // representant n'est selectionne, on retombe sur le nom libre saisi pour
+  // l'historique (genere_par). "Reçu de l'entrepreneur le" : date du jour.
+  const representant = obtenirRepresentant(req.body.representant_id);
+  const soumisPar = representant
+    ? `${representant.prenom} ${representant.nom}`
+    : (req.body.genere_par || '').trim();
+
+  // Tout ce dont la génération a besoin est figé ici (les champs produit
+  // arrivent comme tableaux : TITRE[], FABRICANT[], etc.) — la fonction
+  // genererEtSauvegarderBordereaux relit cette requête depuis la DB, qu'elle
+  // tourne ici même ou en arrière-plan sur Render.
+  const requete = {
+    nomProjet: req.body.NOM_DU_PROJET || '',
+    numProjet: req.body.NUMERO_DU_PROJET || '',
+    nom: req.body.NOM || 'Toitures Trois Étoiles',
+    specialite: req.body.SPECIALITE || 'COUVREUR',
+    adresse: req.body.ADRESSE || '7550 Rue Saint-Patrick, Montréal, QC H8N 1V1',
+    // Champs sans equivalent dans le gabarit T3E, mais presents sur beaucoup
+    // de gabarits d'architectes tiers — extraits du devis a l'etape /analyser.
+    nomEtablissement: req.body.NOM_ETABLISSEMENT || '',
+    architecte: req.body.ARCHITECTE || '',
+    entrepreneurGeneral: req.body.ENTREPRENEUR_GENERAL || '',
+    ingenieur: req.body.INGENIEUR || '',
+    soumisPar,
+    telephoneRepresentant: representant ? representant.telephone : '',
+    recuEntrepreneurDate: new Date().toLocaleDateString('fr-CA', { year: 'numeric', month: 'long', day: 'numeric' }),
+    titres: [].concat(req.body.TITRE || []),
+    fabricants: [].concat(req.body.FABRICANT || []),
+    fournisseurs: [].concat(req.body.FOURNISSEUR || []),
+    sections: [].concat(req.body.SECTION || []),
+    articles: [].concat(req.body.ARTICLE || []),
+    descriptions: [].concat(req.body.DESCRIPTION || []),
+    usages: [].concat(req.body.USAGE || []),
+    ftSelections: [].concat(req.body.FT_FICHIER || []),
+  };
+
+  let data;
+  try { data = JSON.parse(row.contenu); } catch (_) { data = {}; }
+  // Marque "en cours" AVANT de déclencher, pour que la page de révision
+  // (rechargée juste après la redirection) affiche le bon statut même si
+  // Render n'a pas encore commencé.
+  await db.execute({
+    sql: `UPDATE bordereaux SET contenu = ? WHERE id = ?`,
+    args: [JSON.stringify({
+      ...data,
+      generation_requete: requete,
+      generation: { statut: 'en_cours', demarre_le: new Date().toISOString() },
+    }), id],
+  });
+
+  if (process.env.VERCEL) {
+    try {
+      await declencherGenerationDistanteBordereaux(id);
+      return res.redirect('/bordereaux/reviser/' + id);
+    } catch (e) {
+      console.error('[bordereaux] Délégation Render impossible, tentative en local :', e.message);
+      // On continue en synchrone plutôt que d'échouer — un petit bordereau
+      // (1-2 produits) passe sous les 60 s, et l'échec sera visible sinon.
+    }
+  }
+
+  const resultat = await genererEtSauvegarderBordereaux(db, id);
+  if (!resultat.ok) return res.status(500).send('Erreur : ' + resultat.erreur);
+  res.redirect('/bordereaux/zip/' + id);
+});
+
+// Télécharge le dernier ZIP généré (déposé dans Supabase Storage par
+// genererEtSauvegarderBordereaux) via une URL signée temporaire.
+router.get('/zip/:id', async (req, res) => {
+  const id = parseInt(req.params.id);
+  const r = await req.db.execute({ sql: 'SELECT contenu FROM bordereaux WHERE id = ?', args: [id] });
+  if (r.rows.length === 0) return res.status(404).send('Bordereau introuvable');
+  let data;
+  try { data = JSON.parse(r.rows[0].contenu); } catch (_) { data = {}; }
+  const nomZip = (data.generation && data.generation.nom_fichier) || `Bordereaux_${id}.zip`;
+  try {
+    const url = await createSignedUrl(BUCKETS.BORDEREAUX_GENERES, `${id}/bordereaux.zip`, 300, nomZip);
+    res.redirect(url);
+  } catch (e) {
+    res.status(404).send('ZIP introuvable ou pas encore généré.');
+  }
 });
 
 router.get('/telecharger/:id', async (req, res) => {
@@ -1322,3 +1456,6 @@ router.post('/supprimer-plusieurs', express.urlencoded({ extended: true }), asyn
 });
 
 module.exports = router;
+// Exposée pour l'endpoint interne /internal/generer-bordereaux (server.js) —
+// même mécanique que genererEtSauvegarderManuel (manuel-generateur.js).
+module.exports.genererEtSauvegarderBordereaux = genererEtSauvegarderBordereaux;
