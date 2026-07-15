@@ -67,6 +67,45 @@ function estFicheIdentification(xml) {
     || (xml.includes('SOUS-TRAITANT') && xml.includes('SPÉCIALITÉ (discipline)'));
 }
 
+// Titres de blocs d'intervenants de ce type de gabarit — servent de bornes
+// de portée (fin du bloc courant = prochain titre) pour les gardes et les
+// recherches scopées ci-dessous.
+const TITRES_BLOCS_FICHE = ['PROPRIÉTAIRE', 'ARCHITECTE', 'INGÉNIEUR', 'INGENIEUR',
+  'ENTREPRENEUR GÉNÉRAL', 'SOUS-TRAITANT', 'FOURNISSEUR', 'FABRICANT', 'PROJET'];
+
+// Fin de la portée d'un bloc : prochain titre de bloc, prochain libellé fixe
+// du gabarit (RÉVISION, RÉFÉRENCE…, REMARQUE, SPÉCIALITÉ) ou fin de tableau —
+// le premier atteint. Sans ces libellés fixes, la garde blocDejaRempli
+// compterait leur texte comme du « contenu » du bloc précédent.
+function finDeBloc(xml, depuis) {
+  const candidats = TITRES_BLOCS_FICHE
+    .concat(['RÉVISION', 'RÉFÉRENCE AU PLAN', 'RÉFÉRENCE AU DEVIS', 'REMARQUE', 'SPÉCIALITÉ', '</w:tbl>'])
+    .map((m) => xml.indexOf(m, depuis))
+    .filter((i) => i !== -1);
+  return candidats.length ? Math.min(...candidats) : xml.length;
+}
+
+// Certains gabarits de fiche d'identification arrivent DÉJÀ PRÉ-REMPLIS par
+// l'architecte (ex. EPA / CPE Les Tourterelles : blocs PROJET, PROPRIÉTAIRE,
+// ARCHITECTE, INGENIEUR, ENTREPRENEUR GÉNÉRAL imprimés dans le gabarit).
+// Écrire par-dessus duplique le texte et pousse les dernières lignes hors du
+// cadre (constaté : « J0P 1W0 », « T. 450-451-0025 » coupés en deux). On ne
+// remplit donc un bloc d'intervenant QUE s'il est encore vide : on regarde le
+// texte visible entre le libellé et le prochain titre de bloc, débarrassé des
+// sous-libellés pré-imprimés (Responsable, T., Adresse…) — s'il reste de la
+// substance, le bloc est déjà rempli.
+function blocDejaRempli(xml, label) {
+  const idx = xml.indexOf(label);
+  if (idx === -1) return false;
+  const fin = finDeBloc(xml, idx + label.length);
+  const texte = (xml.slice(idx + label.length, fin).match(/<w:t[^>]*>([^<]*)<\/w:t>/g) || [])
+    .map((t) => t.replace(/<[^>]+>/g, ''))
+    .join(' ')
+    .replace(/Chargée de projet|Responsable|Téléc\.?|Tél\.?|Adresse|No\. Projet|T\./g, '')
+    .replace(/[:()_\s ]/g, '');
+  return texte.length >= 8;
+}
+
 async function remplirFicheIdentification(champs, xml, zip) {
   const nonTrouves = {};
   const fill = (cle, label, valeur, depart = 0) => {
@@ -79,48 +118,94 @@ async function remplirFicheIdentification(champs, xml, zip) {
     xml = r.xml;
     if (!r.trouve && valeur) nonTrouves[cle] = valeur;
   };
+  // Un bloc pré-imprimé par l'architecte n'est NI rempli NI envoyé au bloc
+  // « Renseignements complémentaires » (l'information y figure déjà).
+  const fillSiVide = (cle, label, valeur) => {
+    if (blocDejaRempli(xml, label)) return;
+    fill(cle, label, valeur);
+  };
 
   // Bloc PROJET (nom + établissement sur 2 lignes, comme sur les exemples réels)
   const projet = [champs.NOM_DU_PROJET, champs.NOM_ETABLISSEMENT].filter(Boolean).join('\n');
-  fill('NOM_DU_PROJET', 'PROJET', projet);
+  fillSiVide('NOM_DU_PROJET', 'PROJET', projet);
   fill('NUMERO_DU_PROJET', 'No. Projet', champs.NUMERO_DU_PROJET);
 
   // Blocs intervenants (extraits du devis à l'étape /analyser, éditables)
-  fill('NOM_ETABLISSEMENT', 'PROPRIÉTAIRE (CLIENT)', champs.NOM_ETABLISSEMENT);
-  fill('ARCHITECTE', 'ARCHITECTE', champs.ARCHITECTE);
-  fill('INGENIEUR', 'INGÉNIEUR', champs.INGENIEUR);
-  fill('ENTREPRENEUR_GENERAL', 'ENTREPRENEUR GÉNÉRAL', champs.ENTREPRENEUR_GENERAL);
+  fillSiVide('NOM_ETABLISSEMENT', 'PROPRIÉTAIRE (CLIENT)', champs.NOM_ETABLISSEMENT);
+  fillSiVide('ARCHITECTE', 'ARCHITECTE', champs.ARCHITECTE);
+  // Le libellé existe avec ou sans accent selon le gabarit (« INGENIEUR: » sur
+  // le gabarit EPA) — on tente les deux orthographes.
+  if (xml.indexOf('INGÉNIEUR') !== -1) fillSiVide('INGENIEUR', 'INGÉNIEUR', champs.INGENIEUR);
+  else fillSiVide('INGENIEUR', 'INGENIEUR', champs.INGENIEUR);
+  fillSiVide('ENTREPRENEUR_GENERAL', 'ENTREPRENEUR GÉNÉRAL', champs.ENTREPRENEUR_GENERAL);
 
   // Bloc SOUS-TRAITANT = T3E. Sous-libellés scopés après l'ancre du bloc.
   fill('NOM', 'SOUS-TRAITANT', champs.NOM);
   const ancreST = xml.indexOf('SOUS-TRAITANT');
   if (ancreST !== -1) {
-    fill('ADRESSE', 'Adresse', champs.ADRESSE, ancreST);
+    const finST = finDeBloc(xml, ancreST + 'SOUS-TRAITANT'.length);
+    // Adresse : si le bloc a un libellé « Adresse », remplissage normal ;
+    // sinon (gabarit EPA : le bloc n'a que Responsable et T.), on insère
+    // l'adresse dans le PREMIER PARAGRAPHE VIDE du bloc — surtout pas via un
+    // saut de ligne après le nom, qui décale tout le bloc d'une ligne et
+    // coupe le « T. » au bas du cadre (constaté sur le rendu PDF).
+    if (xml.slice(ancreST, finST).includes('Adresse')) {
+      fill('ADRESSE', 'Adresse', champs.ADRESSE, ancreST);
+    } else if (champs.ADRESSE) {
+      const paraVide = xml.indexOf('</w:pPr></w:p>', ancreST);
+      if (paraVide !== -1 && paraVide < finST) {
+        const insAt = paraVide + '</w:pPr>'.length;
+        xml = xml.substring(0, insAt)
+          + '<w:r><w:rPr><w:sz w:val="16"/></w:rPr><w:t xml:space="preserve">' + escapeXml(champs.ADRESSE) + '</w:t></w:r>'
+          + xml.substring(insAt);
+      }
+    }
     fill('SOUMIS_PAR', 'Responsable', champs.SOUMIS_PAR, ancreST);
     // « Tél. : (   ) Téléc. : (   ) » cohabitent dans la même cellule → épissure
     // directe après chaque ":" + suppression des parenthèses vides pré-imprimées.
-    episser('TELEPHONE', 'Tél.', champs.TELEPHONE, ancreST, true);
-    episser('TELECOPIEUR', 'Téléc.', champs.TELECOPIEUR, ancreST, true);
+    // Le gabarit EPA abrège en « T. » (sans deux-points) — repli sur ce libellé.
+    const rTel = epislerApresLibelle(xml, 'Tél.', champs.TELEPHONE, ancreST, true);
+    xml = rTel.xml;
+    if (!rTel.trouve && champs.TELEPHONE) {
+      const posT = xml.indexOf('>T.', ancreST);
+      if (posT !== -1 && posT < finDeBloc(xml, ancreST + 'SOUS-TRAITANT'.length)) {
+        xml = xml.substring(0, posT + 3) + ' ' + escapeXml(champs.TELEPHONE) + xml.substring(posT + 3);
+      }
+    }
+    // Télécopieur : rempli seulement si le gabarit a le libellé — sinon on
+    // l'abandonne en silence (pas de renvoi vers « Renseignements
+    // complémentaires », qui polluait le milieu de la page sur le gabarit EPA).
+    const rFax = epislerApresLibelle(xml, 'Téléc.', champs.TELECOPIEUR, ancreST, true);
+    xml = rFax.xml;
   }
 
   // Blocs FOURNISSEUR et FABRICANT : nom + (si fabricant connu, ex. Soprema)
   // adresse et téléphone officiels, scopés après l'ancre de chaque bloc —
   // ordre des cellules vérifié : la 1re occurrence de « Adresse : »/« Tél. : »
   // après chaque titre appartient bien à son bloc.
-  const infoFournisseur = coordonneesConnues(champs.FOURNISSEUR);
-  fill('FOURNISSEUR', 'FOURNISSEUR', infoFournisseur ? infoFournisseur.nom : champs.FOURNISSEUR);
+  // Repli : si le formulaire n'a pas de fournisseur distinct, le fabricant
+  // fait office de fournisseur (constaté sur le gabarit EPA : bloc
+  // FOURNISSEUR vide alors que le fabricant était connu).
+  const nomFournisseur = champs.FOURNISSEUR || champs.FABRICANT;
+  const infoFournisseur = coordonneesConnues(nomFournisseur);
+  fill('FOURNISSEUR', 'FOURNISSEUR', infoFournisseur ? infoFournisseur.nom : nomFournisseur);
   const ancreFournisseur = xml.indexOf('FOURNISSEUR');
   if (infoFournisseur && ancreFournisseur !== -1) {
     fill('FOURNISSEUR_ADRESSE', 'Adresse', infoFournisseur.adresse, ancreFournisseur);
     episser('FOURNISSEUR_TEL', 'Tél.', infoFournisseur.telephone, ancreFournisseur, true);
   }
 
-  const infoFabricant = coordonneesConnues(champs.FABRICANT);
-  fill('FABRICANT', 'FABRICANT', infoFabricant ? infoFabricant.nom : champs.FABRICANT);
-  const ancreFabricant = xml.indexOf('FABRICANT');
-  if (infoFabricant && ancreFabricant !== -1) {
-    fill('FABRICANT_ADRESSE', 'Adresse', infoFabricant.adresse, ancreFabricant);
-    episser('FABRICANT_TEL', 'Tél.', infoFabricant.telephone, ancreFabricant, true);
+  // Bloc FABRICANT : seulement si le gabarit en a un (le gabarit EPA n'en a
+  // pas — dans ce cas on abandonne en silence plutôt que de renvoyer la
+  // valeur vers « Renseignements complémentaires »).
+  if (xml.indexOf('FABRICANT') !== -1) {
+    const infoFabricant = coordonneesConnues(champs.FABRICANT);
+    fill('FABRICANT', 'FABRICANT', infoFabricant ? infoFabricant.nom : champs.FABRICANT);
+    const ancreFabricant = xml.indexOf('FABRICANT');
+    if (infoFabricant && ancreFabricant !== -1) {
+      fill('FABRICANT_ADRESSE', 'Adresse', infoFabricant.adresse, ancreFabricant);
+      episser('FABRICANT_TEL', 'Tél.', infoFabricant.telephone, ancreFabricant, true);
+    }
   }
 
   // Sur ce gabarit la discipline attendue est « TOITURES » (vu sur les
@@ -129,10 +214,13 @@ async function remplirFicheIdentification(champs, xml, zip) {
     ? 'TOITURES' : champs.SPECIALITE;
   fill('SPECIALITE', 'SPÉCIALITÉ (discipline)', specialite);
 
-  // NBRE DE PAGES = pages du document final soumis : ce gabarit fait 2 pages
-  // + les pages des fiches techniques jointes (calculées par la route).
+  // NBRE DE PAGES = pages du document final soumis : pages du gabarit + pages
+  // des fiches techniques jointes (calculées par la route). Le gabarit
+  // Senterre fait 2 pages ; la variante EPA (« SOUS-TRAITANT: » collé, contenu
+  // dupliqué en mc:Choice/mc:Fallback) tient sur 1 seule page.
+  const pagesGabarit = xml.includes('SOUS-TRAITANT:') ? 1 : 2;
   if (Number.isFinite(champs.NB_PAGES_FT)) {
-    fill('NB_PAGES', 'NBRE DE PAGES', String(2 + champs.NB_PAGES_FT));
+    fill('NB_PAGES', 'NBRE DE PAGES', String(pagesGabarit + champs.NB_PAGES_FT));
   }
 
   // Produit
@@ -143,7 +231,11 @@ async function remplirFicheIdentification(champs, xml, zip) {
   // Référence au devis : numéro de section (ex. « 07 52 16 ») après le
   // libellé principal ; « Section : ... Articles : ... » partagent la même
   // cellule → épissure. Section parente dérivée de l'article (2.4.1.2 → 2.4).
-  fill('SECTION', 'RÉFÉRENCE AU DEVIS', champs.SECTION);
+  // RÉFÉRENCE AU DEVIS : numéro de section SEUL (ex. « 07 31 13 ») — avec son
+  // titre (« 07 31 13 – Bardeaux d'asphalte ») la valeur passe sur 2 lignes et
+  // pousse « Section/Article » hors du cadre (constaté sur le gabarit EPA).
+  const numeroSection = (String(champs.SECTION || '').match(/\d{2}\s?\d{2}\s?\d{2}/) || [champs.SECTION])[0];
+  fill('SECTION', 'RÉFÉRENCE AU DEVIS', numeroSection);
   const ancreDevis = xml.indexOf('RÉFÉRENCE AU DEVIS');
   if (ancreDevis !== -1 && champs.ARTICLE) {
     // « Section : » et « Articles : » reçoivent TOUJOURS des valeurs EN
@@ -154,7 +246,12 @@ async function remplirFicheIdentification(champs, xml, zip) {
     // (préfixe à 2 segments ; l'article lui-même s'il est déjà court).
     const numerique = (String(champs.ARTICLE).match(/\d+(?:\.\d+)*/) || [String(champs.ARTICLE).trim()])[0];
     const sousSection = numerique.split('.').slice(0, 2).join('.') || numerique;
-    episser('ARTICLE', 'Articles', numerique, ancreDevis);
+    // « Articles » (pluriel) sur le gabarit Senterre, « Article » (singulier)
+    // sur le gabarit EPA — on tente le pluriel d'abord (le singulier matcherait
+    // aussi le pluriel), puis le singulier en repli.
+    const rArt = epislerApresLibelle(xml, 'Articles', numerique, ancreDevis);
+    xml = rArt.xml;
+    if (!rArt.trouve) episser('ARTICLE', 'Article', numerique, ancreDevis);
     episser('SOUS_SECTION', 'Section', sousSection, ancreDevis);
   }
 
