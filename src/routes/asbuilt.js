@@ -232,6 +232,155 @@ router.post('/projet/:id/supprimer', async (req, res) => {
   res.redirect('/asbuilt');
 });
 
+// ── Analyse IA (arrière-plan sur Render — même patron anti-504 que les
+//    manuels et bordereaux : Vercel plafonne à 60 s, l'analyse de N documents
+//    peut prendre plusieurs minutes) ─────────────────────────────────────────
+async function declencherAnalyseDistante(projetId) {
+  const url = (process.env.CONVERT_SERVICE_URL || '').trim();
+  const secret = (process.env.CONVERT_SERVICE_SECRET || '').trim();
+  if (!url || !secret) throw new Error('service distant non configuré');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  try {
+    const resp = await fetch(url.replace(/\/$/, '') + '/internal/asbuilt-analyser', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-convert-secret': secret },
+      body: JSON.stringify({ projetId }),
+      signal: controller.signal,
+    });
+    if (!resp.ok) throw new Error(`service distant a répondu ${resp.status}`);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+router.post('/projet/:id/analyser', async (req, res) => {
+  const projet = await chargerProjet(req.db, parseInt(req.params.id));
+  if (!projet) return res.status(404).send('Projet introuvable');
+
+  await req.db.execute({ sql: `UPDATE asbuilt_projets SET statut = 'analyse', updated_at = datetime('now') WHERE id = ?`, args: [projet.id] });
+
+  if (process.env.VERCEL) {
+    try {
+      await declencherAnalyseDistante(projet.id);
+      return res.redirect('/asbuilt/projet/' + projet.id);
+    } catch (e) {
+      console.error('[asbuilt] Délégation Render impossible, analyse locale :', e.message);
+    }
+  }
+
+  const { analyserProjetAsbuilt } = require('../services/asbuilt-analyste');
+  await analyserProjetAsbuilt(req.db, projet.id);
+  res.redirect('/asbuilt/projet/' + projet.id + '/registre');
+});
+
+// ── Registre des modifications ───────────────────────────────────────────────
+router.get('/projet/:id/registre', async (req, res) => {
+  const projet = await chargerProjet(req.db, parseInt(req.params.id));
+  if (!projet) return res.redirect('/asbuilt');
+
+  const filtreStatut = STATUTS_MODIFICATION[req.query.statut] ? req.query.statut : null;
+  const filtreType = TYPES_MODIFICATION[req.query.type] ? req.query.type : null;
+
+  let sql = `SELECT m.*, d.nom AS document_nom, d.categorie AS document_categorie
+             FROM asbuilt_modifications m
+             LEFT JOIN asbuilt_documents d ON d.id = m.document_id
+             WHERE m.projet_id = ?`;
+  const args = [projet.id];
+  if (filtreStatut) { sql += ' AND m.statut = ?'; args.push(filtreStatut); }
+  if (filtreType) { sql += ' AND m.type = ?'; args.push(filtreType); }
+  sql += ` ORDER BY CASE m.statut WHEN 'detectee' THEN 0 WHEN 'a_verifier' THEN 1 WHEN 'a_clarifier' THEN 2 ELSE 3 END, m.confiance DESC, m.id`;
+
+  const modifications = (await req.db.execute({ sql, args })).rows;
+  modifications.forEach((m) => {
+    m.references_liste = parseJson(m.references_connexes, []);
+    m.preuve = parseJson(m.preuve_execution, null);
+  });
+
+  res.render('asbuilt-registre', {
+    projet, modifications, CATEGORIES, STATUTS_PROJET, STATUTS_MODIFICATION, TYPES_MODIFICATION,
+    filtreStatut, filtreType,
+  });
+});
+
+// ── Écran de validation d'une modification ───────────────────────────────────
+router.get('/modification/:id', async (req, res) => {
+  const r = await req.db.execute({
+    sql: `SELECT m.*, d.nom AS document_nom, d.categorie AS document_categorie, d.type_fichier AS document_type
+          FROM asbuilt_modifications m
+          LEFT JOIN asbuilt_documents d ON d.id = m.document_id
+          WHERE m.id = ?`,
+    args: [parseInt(req.params.id)],
+  });
+  if (r.rows.length === 0) return res.redirect('/asbuilt');
+  const modif = r.rows[0];
+  modif.references_liste = parseJson(modif.references_connexes, []);
+  modif.preuve = parseJson(modif.preuve_execution, null);
+
+  const projet = await chargerProjet(req.db, modif.projet_id);
+
+  // Vérification des références connexes : les autres documents du projet qui
+  // mentionnent le même élément ou la même feuille (impacts croisés à
+  // vérifier avant d'approuver — ex. une unité mécanique supprimée du plan de
+  // toiture peut apparaître aussi aux plans mécanique/électrique/structural).
+  const documents = (await req.db.execute({
+    sql: `SELECT id, nom, categorie, extraction FROM asbuilt_documents WHERE projet_id = ? AND extraction IS NOT NULL`,
+    args: [modif.projet_id],
+  })).rows;
+  const impacts = [];
+  const cible = (modif.element || '').toLowerCase();
+  const feuilleCible = (modif.feuille || '').toLowerCase();
+  for (const d of documents) {
+    if (d.id === modif.document_id) continue;
+    const ex = parseJson(d.extraction, {});
+    const texte = JSON.stringify(ex).toLowerCase();
+    const toucheElement = cible && cible.length > 2 && texte.includes(cible);
+    const toucheFeuille = feuilleCible && texte.includes(feuilleCible);
+    if (toucheElement || toucheFeuille) {
+      impacts.push({ id: d.id, nom: d.nom, categorie: d.categorie, via: toucheElement ? 'élément' : 'feuille' });
+    }
+  }
+
+  // Navigation précédent/suivant dans les modifications à traiter
+  const suivante = (await req.db.execute({
+    sql: `SELECT id FROM asbuilt_modifications WHERE projet_id = ? AND id > ? AND statut IN ('detectee','a_verifier','a_clarifier') ORDER BY id LIMIT 1`,
+    args: [modif.projet_id, modif.id],
+  })).rows[0];
+
+  res.render('asbuilt-validation', {
+    projet, modif, impacts, suivante,
+    CATEGORIES, STATUTS_MODIFICATION, TYPES_MODIFICATION,
+  });
+});
+
+router.post('/modification/:id/decision', express.urlencoded({ extended: true }), async (req, res) => {
+  const id = parseInt(req.params.id);
+  const r = await req.db.execute({ sql: 'SELECT projet_id FROM asbuilt_modifications WHERE id = ?', args: [id] });
+  if (r.rows.length === 0) return res.redirect('/asbuilt');
+  const projetId = r.rows[0].projet_id;
+
+  const decisions = { approuver: 'approuvee', refuser: 'refusee', clarifier: 'a_clarifier' };
+  const statut = decisions[req.body.decision];
+  if (statut) {
+    await req.db.execute({
+      sql: `UPDATE asbuilt_modifications SET statut = ?, commentaire_reviseur = ?, valide_par = ?, valide_le = datetime('now') WHERE id = ?`,
+      args: [statut, (req.body.commentaire || '').trim() || null, (req.body.valide_par || '').trim() || null, id],
+    });
+  }
+
+  // Quand plus rien n'attend de décision, le projet passe « prêt pour annotation ».
+  const restantes = (await req.db.execute({
+    sql: `SELECT COUNT(*) AS n FROM asbuilt_modifications WHERE projet_id = ? AND statut IN ('detectee','a_verifier')`,
+    args: [projetId],
+  })).rows[0].n;
+  if (restantes === 0) {
+    await req.db.execute({ sql: `UPDATE asbuilt_projets SET statut = 'annotation', updated_at = datetime('now') WHERE id = ? AND statut = 'revision'`, args: [projetId] });
+  }
+
+  if (req.body.suivante) return res.redirect('/asbuilt/modification/' + req.body.suivante);
+  res.redirect('/asbuilt/projet/' + projetId + '/registre');
+});
+
 module.exports = router;
 module.exports.CATEGORIES = CATEGORIES;
 module.exports.DISCIPLINES = DISCIPLINES;

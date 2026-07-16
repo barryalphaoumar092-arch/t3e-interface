@@ -158,6 +158,35 @@ app.post('/internal/generer-bordereaux', async (req, res) => {
   }
 });
 
+// Analyse en arrière-plan des documents d'un projet « tel que construit » —
+// même principe que /internal/generer-manuel : N documents à télécharger,
+// parser et passer à l'IA dépassent facilement les 60 s de Vercel. Répond 202
+// puis continue ; analyserProjetAsbuilt consigne tout dans la DB.
+app.post('/internal/asbuilt-analyser', async (req, res) => {
+  const secret = (process.env.CONVERT_SERVICE_SECRET || '').trim();
+  const fourni = typeof req.headers['x-convert-secret'] === 'string'
+    ? req.headers['x-convert-secret'].trim() : '';
+  const valide = secret.length > 0 && fourni.length > 0
+    && Buffer.byteLength(fourni) === Buffer.byteLength(secret)
+    && crypto.timingSafeEqual(Buffer.from(fourni), Buffer.from(secret));
+  if (!valide) return res.status(403).send('Forbidden');
+
+  const projetId = parseInt(req.body && req.body.projetId);
+  if (!projetId) return res.status(400).json({ error: 'projetId manquant' });
+
+  res.status(202).json({ ok: true });
+
+  try {
+    await initDb();
+    const db = getDb();
+    const { analyserProjetAsbuilt } = require('./src/services/asbuilt-analyste');
+    const resultat = await analyserProjetAsbuilt(db, projetId);
+    if (!resultat.ok) console.error('[internal/asbuilt-analyser] echec pour', projetId, ':', resultat.erreur);
+  } catch (e) {
+    console.error('[internal/asbuilt-analyser] exception pour', projetId, ':', e.message);
+  }
+});
+
 // Synchronisation hebdomadaire des appels d'offres SEAO (voir vercel.json,
 // section "crons"). Vercel ajoute automatiquement l'en-tete
 // "Authorization: Bearer $CRON_SECRET" sur les appels cron declenches par sa

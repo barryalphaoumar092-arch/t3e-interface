@@ -1,0 +1,125 @@
+<%- include('partials/header', { title: 'Validation — ' + modif.titre, page: 'asbuilt' }) %>
+
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="/asbuilt">Tel que construit</a></li>
+    <li class="breadcrumb-item"><a href="/asbuilt/projet/<%= projet.id %>"><%= projet.nom %></a></li>
+    <li class="breadcrumb-item"><a href="/asbuilt/projet/<%= projet.id %>/registre">Registre</a></li>
+    <li class="breadcrumb-item active">#<%= modif.id %></li>
+  </ol>
+</nav>
+
+<% var sm = STATUTS_MODIFICATION[modif.statut] || STATUTS_MODIFICATION.detectee; %>
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="card mb-3">
+      <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-pencil-square"></i> Modification #<%= modif.id %> — <%= TYPES_MODIFICATION[modif.type] || modif.type %></span>
+        <span class="badge bg-<%= sm.badge %>"><%= sm.label %></span>
+      </div>
+      <div class="card-body">
+        <h5><%= modif.titre %></h5>
+        <p class="mb-3"><%= modif.description || '' %></p>
+
+        <div class="row row-cols-2 row-cols-md-3 g-2 small mb-3">
+          <div><strong>Discipline :</strong> <span class="text-capitalize"><%= modif.discipline || '—' %></span></div>
+          <div><strong>Feuille :</strong> <%= modif.feuille || '—' %></div>
+          <div><strong>Zone :</strong> <%= modif.zone || '—' %></div>
+          <div><strong>Élément :</strong> <%= modif.element || '—' %></div>
+          <div><strong>Priorité :</strong> <%= modif.priorite %></div>
+          <div><strong>Confiance :</strong>
+            <% var pct = Math.round((modif.confiance || 0) * 100); %>
+            <span class="badge bg-<%= pct >= 80 ? 'success' : (pct >= 60 ? 'warning text-dark' : 'danger') %>"><%= pct %> %</span>
+          </div>
+        </div>
+
+        <div class="alert alert-primary py-2">
+          <strong><i class="bi bi-arrow-right-circle"></i> Action proposée :</strong> <%= modif.action_proposee || '—' %>
+        </div>
+
+        <div class="card bg-light mb-3">
+          <div class="card-header py-1 small fw-bold d-flex justify-content-between">
+            <span><i class="bi bi-quote"></i> Extrait source (verbatim)</span>
+            <% if (modif.document_id) { %>
+            <a href="/asbuilt/document/<%= modif.document_id %>/fichier" target="_blank">
+              <i class="bi bi-box-arrow-up-right"></i> Ouvrir « <%= modif.document_nom %> »<%= modif.page_source ? ' — page ' + modif.page_source : '' %>
+            </a>
+            <% } %>
+          </div>
+          <div class="card-body py-2"><em>« <%= modif.extrait_source %> »</em></div>
+        </div>
+
+        <div class="mb-3">
+          <strong class="small">Preuve d'exécution :</strong>
+          <% if (modif.preuve && modif.preuve.statut === 'preuve_trouvee') { %>
+          <span class="text-success"><i class="bi bi-check-circle"></i> Preuve trouvée</span>
+          <% } else if (modif.preuve && modif.preuve.statut === 'preuve_partielle') { %>
+          <span class="text-warning"><i class="bi bi-exclamation-circle"></i> Preuve partielle</span>
+          <% } else { %>
+          <span class="text-danger"><i class="bi bi-question-circle"></i> Aucune preuve d'exécution</span>
+          — la directive/le changement a été émis, mais rien ne confirme qu'il a été exécuté. Vérifiez au chantier ou dans les rapports.
+          <% } %>
+          <% if (modif.preuve && modif.preuve.description) { %>
+          <div class="small text-muted mt-1"><%= modif.preuve.description %></div>
+          <% } %>
+        </div>
+
+        <% if (modif.references_liste.length > 0 || impacts.length > 0) { %>
+        <div class="card border-warning mb-0">
+          <div class="card-header py-1 small fw-bold bg-warning bg-opacity-25">
+            <i class="bi bi-diagram-3"></i> Impacts possibles sur d'autres plans — à vérifier avant d'approuver
+          </div>
+          <div class="card-body py-2 small">
+            <% if (modif.references_liste.length > 0) { %>
+            <div class="mb-1"><strong>Références signalées par l'analyse :</strong> <%= modif.references_liste.join(' · ') %></div>
+            <% } %>
+            <% if (impacts.length > 0) { %>
+            <div><strong>Autres documents du projet mentionnant le même élément/feuille :</strong></div>
+            <ul class="mb-0">
+              <% impacts.forEach(function(i) { %>
+              <li><a href="/asbuilt/document/<%= i.id %>/fichier" target="_blank"><%= i.nom %></a>
+                <span class="text-muted">(<%= CATEGORIES[i.categorie] || i.categorie %>, correspondance par <%= i.via %>)</span></li>
+              <% }); %>
+            </ul>
+            <% } %>
+          </div>
+        </div>
+        <% } %>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card">
+      <div class="card-header py-2"><i class="bi bi-person-check"></i> Décision du réviseur</div>
+      <div class="card-body">
+        <% if (['approuvee','refusee','annotee','integree'].includes(modif.statut)) { %>
+        <div class="alert alert-secondary py-2 small">
+          Décision enregistrée le <%= modif.valide_le || '' %><%= modif.valide_par ? ' par ' + modif.valide_par : '' %>.
+          <% if (modif.commentaire_reviseur) { %><br>Commentaire : <%= modif.commentaire_reviseur %><% } %>
+        </div>
+        <% } %>
+        <form method="POST" action="/asbuilt/modification/<%= modif.id %>/decision">
+          <% if (suivante) { %><input type="hidden" name="suivante" value="<%= suivante.id %>"><% } %>
+          <label class="form-label small fw-bold">Votre nom</label>
+          <input type="text" name="valide_par" class="form-control form-control-sm mb-2" value="<%= modif.valide_par || '' %>">
+          <label class="form-label small fw-bold">Commentaire</label>
+          <textarea name="commentaire" class="form-control form-control-sm mb-3" rows="3"
+            placeholder="Obligatoire en cas de refus ou de demande de clarification"><%= modif.commentaire_reviseur || '' %></textarea>
+          <div class="d-grid gap-2">
+            <button name="decision" value="approuver" class="btn btn-success"><i class="bi bi-check-lg"></i> Approuver</button>
+            <button name="decision" value="refuser" class="btn btn-outline-danger"><i class="bi bi-x-lg"></i> Refuser</button>
+            <button name="decision" value="clarifier" class="btn btn-outline-info"><i class="bi bi-question-lg"></i> Demander une clarification</button>
+          </div>
+        </form>
+        <% if (suivante) { %>
+        <div class="text-center mt-2">
+          <a href="/asbuilt/modification/<%= suivante.id %>" class="small">Passer à la suivante sans décider <i class="bi bi-arrow-right"></i></a>
+        </div>
+        <% } %>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%- include('partials/footer') %>

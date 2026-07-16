@@ -1,0 +1,87 @@
+<%- include('partials/header', { title: 'Registre des modifications — ' + projet.nom, page: 'asbuilt' }) %>
+
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="/asbuilt">Tel que construit</a></li>
+    <li class="breadcrumb-item"><a href="/asbuilt/projet/<%= projet.id %>"><%= projet.nom %></a></li>
+    <li class="breadcrumb-item active">Registre des modifications</li>
+  </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <h4 class="mb-0"><i class="bi bi-list-check"></i> Registre des modifications</h4>
+  <form class="d-flex gap-2" method="GET">
+    <select name="statut" class="form-select form-select-sm" onchange="this.form.submit()">
+      <option value="">Tous les statuts</option>
+      <% Object.keys(STATUTS_MODIFICATION).forEach(function(s) { %>
+      <option value="<%= s %>" <%= filtreStatut === s ? 'selected' : '' %>><%= STATUTS_MODIFICATION[s].label %></option>
+      <% }); %>
+    </select>
+    <select name="type" class="form-select form-select-sm" onchange="this.form.submit()">
+      <option value="">Tous les types</option>
+      <% Object.keys(TYPES_MODIFICATION).forEach(function(t) { %>
+      <option value="<%= t %>" <%= filtreType === t ? 'selected' : '' %>><%= TYPES_MODIFICATION[t] %></option>
+      <% }); %>
+    </select>
+  </form>
+</div>
+
+<% if (modifications.length === 0) { %>
+<div class="alert alert-light border text-center py-5">
+  Aucune modification<%= (filtreStatut || filtreType) ? ' pour ces filtres' : ' détectée pour l\'instant — lancez l\'analyse depuis la fiche projet' %>.
+</div>
+<% } else { %>
+<div class="table-responsive">
+  <table class="table table-hover align-middle">
+    <thead class="table-dark">
+      <tr>
+        <th>#</th><th>Titre</th><th>Type</th><th>Discipline</th><th>Feuille</th><th>Zone</th>
+        <th>Source</th><th class="text-center">Confiance</th><th>Preuve d'exécution</th><th>Statut</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      <% modifications.forEach(function(m) { var sm = STATUTS_MODIFICATION[m.statut] || STATUTS_MODIFICATION.detectee; %>
+      <tr>
+        <td class="text-muted">#<%= m.id %></td>
+        <td>
+          <a href="/asbuilt/modification/<%= m.id %>" class="fw-bold text-decoration-none"><%= m.titre %></a>
+          <% if (m.priorite === 'critique' || m.priorite === 'haute') { %>
+          <span class="badge bg-danger-subtle text-danger border border-danger"><%= m.priorite %></span>
+          <% } %>
+        </td>
+        <td><span class="badge bg-light text-dark border"><%= TYPES_MODIFICATION[m.type] || m.type || '—' %></span></td>
+        <td class="small text-capitalize"><%= m.discipline || '—' %></td>
+        <td class="small fw-bold"><%= m.feuille || '—' %></td>
+        <td class="small"><%= m.zone || '—' %></td>
+        <td class="small">
+          <% if (m.document_id) { %>
+          <a href="/asbuilt/document/<%= m.document_id %>/fichier" target="_blank" title="Ouvrir le document source">
+            <i class="bi bi-box-arrow-up-right"></i> <%= m.document_nom %><%= m.page_source ? ' p.' + m.page_source : '' %>
+          </a>
+          <% } else { %>—<% } %>
+        </td>
+        <td class="text-center">
+          <% var pct = Math.round((m.confiance || 0) * 100); %>
+          <span class="badge bg-<%= pct >= 80 ? 'success' : (pct >= 60 ? 'warning text-dark' : 'danger') %>"><%= pct %> %</span>
+        </td>
+        <td class="small">
+          <% if (m.preuve && m.preuve.statut === 'preuve_trouvee') { %><span class="text-success"><i class="bi bi-check-circle"></i> Preuve trouvée</span>
+          <% } else if (m.preuve && m.preuve.statut === 'preuve_partielle') { %><span class="text-warning"><i class="bi bi-exclamation-circle"></i> Partielle</span>
+          <% } else { %><span class="text-danger"><i class="bi bi-question-circle"></i> Aucune preuve</span><% } %>
+        </td>
+        <td><span class="badge bg-<%= sm.badge %>"><%= sm.label %></span></td>
+        <td class="text-end">
+          <a href="/asbuilt/modification/<%= m.id %>" class="btn btn-sm btn-outline-primary">Réviser</a>
+        </td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</div>
+<p class="text-muted small">
+  <i class="bi bi-info-circle"></i> Chaque modification est liée à sa source exacte (document + page + extrait verbatim).
+  Une modification n'est jamais intégrée au plan final sans validation humaine.
+</p>
+<% } %>
+
+<%- include('partials/footer') %>
