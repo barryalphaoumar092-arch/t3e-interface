@@ -24,6 +24,8 @@
       <i class="bi bi-list-check"></i> Registre des modifications
       <% if (aValider > 0) { %><span class="badge bg-warning text-dark ms-1"><%= aValider %> à valider</span><% } %>
     </a>
+    <a href="/asbuilt/projet/<%= projet.id %>/visualiseur" class="btn btn-outline-secondary"><i class="bi bi-eye"></i> Visualiseur</a>
+    <a href="/asbuilt/projet/<%= projet.id %>/rapport" class="btn btn-outline-dark"><i class="bi bi-file-earmark-richtext"></i> Rapport</a>
     <form method="POST" action="/asbuilt/projet/<%= projet.id %>/supprimer" onsubmit="return confirm('Supprimer ce projet, ses documents et son registre ?')">
       <button class="btn btn-outline-danger"><i class="bi bi-trash"></i></button>
     </form>

@@ -1,0 +1,95 @@
+<%- include('partials/header', { title: 'Rapport — ' + projet.nom, page: 'asbuilt' }) %>
+
+<div class="d-flex justify-content-between align-items-center mb-3 d-print-none">
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0">
+      <li class="breadcrumb-item"><a href="/asbuilt">Tel que construit</a></li>
+      <li class="breadcrumb-item"><a href="/asbuilt/projet/<%= projet.id %>"><%= projet.nom %></a></li>
+      <li class="breadcrumb-item active">Rapport</li>
+    </ol>
+  </nav>
+  <button class="btn btn-primary" onclick="window.print()"><i class="bi bi-printer"></i> Imprimer / PDF</button>
+</div>
+
+<div class="alert alert-warning">
+  <i class="bi bi-exclamation-triangle"></i>
+  <strong>Avertissement :</strong> ce rapport est produit de façon semi-automatique à partir des documents fournis.
+  Il doit être <strong>vérifié et approuvé par une personne compétente</strong> avant toute utilisation officielle.
+  Aucun plan n'est un « plan tel que construit final » sans cette validation.
+  <% if (enAttente.length > 0) { %>
+  <br><strong><%= enAttente.length %> modification(s) attendent encore une décision</strong> — le rapport est incomplet.
+  <% } %>
+</div>
+
+<h4 class="mb-1">Rapport de révision « tel que construit »</h4>
+<div class="text-muted mb-3">
+  <%= projet.numero ? projet.numero + ' — ' : '' %><%= projet.nom %>
+  <%= projet.client ? ' · ' + projet.client : '' %><%= projet.adresse ? ' · ' + projet.adresse : '' %>
+  <br>Responsable : <%= projet.responsable || '—' %> · Produit le <%= dateProduction %>
+  <% if (validateurs.length) { %> · Validations : <%= validateurs.join(', ') %><% } %>
+  <% if (feuilles.length) { %><br>Feuilles affectées : <strong><%= feuilles.join(', ') %></strong><% } %>
+</div>
+
+<h5 class="border-bottom pb-1 mt-4">1. Documents analysés (<%= documents.length %>)</h5>
+<table class="table table-sm">
+  <thead><tr><th>Document</th><th>Catégorie</th><th>Version</th><th>Date</th><th>Analyse</th></tr></thead>
+  <tbody>
+    <% documents.forEach(function(d) { %>
+    <tr>
+      <td><%= d.nom %></td>
+      <td><%= CATEGORIES[d.categorie] || d.categorie %></td>
+      <td><%= d.version || '—' %></td>
+      <td><%= d.date_document || '—' %></td>
+      <td><%= d.statut_analyse === 'analyse' ? 'Analysé' : (d.statut_analyse === 'sans_texte' ? 'Sans texte extractible' : d.statut_analyse) %></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+
+<% function tableModifs(liste) { %>
+  <% if (liste.length === 0) { %><p class="text-muted">Aucune.</p><% } else { %>
+  <table class="table table-sm">
+    <thead><tr><th>#</th><th>Titre</th><th>Type</th><th>Feuille</th><th>Source</th><th>Confiance</th><th>Validée par</th><th>Commentaire</th></tr></thead>
+    <tbody>
+      <% liste.forEach(function(m) { %>
+      <tr>
+        <td>#<%= m.id %></td>
+        <td><%= m.titre %><div class="small text-muted"><%= m.action_proposee || '' %></div></td>
+        <td><%= TYPES_MODIFICATION[m.type] || m.type || '—' %></td>
+        <td><%= m.feuille || '—' %></td>
+        <td class="small"><%= m.document_nom || '—' %><%= m.page_source ? ' p.' + m.page_source : '' %></td>
+        <td><%= Math.round((m.confiance || 0) * 100) %> %</td>
+        <td><%= m.valide_par || '—' %><%= m.valide_le ? ' (' + m.valide_le.substring(0, 10) + ')' : '' %></td>
+        <td class="small"><%= m.commentaire_reviseur || '' %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+  <% } %>
+<% } %>
+
+<h5 class="border-bottom pb-1 mt-4 text-success">2. Modifications approuvées (<%= approuvees.length %>)</h5>
+<% tableModifs(approuvees) %>
+
+<h5 class="border-bottom pb-1 mt-4 text-danger">3. Modifications refusées (<%= refusees.length %>)</h5>
+<% tableModifs(refusees) %>
+
+<h5 class="border-bottom pb-1 mt-4 text-warning">4. Informations manquantes / à clarifier (<%= manquantes.length %>)</h5>
+<% tableModifs(manquantes) %>
+
+<h5 class="border-bottom pb-1 mt-4">5. Contradictions détectées (<%= contradictions.length %>)</h5>
+<% tableModifs(contradictions) %>
+
+<% if (enAttente.length > 0) { %>
+<h5 class="border-bottom pb-1 mt-4">6. En attente de décision (<%= enAttente.length %>)</h5>
+<% tableModifs(enAttente) %>
+<% } %>
+
+<style>
+@media print {
+  nav, .navbar, .d-print-none, footer { display: none !important; }
+  main { margin: 0 !important; }
+}
+</style>
+
+<%- include('partials/footer') %>

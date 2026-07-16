@@ -1,0 +1,214 @@
+<%- include('partials/header', { title: 'Visualiseur — ' + projet.nom, page: 'asbuilt' }) %>
+
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="/asbuilt">Tel que construit</a></li>
+    <li class="breadcrumb-item"><a href="/asbuilt/projet/<%= projet.id %>"><%= projet.nom %></a></li>
+    <li class="breadcrumb-item active">Visualiseur</li>
+  </ol>
+</nav>
+
+<% if (!plan) { %>
+<div class="alert alert-light border text-center py-5">
+  Aucun plan PDF importé — ajoutez d'abord un plan initial depuis la <a href="/asbuilt/projet/<%= projet.id %>">fiche projet</a>.
+</div>
+<% } else { %>
+
+<div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+  <select id="selPlan" class="form-select form-select-sm" style="max-width:340px" onchange="location='/asbuilt/projet/<%= projet.id %>/visualiseur?document='+this.value">
+    <% plans.forEach(function(p) { %>
+    <option value="<%= p.id %>" <%= p.id === plan.id ? 'selected' : '' %>><%= CATEGORIES[p.categorie] %> — <%= p.nom %></option>
+    <% }); %>
+  </select>
+  <div class="btn-group btn-group-sm">
+    <button class="btn btn-outline-secondary" id="btnPagePrec"><i class="bi bi-chevron-left"></i></button>
+    <span class="btn btn-outline-secondary disabled" id="lblPage">1 / 1</span>
+    <button class="btn btn-outline-secondary" id="btnPageSuiv"><i class="bi bi-chevron-right"></i></button>
+  </div>
+  <div class="btn-group btn-group-sm">
+    <button class="btn btn-outline-secondary" id="btnZoomMoins"><i class="bi bi-zoom-out"></i></button>
+    <button class="btn btn-outline-secondary" id="btnZoomPlus"><i class="bi bi-zoom-in"></i></button>
+  </div>
+  <div class="btn-group btn-group-sm" role="group" aria-label="Outils">
+    <input type="radio" class="btn-check" name="outil" id="outilAucun" value="" checked>
+    <label class="btn btn-outline-dark" for="outilAucun" title="Navigation"><i class="bi bi-cursor"></i></label>
+    <input type="radio" class="btn-check" name="outil" id="outilNuage" value="nuage">
+    <label class="btn btn-outline-danger" for="outilNuage" title="Nuage de révision"><i class="bi bi-cloud"></i></label>
+    <input type="radio" class="btn-check" name="outil" id="outilBarre" value="barre">
+    <label class="btn btn-outline-danger" for="outilBarre" title="Barrer un élément (retiré)"><i class="bi bi-x-square"></i></label>
+    <input type="radio" class="btn-check" name="outil" id="outilAjout" value="ajout">
+    <label class="btn btn-outline-success" for="outilAjout" title="Ajout proposé"><i class="bi bi-plus-square"></i></label>
+    <input type="radio" class="btn-check" name="outil" id="outilFleche" value="fleche">
+    <label class="btn btn-outline-primary" for="outilFleche" title="Flèche"><i class="bi bi-arrow-up-right"></i></label>
+    <input type="radio" class="btn-check" name="outil" id="outilNote" value="note">
+    <label class="btn btn-outline-warning" for="outilNote" title="Note"><i class="bi bi-sticky"></i></label>
+  </div>
+  <select id="selModif" class="form-select form-select-sm" style="max-width:300px" title="Lier l'annotation à une modification approuvée">
+    <option value="">(annotation libre — non liée)</option>
+    <% modifications.forEach(function(m) { %>
+    <option value="<%= m.id %>">#<%= m.id %> <%= m.titre.substring(0, 50) %><%= m.feuille ? ' [' + m.feuille + ']' : '' %></option>
+    <% }); %>
+  </select>
+  <div class="form-check form-switch ms-auto">
+    <input class="form-check-input" type="checkbox" id="chkAfficher" checked>
+    <label class="form-check-label small" for="chkAfficher">Afficher les modifications</label>
+  </div>
+</div>
+
+<p class="text-muted small mb-2">
+  <i class="bi bi-info-circle"></i> Choisissez un outil puis tracez un rectangle sur le plan (les annotations sont des
+  objets structurés : coordonnées en %, type, texte, auteur, lien vers la modification). Décochez « Afficher les
+  modifications » pour comparer avec le plan initial.
+</p>
+
+<div class="border rounded bg-secondary bg-opacity-10 p-2" style="overflow:auto; max-height:78vh;">
+  <div id="canvasWrapper" style="position:relative; display:inline-block;">
+    <canvas id="pdfCanvas"></canvas>
+    <div id="coucheAnnotations" style="position:absolute; inset:0;"></div>
+    <div id="rectTrace" style="position:absolute; border:2px dashed #C8102E; display:none; pointer-events:none;"></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+
+var URL_PLAN = <%- JSON.stringify(urlPlan) %>;
+var DOCUMENT_ID = <%= plan.id %>;
+var annotations = <%- JSON.stringify(annotations) %>;
+
+var pdfDoc = null, pageActuelle = 1, echelle = 1.2;
+var canvas = document.getElementById('pdfCanvas');
+var ctx = canvas.getContext('2d');
+var wrapper = document.getElementById('canvasWrapper');
+var couche = document.getElementById('coucheAnnotations');
+
+function outilActif() {
+  var r = document.querySelector('input[name="outil"]:checked');
+  return r ? r.value : '';
+}
+
+function rendrePage(num) {
+  pdfDoc.getPage(num).then(function(page) {
+    var viewport = page.getViewport({ scale: echelle });
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    wrapper.style.width = viewport.width + 'px';
+    wrapper.style.height = viewport.height + 'px';
+    page.render({ canvasContext: ctx, viewport: viewport }).promise.then(dessinerAnnotations);
+    document.getElementById('lblPage').textContent = num + ' / ' + pdfDoc.numPages;
+  });
+}
+
+function dessinerAnnotations() {
+  couche.innerHTML = '';
+  if (!document.getElementById('chkAfficher').checked) return;
+  annotations.filter(function(a) { return a.page === pageActuelle - 1; }).forEach(function(a) {
+    var el = document.createElement('div');
+    el.style.position = 'absolute';
+    el.style.left = a.x + '%';
+    el.style.top = a.y + '%';
+    el.style.width = Math.max(a.w, 1.5) + '%';
+    el.style.height = Math.max(a.h, 1.5) + '%';
+    el.title = (a.type.toUpperCase()) + (a.texte ? ' — ' + a.texte : '') + (a.modification_id ? ' (modif #' + a.modification_id + ')' : '') + ' [double-clic pour supprimer]';
+    el.style.cursor = 'help';
+    if (a.type === 'nuage') {
+      el.style.border = '3px dashed #C8102E'; el.style.borderRadius = '18px';
+    } else if (a.type === 'barre') {
+      el.style.border = '2px solid #C8102E';
+      el.style.background = 'linear-gradient(to top right, transparent 47%, #C8102E 47%, #C8102E 53%, transparent 53%), linear-gradient(to bottom right, transparent 47%, #C8102E 47%, #C8102E 53%, transparent 53%)';
+    } else if (a.type === 'ajout') {
+      el.style.border = '3px solid #198754';
+      el.innerHTML = '<span style="background:#198754;color:#fff;font-size:11px;padding:1px 5px;">AJOUT</span>';
+    } else if (a.type === 'fleche') {
+      el.innerHTML = '<i class="bi bi-arrow-up-right" style="color:#0d6efd;font-size:' + Math.max(canvas.height * a.h / 100, 18) + 'px;line-height:1;"></i>';
+    } else {
+      el.style.background = 'rgba(255,235,120,0.9)';
+      el.style.border = '1px solid #c9a800';
+      el.style.fontSize = '11px'; el.style.overflow = 'hidden'; el.style.padding = '2px';
+      el.textContent = a.texte || '';
+    }
+    if (a.texte && a.type !== 'note' && a.type !== 'texte') {
+      var lbl = document.createElement('div');
+      lbl.textContent = a.texte;
+      lbl.style.cssText = 'position:absolute;top:100%;left:0;background:rgba(255,255,255,0.95);border:1px solid #ccc;font-size:11px;padding:1px 4px;white-space:nowrap;';
+      el.appendChild(lbl);
+    }
+    el.addEventListener('dblclick', function() {
+      if (!confirm('Supprimer cette annotation ?')) return;
+      fetch('/asbuilt/annotation/' + a.id + '/supprimer', { method: 'POST' }).then(function() {
+        annotations = annotations.filter(function(x) { return x.id !== a.id; });
+        dessinerAnnotations();
+      });
+    });
+    couche.appendChild(el);
+  });
+}
+
+// Traçage d'un rectangle pour poser une annotation
+var traceDebut = null;
+var rect = document.getElementById('rectTrace');
+wrapper.addEventListener('mousedown', function(e) {
+  if (!outilActif()) return;
+  var b = wrapper.getBoundingClientRect();
+  traceDebut = { x: e.clientX - b.left, y: e.clientY - b.top };
+  rect.style.display = 'block';
+  rect.style.left = traceDebut.x + 'px'; rect.style.top = traceDebut.y + 'px';
+  rect.style.width = '0'; rect.style.height = '0';
+  e.preventDefault();
+});
+document.addEventListener('mousemove', function(e) {
+  if (!traceDebut) return;
+  var b = wrapper.getBoundingClientRect();
+  var x = Math.min(e.clientX - b.left, traceDebut.x), y = Math.min(e.clientY - b.top, traceDebut.y);
+  rect.style.left = x + 'px'; rect.style.top = y + 'px';
+  rect.style.width = Math.abs(e.clientX - b.left - traceDebut.x) + 'px';
+  rect.style.height = Math.abs(e.clientY - b.top - traceDebut.y) + 'px';
+});
+document.addEventListener('mouseup', function(e) {
+  if (!traceDebut) return;
+  var b = wrapper.getBoundingClientRect();
+  var x1 = Math.min(e.clientX - b.left, traceDebut.x), y1 = Math.min(e.clientY - b.top, traceDebut.y);
+  var w = Math.abs(e.clientX - b.left - traceDebut.x), h = Math.abs(e.clientY - b.top - traceDebut.y);
+  traceDebut = null;
+  rect.style.display = 'none';
+  if (w < 5 && h < 5) return;
+
+  var type = outilActif();
+  var texte = prompt('Texte de l\'annotation (optionnel) :') || '';
+  var annotation = {
+    page: pageActuelle - 1,
+    type: type,
+    x: x1 / b.width * 100, y: y1 / b.height * 100,
+    w: w / b.width * 100, h: h / b.height * 100,
+    texte: texte,
+    modification_id: document.getElementById('selModif').value || null,
+    auteur: null,
+  };
+  fetch('/asbuilt/document/' + DOCUMENT_ID + '/annotations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(annotation),
+  }).then(function(r) { return r.json(); }).then(function(r) {
+    annotation.id = r.id;
+    annotations.push(annotation);
+    dessinerAnnotations();
+  }).catch(function(err) { alert('Sauvegarde impossible : ' + err.message); });
+});
+
+document.getElementById('btnPagePrec').addEventListener('click', function() { if (pageActuelle > 1) { pageActuelle--; rendrePage(pageActuelle); } });
+document.getElementById('btnPageSuiv').addEventListener('click', function() { if (pdfDoc && pageActuelle < pdfDoc.numPages) { pageActuelle++; rendrePage(pageActuelle); } });
+document.getElementById('btnZoomPlus').addEventListener('click', function() { echelle = Math.min(echelle + 0.25, 4); rendrePage(pageActuelle); });
+document.getElementById('btnZoomMoins').addEventListener('click', function() { echelle = Math.max(echelle - 0.25, 0.5); rendrePage(pageActuelle); });
+document.getElementById('chkAfficher').addEventListener('change', dessinerAnnotations);
+
+pdfjsLib.getDocument(URL_PLAN).promise.then(function(doc) {
+  pdfDoc = doc;
+  rendrePage(1);
+}).catch(function(err) {
+  document.getElementById('canvasWrapper').innerHTML = '<div class="alert alert-danger m-3">Chargement du PDF impossible : ' + err.message + '</div>';
+});
+</script>
+<% } %>
+
+<%- include('partials/footer') %>

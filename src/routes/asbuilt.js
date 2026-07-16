@@ -381,6 +381,115 @@ router.post('/modification/:id/decision', express.urlencoded({ extended: true })
   res.redirect('/asbuilt/projet/' + projetId + '/registre');
 });
 
+// ── Visualiseur de plans (PDF.js + annotations structurées) ─────────────────
+router.get('/projet/:id/visualiseur', async (req, res) => {
+  const projet = await chargerProjet(req.db, parseInt(req.params.id));
+  if (!projet) return res.redirect('/asbuilt');
+
+  const plans = (await req.db.execute({
+    sql: `SELECT id, nom, categorie, nb_pages FROM asbuilt_documents
+          WHERE projet_id = ? AND type_fichier = 'pdf' AND categorie IN ('plan_initial','plan_annote','dessin_atelier')
+          ORDER BY categorie, nom`,
+    args: [projet.id],
+  })).rows;
+
+  const documentId = parseInt(req.query.document) || (plans[0] && plans[0].id);
+  const plan = plans.find((p) => p.id === documentId) || null;
+
+  let urlPlan = null;
+  if (plan) {
+    const rDoc = await req.db.execute({ sql: 'SELECT cle_stockage FROM asbuilt_documents WHERE id = ?', args: [plan.id] });
+    try { urlPlan = await createSignedUrl(BUCKETS.PLANS_ASBUILT, rDoc.rows[0].cle_stockage, 3600); } catch (_) {}
+  }
+
+  const annotations = plan ? (await req.db.execute({
+    sql: 'SELECT * FROM asbuilt_annotations WHERE document_id = ? ORDER BY page, id',
+    args: [plan.id],
+  })).rows : [];
+
+  // Modifications approuvées non encore annotées : proposées au lien lors de
+  // la pose d'une annotation (le registre reste la source de vérité).
+  const modifications = (await req.db.execute({
+    sql: `SELECT id, titre, type, feuille, statut FROM asbuilt_modifications
+          WHERE projet_id = ? AND statut IN ('approuvee','annotee') ORDER BY id`,
+    args: [projet.id],
+  })).rows;
+
+  res.render('asbuilt-visualiseur', {
+    projet, plans, plan, urlPlan, annotations, modifications,
+    CATEGORIES, TYPES_MODIFICATION,
+  });
+});
+
+// API JSON des annotations (objets structurés, jamais dessinés « à plat »).
+router.post('/document/:id/annotations', express.json(), async (req, res) => {
+  const rDoc = await req.db.execute({ sql: 'SELECT id, projet_id FROM asbuilt_documents WHERE id = ?', args: [parseInt(req.params.id)] });
+  if (rDoc.rows.length === 0) return res.status(404).json({ error: 'Document introuvable' });
+  const doc = rDoc.rows[0];
+
+  const a = req.body || {};
+  const type = ['nuage', 'fleche', 'note', 'barre', 'ajout', 'texte'].includes(a.type) ? a.type : 'note';
+  const r = await req.db.execute({
+    sql: `INSERT INTO asbuilt_annotations (projet_id, document_id, modification_id, page, type, x, y, w, h, texte, couleur, statut, auteur)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [
+      doc.projet_id, doc.id, parseInt(a.modification_id) || null,
+      parseInt(a.page) || 0, type,
+      Number(a.x) || 0, Number(a.y) || 0, Number(a.w) || 0, Number(a.h) || 0,
+      (a.texte || '').substring(0, 500), a.couleur || null, a.statut || null,
+      (a.auteur || '').substring(0, 100) || null,
+    ],
+  });
+
+  // Une modification liée à au moins une annotation passe « annotée ».
+  if (parseInt(a.modification_id)) {
+    await req.db.execute({
+      sql: `UPDATE asbuilt_modifications SET statut = 'annotee' WHERE id = ? AND statut = 'approuvee'`,
+      args: [parseInt(a.modification_id)],
+    }).catch(() => {});
+  }
+  res.json({ ok: true, id: r.lastInsertRowid });
+});
+
+router.post('/annotation/:id/supprimer', async (req, res) => {
+  await req.db.execute({ sql: 'DELETE FROM asbuilt_annotations WHERE id = ?', args: [parseInt(req.params.id)] });
+  res.json({ ok: true });
+});
+
+// ── Rapport final ────────────────────────────────────────────────────────────
+router.get('/projet/:id/rapport', async (req, res) => {
+  const projet = await chargerProjet(req.db, parseInt(req.params.id));
+  if (!projet) return res.redirect('/asbuilt');
+
+  const documents = (await req.db.execute({
+    sql: 'SELECT * FROM asbuilt_documents WHERE projet_id = ? ORDER BY categorie, nom',
+    args: [projet.id],
+  })).rows;
+
+  const modifications = (await req.db.execute({
+    sql: `SELECT m.*, d.nom AS document_nom FROM asbuilt_modifications m
+          LEFT JOIN asbuilt_documents d ON d.id = m.document_id
+          WHERE m.projet_id = ? ORDER BY m.statut, m.feuille, m.id`,
+    args: [projet.id],
+  })).rows;
+  modifications.forEach((m) => { m.preuve = parseJson(m.preuve_execution, null); });
+
+  const approuvees = modifications.filter((m) => ['approuvee', 'annotee', 'integree'].includes(m.statut));
+  const refusees = modifications.filter((m) => m.statut === 'refusee');
+  const manquantes = modifications.filter((m) => m.type === 'info_manquante' || m.statut === 'a_clarifier');
+  const contradictions = modifications.filter((m) => m.type === 'contradiction');
+  const enAttente = modifications.filter((m) => ['detectee', 'a_verifier'].includes(m.statut));
+  const feuilles = [...new Set(modifications.map((m) => m.feuille).filter(Boolean))].sort();
+  const validateurs = [...new Set(modifications.map((m) => m.valide_par).filter(Boolean))];
+
+  res.render('asbuilt-rapport', {
+    projet, documents, modifications, approuvees, refusees, manquantes, contradictions,
+    enAttente, feuilles, validateurs,
+    CATEGORIES, STATUTS_MODIFICATION, TYPES_MODIFICATION,
+    dateProduction: new Date().toLocaleDateString('fr-CA', { year: 'numeric', month: 'long', day: 'numeric' }),
+  });
+});
+
 module.exports = router;
 module.exports.CATEGORIES = CATEGORIES;
 module.exports.DISCIPLINES = DISCIPLINES;
