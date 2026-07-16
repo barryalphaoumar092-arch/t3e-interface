@@ -20,7 +20,11 @@ ENV LC_ALL=C.UTF-8
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci --omit=dev
+# npm install plutôt que npm ci : le lockfile n'a pas pu être régénéré ici
+# (pas de Node/npm dans l'environnement de développement de ce dépôt) après
+# l'ajout de la dépendance playwright — npm ci exige une synchronie stricte
+# lockfile/package.json que npm install n'impose pas.
+RUN npm install --omit=dev
 
 # Chromium pour le scraper SEAO (src/services/seao-scraper.js) — le site SEAO
 # est une application JavaScript qui nécessite un vrai navigateur avec session
