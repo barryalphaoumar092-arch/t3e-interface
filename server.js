@@ -260,6 +260,7 @@ app.use('/manuels', require('./src/routes/manuels'));
 app.use('/appels-offres', require('./src/routes/appels-offres'));
 
 app.use('/recherche', require('./src/routes/recherche'));
+app.use('/asbuilt', require('./src/routes/asbuilt'));
 app.use('/api', require('./src/routes/api'));
 
 app.use((err, req, res, next) => {

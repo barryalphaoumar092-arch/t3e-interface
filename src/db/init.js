@@ -141,6 +141,101 @@ async function initDb() {
       created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (appel_offre_id) REFERENCES appels_offres_seao(id)
     )`,
+    // ── Module « plans tel que construit » (as-built) ──────────────────────
+    // Projet as-built : conteneur des plans/documents et du registre des
+    // modifications. disciplines = JSON array (architecture, structure,
+    // mecanique, electricite, plomberie, toiture, civil, autre).
+    `CREATE TABLE IF NOT EXISTS asbuilt_projets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      numero TEXT,
+      nom TEXT NOT NULL,
+      client TEXT,
+      adresse TEXT,
+      description TEXT,
+      responsable TEXT,
+      disciplines JSON,
+      format_plans TEXT,
+      notes TEXT,
+      statut TEXT DEFAULT 'nouveau' CHECK(statut IN ('nouveau','documents','analyse','revision','annotation','termine')),
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    )`,
+    // Documents importes (plans initiaux, devis, avenants, directives, ordres
+    // de changement, rapports journaliers, DDI, dessins d'atelier, photos,
+    // plans annotes, releves, autres). extraction = JSON structure produit
+    // par l'analyse IA, TOUJOURS lie a la source (document + pages).
+    `CREATE TABLE IF NOT EXISTS asbuilt_documents (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      projet_id INTEGER NOT NULL,
+      nom TEXT NOT NULL,
+      categorie TEXT NOT NULL CHECK(categorie IN ('plan_initial','devis','avenant','directive','ordre_changement','rapport_journalier','demande_information','dessin_atelier','photo','plan_annote','releve_chantier','autre')),
+      type_fichier TEXT,
+      date_document TEXT,
+      version TEXT,
+      auteur TEXT,
+      statut_analyse TEXT DEFAULT 'en_attente' CHECK(statut_analyse IN ('en_attente','en_cours','analyse','sans_texte','erreur')),
+      cle_stockage TEXT NOT NULL,
+      taille_octets INTEGER,
+      nb_pages INTEGER,
+      extraction JSON,
+      erreur_analyse TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (projet_id) REFERENCES asbuilt_projets(id)
+    )`,
+    // Registre central des modifications detectees. Chaque ligne DOIT etre
+    // liee a au moins une source (document_id + page + extrait). confiance in
+    // [0,1]. Le systeme distingue proposee/approuvee/executee/verifiee via
+    // preuve_execution (JSON : {statut, sources:[...]}).
+    `CREATE TABLE IF NOT EXISTS asbuilt_modifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      projet_id INTEGER NOT NULL,
+      titre TEXT NOT NULL,
+      description TEXT,
+      type TEXT CHECK(type IN ('ajout','suppression','deplacement','dimension','materiau','quantite','equipement','detail','contradiction','info_manquante')),
+      discipline TEXT,
+      feuille TEXT,
+      zone TEXT,
+      element TEXT,
+      action_proposee TEXT,
+      document_id INTEGER,
+      page_source INTEGER,
+      extrait_source TEXT,
+      confiance REAL,
+      priorite TEXT DEFAULT 'normale' CHECK(priorite IN ('basse','normale','haute','critique')),
+      statut TEXT DEFAULT 'detectee' CHECK(statut IN ('detectee','a_verifier','approuvee','refusee','a_clarifier','annotee','integree')),
+      preuve_execution JSON,
+      references_connexes JSON,
+      commentaire_reviseur TEXT,
+      valide_par TEXT,
+      valide_le TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (projet_id) REFERENCES asbuilt_projets(id),
+      FOREIGN KEY (document_id) REFERENCES asbuilt_documents(id)
+    )`,
+    // Annotations structurees posees sur un plan (jamais dessinees a plat) :
+    // coordonnees en % de la page (meme convention que l'editeur SEAO),
+    // liees optionnellement a une modification du registre.
+    `CREATE TABLE IF NOT EXISTS asbuilt_annotations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      projet_id INTEGER NOT NULL,
+      document_id INTEGER NOT NULL,
+      modification_id INTEGER,
+      page INTEGER DEFAULT 0,
+      type TEXT CHECK(type IN ('nuage','fleche','note','barre','ajout','texte')),
+      x REAL, y REAL, w REAL, h REAL,
+      texte TEXT,
+      couleur TEXT,
+      statut TEXT,
+      auteur TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (projet_id) REFERENCES asbuilt_projets(id),
+      FOREIGN KEY (document_id) REFERENCES asbuilt_documents(id),
+      FOREIGN KEY (modification_id) REFERENCES asbuilt_modifications(id)
+    )`,
+    'CREATE INDEX IF NOT EXISTS idx_asbuilt_docs_projet ON asbuilt_documents(projet_id)',
+    'CREATE INDEX IF NOT EXISTS idx_asbuilt_modifs_projet ON asbuilt_modifications(projet_id)',
+    'CREATE INDEX IF NOT EXISTS idx_asbuilt_modifs_statut ON asbuilt_modifications(statut)',
+    'CREATE INDEX IF NOT EXISTS idx_asbuilt_annot_document ON asbuilt_annotations(document_id)',
   ];
 
   const alterMigrations = [

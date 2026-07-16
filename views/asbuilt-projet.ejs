@@ -1,0 +1,231 @@
+<%- include('partials/header', { title: projet.nom + ' — Tel que construit', page: 'asbuilt' }) %>
+
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="/asbuilt">Tel que construit</a></li>
+    <li class="breadcrumb-item active"><%= projet.nom %></li>
+  </ol>
+</nav>
+
+<% var s = STATUTS_PROJET[projet.statut] || STATUTS_PROJET.nouveau; %>
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+  <div>
+    <h4 class="mb-1"><i class="bi bi-rulers"></i> <%= projet.numero ? projet.numero + ' — ' : '' %><%= projet.nom %>
+      <span class="badge bg-<%= s.badge %> fs-6 align-middle"><%= s.label %></span>
+    </h4>
+    <div class="text-muted small">
+      <%= projet.client || '' %><%= projet.adresse ? ' · ' + projet.adresse : '' %>
+      <%= projet.responsable ? ' · Responsable : ' + projet.responsable : '' %>
+      <% if (projet.disciplines_liste.length) { %> · Disciplines : <%= projet.disciplines_liste.join(', ') %><% } %>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="/asbuilt/projet/<%= projet.id %>/registre" class="btn btn-outline-primary">
+      <i class="bi bi-list-check"></i> Registre des modifications
+      <% if (aValider > 0) { %><span class="badge bg-warning text-dark ms-1"><%= aValider %> à valider</span><% } %>
+    </a>
+    <form method="POST" action="/asbuilt/projet/<%= projet.id %>/supprimer" onsubmit="return confirm('Supprimer ce projet, ses documents et son registre ?')">
+      <button class="btn btn-outline-danger"><i class="bi bi-trash"></i></button>
+    </form>
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- Colonne import -->
+  <div class="col-lg-4">
+    <div class="card mb-3">
+      <div class="card-header bg-dark text-white py-2"><i class="bi bi-cloud-upload"></i> Importer des documents</div>
+      <div class="card-body">
+        <form id="formImport" method="POST" action="/asbuilt/projet/<%= projet.id %>/documents">
+          <label class="form-label small fw-bold">Catégorie *</label>
+          <select name="categorie" id="selCategorie" class="form-select form-select-sm mb-2">
+            <% Object.keys(CATEGORIES).forEach(function(c) { %>
+            <option value="<%= c %>"><%= CATEGORIES[c] %></option>
+            <% }); %>
+          </select>
+
+          <div id="zoneDepot" class="border border-2 border-secondary-subtle rounded text-center p-4 mb-2" style="border-style:dashed !important; cursor:pointer;">
+            <i class="bi bi-file-earmark-arrow-up fs-2 text-muted d-block"></i>
+            <span class="small text-muted">Glissez-déposez les fichiers ici<br>ou cliquez pour choisir</span>
+            <input type="file" id="inputFichiers" class="d-none" multiple
+                   accept=".pdf,.jpg,.jpeg,.png,.docx,.xlsx,.txt,.csv,.dwg,.dxf,.ifc,.rvt">
+          </div>
+          <div id="listeFichiers" class="small mb-2"></div>
+
+          <div class="row g-2 mb-2">
+            <div class="col-6"><input type="date" name="date_document" class="form-control form-control-sm" title="Date du document"></div>
+            <div class="col-6"><input type="text" name="version" class="form-control form-control-sm" placeholder="Version (ex : R2)"></div>
+            <div class="col-12"><input type="text" name="auteur" class="form-control form-control-sm" placeholder="Auteur / source (architecte, chantier…)"></div>
+          </div>
+          <div class="d-grid">
+            <button type="submit" id="btnImporter" class="btn btn-primary btn-sm" disabled>
+              <i class="bi bi-upload"></i> Importer
+            </button>
+          </div>
+          <div class="form-text">PDF, JPG, PNG, DOCX, XLSX, TXT, CSV. Les DWG/DXF/IFC/RVT sont acceptés et stockés, mais leur analyse n'est pas encore prise en charge.</div>
+        </form>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header py-2"><i class="bi bi-cpu"></i> Analyse IA</div>
+      <div class="card-body">
+        <% if (!analyseConfiguree) { %>
+        <div class="alert alert-warning py-2 small mb-2">Aucune clé IA configurée (OPENAI_API_KEY ou ANTHROPIC_API_KEY) — l'analyse est désactivée.</div>
+        <% } %>
+        <p class="small text-muted mb-2">
+          L'IA lit chaque document, extrait les feuilles, zones, équipements et mentions
+          (« non installé », « déplacé », « ajouté »…) puis propose des modifications —
+          chacune liée à sa source exacte. Une directive émise n'est <strong>jamais</strong> considérée
+          comme exécutée sans preuve (rapport, photo, plan annoté).
+        </p>
+        <form method="POST" action="/asbuilt/projet/<%= projet.id %>/analyser">
+          <div class="d-grid">
+            <button class="btn btn-warning" <%= (!analyseConfiguree || documents.length === 0 || projet.statut === 'analyse') ? 'disabled' : '' %>>
+              <i class="bi bi-stars"></i>
+              <%= projet.statut === 'analyse' ? 'Analyse en cours…' : 'Lancer l\'analyse des documents' %>
+            </button>
+          </div>
+        </form>
+        <% if (projet.statut === 'analyse') { %>
+        <div class="alert alert-info py-2 small mt-2 mb-0">
+          <i class="bi bi-hourglass-split"></i> Analyse en arrière-plan — actualisez la page pour voir la progression.
+          <button type="button" class="btn btn-outline-primary btn-sm ms-1" onclick="location.reload()"><i class="bi bi-arrow-clockwise"></i></button>
+        </div>
+        <% } %>
+        <% if (totalModifs > 0) { %>
+        <hr>
+        <div class="small">
+          <strong><%= totalModifs %></strong> modification(s) au registre :
+          <% statsModifs.forEach(function(st) { var b = STATUTS_MODIFICATION[st.statut]; if (!b) return; %>
+          <span class="badge bg-<%= b.badge %>"><%= b.label %> : <%= st.n %></span>
+          <% }); %>
+        </div>
+        <% } %>
+      </div>
+    </div>
+  </div>
+
+  <!-- Colonne documents -->
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-header py-2 d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-files"></i> Documents du projet (<%= documents.length %>)</span>
+      </div>
+      <div class="card-body p-0">
+        <% if (documents.length === 0) { %>
+        <div class="text-center text-muted py-5">Aucun document — commencez par importer les plans initiaux.</div>
+        <% } else { %>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Nom</th><th>Catégorie</th><th>Type</th><th>Date</th><th>Version</th><th>Auteur</th><th>Analyse</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <% documents.forEach(function(d) { %>
+              <tr>
+                <td class="small"><a href="/asbuilt/document/<%= d.id %>/fichier" target="_blank" title="Ouvrir le fichier source"><%= d.nom %></a></td>
+                <td><span class="badge bg-light text-dark border"><%= CATEGORIES[d.categorie] || d.categorie %></span></td>
+                <td class="small text-uppercase"><%= d.type_fichier || '' %></td>
+                <td class="small"><%= d.date_document || '—' %></td>
+                <td class="small"><%= d.version || '—' %></td>
+                <td class="small"><%= d.auteur || '—' %></td>
+                <td>
+                  <% if (d.statut_analyse === 'analyse') { %><span class="badge bg-success">Analysé</span>
+                  <% } else if (d.statut_analyse === 'en_cours') { %><span class="badge bg-primary">En cours</span>
+                  <% } else if (d.statut_analyse === 'erreur') { %><span class="badge bg-danger" title="<%= d.erreur_analyse || '' %>">Erreur</span>
+                  <% } else if (d.statut_analyse === 'sans_texte') { %><span class="badge bg-secondary" title="Aucun texte extractible (image/scan) — à traiter manuellement">Sans texte</span>
+                  <% } else { %><span class="badge bg-light text-dark border">En attente</span><% } %>
+                </td>
+                <td class="text-end">
+                  <% if ((d.type_fichier || '') === 'pdf' && (d.categorie === 'plan_initial' || d.categorie === 'plan_annote')) { %>
+                  <a href="/asbuilt/projet/<%= projet.id %>/visualiseur?document=<%= d.id %>" class="btn btn-sm btn-outline-secondary" title="Ouvrir dans le visualiseur"><i class="bi bi-eye"></i></a>
+                  <% } %>
+                  <form method="POST" action="/asbuilt/document/<%= d.id %>/supprimer" class="d-inline" onsubmit="return confirm('Supprimer ce document ?')">
+                    <button class="btn btn-sm btn-outline-danger" title="Supprimer"><i class="bi bi-x-lg"></i></button>
+                  </form>
+                </td>
+              </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </div>
+        <% } %>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="/js/direct-upload.js"></script>
+<script>
+window.T3E_SUPABASE_URL = "<%= SUPABASE_URL %>";
+window.T3E_SUPABASE_ANON_KEY = "<%= SUPABASE_ANON_KEY %>";
+
+var zone = document.getElementById('zoneDepot');
+var input = document.getElementById('inputFichiers');
+var liste = document.getElementById('listeFichiers');
+var btn = document.getElementById('btnImporter');
+var fichiers = [];
+
+function rafraichir() {
+  liste.innerHTML = fichiers.map(function(f, i) {
+    return '<span class="badge bg-light text-dark border me-1 mb-1">' + f.name +
+      ' <a href="#" data-i="' + i + '" class="text-danger text-decoration-none retirer">&times;</a></span>';
+  }).join('');
+  btn.disabled = fichiers.length === 0;
+  liste.querySelectorAll('.retirer').forEach(function(a) {
+    a.addEventListener('click', function(e) {
+      e.preventDefault();
+      fichiers.splice(parseInt(a.dataset.i), 1);
+      rafraichir();
+    });
+  });
+}
+
+function ajouter(fileList) {
+  for (var i = 0; i < fileList.length; i++) fichiers.push(fileList[i]);
+  rafraichir();
+}
+
+zone.addEventListener('click', function() { input.click(); });
+input.addEventListener('change', function() { ajouter(input.files); input.value = ''; });
+zone.addEventListener('dragover', function(e) { e.preventDefault(); zone.classList.add('bg-light'); });
+zone.addEventListener('dragleave', function() { zone.classList.remove('bg-light'); });
+zone.addEventListener('drop', function(e) {
+  e.preventDefault();
+  zone.classList.remove('bg-light');
+  ajouter(e.dataTransfer.files);
+});
+
+function ajouterChampCache(form, name, value) {
+  var inp = document.createElement('input');
+  inp.type = 'hidden'; inp.name = name; inp.value = value;
+  form.appendChild(inp);
+}
+
+document.getElementById('formImport').addEventListener('submit', function(e) {
+  e.preventDefault();
+  if (fichiers.length === 0) return;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Envoi…';
+  var form = this;
+  Promise.all(fichiers.map(function(f) {
+    return t3eDirectUpload.uploadDirect(f, 'temp');
+  })).then(function(infos) {
+    infos.forEach(function(info) {
+      ajouterChampCache(form, 'fichier_key', info.key);
+      ajouterChampCache(form, 'fichier_name', info.name);
+    });
+    form.submit();
+  }).catch(function(err) {
+    alert("Erreur lors de l'envoi : " + err.message);
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-upload"></i> Importer';
+  });
+});
+</script>
+
+<%- include('partials/footer') %>

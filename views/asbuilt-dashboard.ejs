@@ -1,0 +1,64 @@
+<%- include('partials/header', { title: 'Tel que construit', page: 'asbuilt' }) %>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0"><i class="bi bi-rulers"></i> Plans « tel que construit »</h4>
+  <a href="/asbuilt/nouveau" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nouveau projet</a>
+</div>
+
+<p class="text-muted small">
+  Production semi-automatique de plans tel que construit : importez les plans et documents de chantier,
+  l'IA propose les modifications détectées (chacune liée à sa source), vous validez, puis le plan est annoté.
+  <strong>Aucun plan n'est final sans validation humaine.</strong>
+</p>
+
+<% if (projets.length === 0) { %>
+<div class="alert alert-light border text-center py-5">
+  <i class="bi bi-rulers fs-1 text-muted d-block mb-2"></i>
+  Aucun projet pour l'instant. <a href="/asbuilt/nouveau">Créez le premier projet</a>.
+</div>
+<% } else { %>
+<div class="table-responsive">
+  <table class="table table-hover align-middle">
+    <thead class="table-dark">
+      <tr>
+        <th>N° projet</th>
+        <th>Nom</th>
+        <th>Client</th>
+        <th>Adresse</th>
+        <th>Responsable</th>
+        <th class="text-center">Plans</th>
+        <th class="text-center">Documents</th>
+        <th class="text-center">Modifications</th>
+        <th class="text-center">À valider</th>
+        <th>Créé le</th>
+        <th>Statut</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      <% projets.forEach(function(p) { var s = STATUTS_PROJET[p.statut] || STATUTS_PROJET.nouveau; %>
+      <tr>
+        <td class="fw-bold"><%= p.numero || '—' %></td>
+        <td><a href="/asbuilt/projet/<%= p.id %>"><%= p.nom %></a></td>
+        <td><%= p.client || '—' %></td>
+        <td class="small text-muted"><%= p.adresse || '—' %></td>
+        <td><%= p.responsable || '—' %></td>
+        <td class="text-center"><%= p.nb_plans %></td>
+        <td class="text-center"><%= p.nb_documents %></td>
+        <td class="text-center"><%= p.nb_modifications %></td>
+        <td class="text-center">
+          <% if (p.nb_a_valider > 0) { %><span class="badge bg-warning text-dark"><%= p.nb_a_valider %></span><% } else { %>0<% } %>
+        </td>
+        <td class="small"><%= (p.created_at || '').substring(0, 10) %></td>
+        <td><span class="badge bg-<%= s.badge %>"><%= s.label %></span></td>
+        <td class="text-end">
+          <a href="/asbuilt/projet/<%= p.id %>" class="btn btn-sm btn-outline-primary"><i class="bi bi-folder2-open"></i> Ouvrir</a>
+        </td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</div>
+<% } %>
+
+<%- include('partials/footer') %>

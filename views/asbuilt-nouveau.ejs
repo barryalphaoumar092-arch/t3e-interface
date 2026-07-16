@@ -1,0 +1,79 @@
+<%- include('partials/header', { title: 'Nouveau projet tel que construit', page: 'asbuilt' }) %>
+
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="/asbuilt">Tel que construit</a></li>
+    <li class="breadcrumb-item active">Nouveau projet</li>
+  </ol>
+</nav>
+
+<div class="row justify-content-center">
+  <div class="col-md-9 col-lg-7">
+    <div class="card">
+      <div class="card-header bg-dark text-white"><i class="bi bi-rulers"></i> Créer un projet « tel que construit »</div>
+      <div class="card-body">
+        <form method="POST" action="/asbuilt/nouveau">
+          <div class="row g-3">
+            <div class="col-md-8">
+              <label class="form-label fw-bold">Nom du projet *</label>
+              <input type="text" name="nom" class="form-control" required placeholder="Ex : Réfection des toitures — CPE Les Tourterelles">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-bold">Numéro de projet</label>
+              <input type="text" name="numero" class="form-control" placeholder="Ex : 26-094">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-bold">Client</label>
+              <input type="text" name="client" class="form-control">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-bold">Responsable</label>
+              <input type="text" name="responsable" class="form-control" placeholder="Qui pilote la révision ?">
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-bold">Adresse</label>
+              <input type="text" name="adresse" class="form-control">
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-bold">Description</label>
+              <textarea name="description" class="form-control" rows="2" placeholder="Portée des travaux, contexte…"></textarea>
+            </div>
+            <div class="col-md-7">
+              <label class="form-label fw-bold">Disciplines applicables</label>
+              <div class="row row-cols-2">
+                <% DISCIPLINES.forEach(function(d, i) { %>
+                <div class="col">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="disciplines" value="<%= d %>" id="disc<%= i %>" <%= d === 'toiture' ? 'checked' : '' %>>
+                    <label class="form-check-label text-capitalize" for="disc<%= i %>"><%= d %></label>
+                  </div>
+                </div>
+                <% }); %>
+              </div>
+            </div>
+            <div class="col-md-5">
+              <label class="form-label fw-bold">Format des plans disponibles</label>
+              <select name="format_plans" class="form-select">
+                <option value="pdf">PDF</option>
+                <option value="papier_scanne">Papier numérisé (images)</option>
+                <option value="dwg">DWG / DXF (prise en charge partielle)</option>
+                <option value="revit">Revit / IFC (prise en charge partielle)</option>
+                <option value="mixte">Mixte</option>
+              </select>
+              <div class="form-text">Le MVP traite PDF et images ; l'architecture prévoit DWG/DXF/IFC/Revit plus tard.</div>
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-bold">Notes internes</label>
+              <textarea name="notes" class="form-control" rows="2"></textarea>
+            </div>
+          </div>
+          <div class="d-grid mt-4">
+            <button type="submit" class="btn btn-primary btn-lg"><i class="bi bi-plus-lg"></i> Créer le projet</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%- include('partials/footer') %>
