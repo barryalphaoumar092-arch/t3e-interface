@@ -36,6 +36,20 @@
           <tr><th>Avis complet sur SEAO</th><td><a href="<%= appel.url_seao %>" target="_blank" rel="noopener"><%= appel.url_seao %> <i class="bi bi-box-arrow-up-right"></i></a></td></tr>
           <% } %>
         </table>
+
+        <% if (appel.statut_import === 'en_cours') { %>
+        <div class="alert alert-info small mb-0"><span class="spinner-border spinner-border-sm me-2"></span>Importation depuis SEAO en cours (métadonnées, documents, analyse des exigences)… Actualisez la page dans quelques instants.</div>
+        <% } else if (appel.statut_import === 'erreur') { %>
+        <div class="alert alert-danger small mb-2"><i class="bi bi-exclamation-triangle"></i> L'importation automatique a échoué : <%= appel.erreur_import %></div>
+        <% } %>
+        <form method="POST" action="/appels-offres/<%= appel.id %>/actualiser-seao" class="d-inline">
+          <button type="submit" class="btn btn-sm btn-outline-primary" <%= appel.statut_import === 'en_cours' ? 'disabled' : '' %>>
+            <i class="bi bi-arrow-clockwise"></i> <%= appel.statut_import === 'succes' ? 'Réactualiser depuis SEAO (nouveaux addendas)' : 'Réessayer l\'import direct SEAO' %>
+          </button>
+        </form>
+        <% if (appel.derniere_synchronisation_documents) { %>
+        <span class="text-muted small ms-2">Dernière synchro : <%= appel.derniere_synchronisation_documents %></span>
+        <% } %>
       </div>
     </div>
 

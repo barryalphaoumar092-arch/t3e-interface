@@ -293,6 +293,12 @@ async function initDb() {
     // Accuse de reception d'un addenda (checklist de depot) — pertinent
     // seulement pour categorie='addenda', ignore pour les autres categories.
     'ALTER TABLE appels_offres_documents ADD COLUMN accuse INTEGER DEFAULT 0',
+    // Suivi de l'import automatique depuis SEAO (scraper Playwright, voir
+    // seao-scraper.js/seao-import-orchestrateur.js) — distinct de
+    // statut_interne (jugement de l'utilisateur sur le projet).
+    "ALTER TABLE appels_offres_seao ADD COLUMN statut_import TEXT DEFAULT 'jamais_tente'",
+    'ALTER TABLE appels_offres_seao ADD COLUMN erreur_import TEXT',
+    'ALTER TABLE appels_offres_seao ADD COLUMN derniere_synchronisation_documents TEXT',
   ];
 
   for (const sql of migrations) {

@@ -177,6 +177,70 @@ router.post('/actualiser', async (req, res) => {
   }
 });
 
+// Import DIRECT depuis SEAO (URL de l'avis ou numéro) — contrairement à
+// /importer (dépôt manuel de fichiers), celui-ci se connecte à SEAO avec la
+// session de l'entreprise et récupère lui-même les métadonnées ET tous les
+// documents (voir seao-scraper.js). Traitement délégué au service Render
+// (seul endroit avec Chromium) : on crée/marque la fiche "en_cours" tout de
+// suite, puis on revient sur la page de détail qui se rafraîchira une fois le
+// travail terminé (statut_import passe à 'succes' ou 'erreur').
+router.post('/importer-direct', async (req, res) => {
+  const db = req.db;
+  const url = (req.body.url_seao || '').trim();
+  const numeroAvis = (req.body.numero_avis || '').trim();
+  if (!url && !numeroAvis) {
+    return res.render('appel-offre-importer', { erreur: "Donnez l'URL de l'avis SEAO ou son numéro." });
+  }
+
+  const numeroFinal = numeroAvis || ('EN_ATTENTE-' + Date.now());
+  let appelId;
+  try {
+    const r = await db.execute({
+      sql: `INSERT INTO appels_offres_seao (numero_seao, titre, url_seao, statut_import)
+            VALUES (?, ?, ?, 'en_cours')
+            ON CONFLICT(numero_seao) DO UPDATE SET statut_import = 'en_cours', updated_at = datetime('now')`,
+      args: [numeroFinal, 'Importation SEAO en cours...', url || null],
+    });
+    appelId = r.lastInsertRowid
+      ? Number(r.lastInsertRowid)
+      : (await db.execute({ sql: 'SELECT id FROM appels_offres_seao WHERE numero_seao = ?', args: [numeroFinal] })).rows[0].id;
+  } catch (e) {
+    return res.render('appel-offre-importer', { erreur: e.message });
+  }
+
+  await enregistrerHistorique(db, appelId, 'import_seao_lance', url || numeroAvis);
+  const { lancerImportSeaoDistant } = require('../services/seao-import-distant');
+  const declenchement = await lancerImportSeaoDistant({ appelOffreId: appelId, url: url || null, numeroAvis: numeroAvis || null });
+  if (!declenchement.ok) {
+    await db.execute({ sql: `UPDATE appels_offres_seao SET statut_import = 'erreur', erreur_import = ? WHERE id = ?`, args: [declenchement.error, appelId] });
+  }
+
+  res.redirect(`/appels-offres/${appelId}`);
+});
+
+// Relance l'import direct pour un appel d'offres existant (nouveaux
+// addendas publiés, ou premier essai échoué) — réutilise son url_seao/numero_seao.
+router.post('/:id/actualiser-seao', async (req, res) => {
+  const db = req.db;
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) return res.redirect('/appels-offres');
+  const r = await db.execute({ sql: 'SELECT numero_seao, url_seao FROM appels_offres_seao WHERE id = ?', args: [id] });
+  if (r.rows.length === 0) return res.redirect('/appels-offres');
+
+  await db.execute({ sql: `UPDATE appels_offres_seao SET statut_import = 'en_cours' WHERE id = ?`, args: [id] });
+  await enregistrerHistorique(db, id, 'import_seao_relance');
+  const { lancerImportSeaoDistant } = require('../services/seao-import-distant');
+  const declenchement = await lancerImportSeaoDistant({
+    appelOffreId: id,
+    url: r.rows[0].url_seao && !r.rows[0].url_seao.startsWith('http') ? null : r.rows[0].url_seao,
+    numeroAvis: r.rows[0].numero_seao && !r.rows[0].numero_seao.startsWith('EN_ATTENTE') ? r.rows[0].numero_seao : null,
+  });
+  if (!declenchement.ok) {
+    await db.execute({ sql: `UPDATE appels_offres_seao SET statut_import = 'erreur', erreur_import = ? WHERE id = ?`, args: [declenchement.error, id] });
+  }
+  res.redirect(`/appels-offres/${id}`);
+});
+
 router.get('/:id', async (req, res) => {
   const db = req.db;
   const id = parseInt(req.params.id);

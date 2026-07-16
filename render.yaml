@@ -13,3 +13,17 @@ services:
         sync: false
       - key: NODE_ENV
         value: production
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: CONVERT_SERVICE_SECRET
+        sync: false
+      - key: SEAO_USERNAME
+        sync: false
+      - key: SEAO_PASSWORD
+        sync: false
+      - key: PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD
+        value: "0"

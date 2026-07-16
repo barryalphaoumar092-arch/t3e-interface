@@ -22,6 +22,12 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev
 
+# Chromium pour le scraper SEAO (src/services/seao-scraper.js) — le site SEAO
+# est une application JavaScript qui nécessite un vrai navigateur avec session
+# (voir project_seao... : une requête HTTP simple retourne une page vide).
+# Ce navigateur ne tourne que sur ce service Render, jamais sur Vercel.
+RUN npx playwright install --with-deps chromium
+
 COPY . .
 
 EXPOSE 3000

@@ -16,6 +16,26 @@
 <div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> <%= erreur %></div>
 <% } %>
 
+<div class="card card-body mb-4 border-primary" style="max-width:800px">
+  <h6 class="mb-2"><i class="bi bi-robot"></i> Import direct depuis SEAO <span class="badge bg-primary">Recommandé</span></h6>
+  <p class="text-muted small mb-3">
+    Collez l'URL de l'avis SEAO ou son numéro — l'application se connecte à SEAO avec le compte de l'entreprise, récupère automatiquement le titre, les dates, et TOUS les documents disponibles (devis, plans, addendas, formulaire), puis lance l'analyse des exigences. Le traitement se fait en arrière-plan (peut prendre quelques minutes) ; la page de détail affichera le résultat.
+  </p>
+  <form method="POST" action="/appels-offres/importer-direct" class="row g-2">
+    <div class="col-md-7">
+      <input type="url" name="url_seao" class="form-control" placeholder="https://seao.gouv.qc.ca/OpportunityPublication/...">
+    </div>
+    <div class="col-md-3">
+      <input type="text" name="numero_avis" class="form-control" placeholder="ou numéro d'avis">
+    </div>
+    <div class="col-md-2">
+      <button type="submit" class="btn btn-primary w-100"><i class="bi bi-cloud-download"></i> Importer</button>
+    </div>
+  </form>
+</div>
+
+<p class="text-muted small">Ou importez manuellement (déjà téléchargé les documents vous-même) :</p>
+
 <form method="POST" action="/appels-offres/importer" id="formImporter" class="card card-body" style="max-width:800px">
   <h6 class="mb-3">Informations connues <span class="text-muted fw-normal">(toutes optionnelles — remplissez ce que vous savez déjà)</span></h6>
   <div class="row">
