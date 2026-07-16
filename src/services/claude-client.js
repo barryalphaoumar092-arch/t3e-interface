@@ -681,9 +681,106 @@ function isConfigured() {
   return !!OPENAI_API_KEY;
 }
 
+// ── Extraction structurée des exigences d'un appel d'offres SEAO ──────────
+// Chaque champ retourné DOIT porter sa source exacte (document + page +
+// extrait) et un niveau de confiance — jamais une valeur "nue". Le statut
+// distingue une info clairement confirmée d'une info à vérifier ou de
+// sources contradictoires (voir demande, section 1 et 10).
+function champSourceSchema(champsSupplementaires = {}) {
+  return {
+    type: 'object',
+    properties: {
+      valeur: { type: 'string' },
+      statut: { type: 'string', enum: ['confirme', 'a_verifier', 'contradictoire', 'non_trouve'] },
+      document_source: { type: 'string' },
+      page_source: { type: 'string' },
+      extrait_source: { type: 'string' },
+      niveau_confiance: { type: 'string', enum: ['eleve', 'moyen', 'faible'] },
+      ...champsSupplementaires,
+    },
+    required: ['valeur', 'statut', 'document_source', 'page_source', 'extrait_source', 'niveau_confiance', ...Object.keys(champsSupplementaires)],
+    additionalProperties: false,
+  };
+}
+
+const MOMENT_REMISE_ENUM = [
+  'avec_soumission', 'avant_adjudication', 'apres_adjudication',
+  'avant_debut_travaux', 'pendant_travaux', 'fin_travaux', 'non_precise',
+];
+
+const ANALYSE_EXIGENCES_SCHEMA = {
+  type: 'object',
+  properties: {
+    date_debut_travaux: champSourceSchema({ moment_remise: { type: 'string', enum: MOMENT_REMISE_ENUM } }),
+    date_fin_travaux: champSourceSchema({ moment_remise: { type: 'string', enum: MOMENT_REMISE_ENUM } }),
+    methode_depot: champSourceSchema({ moment_remise: { type: 'string', enum: MOMENT_REMISE_ENUM } }),
+    cautionnement_soumission: champSourceSchema({ moment_remise: { type: 'string', enum: MOMENT_REMISE_ENUM } }),
+    cautionnement_execution: champSourceSchema({ moment_remise: { type: 'string', enum: MOMENT_REMISE_ENUM } }),
+    lettre_engagement: champSourceSchema({ moment_remise: { type: 'string', enum: MOMENT_REMISE_ENUM } }),
+    lettre_assureur: champSourceSchema({ moment_remise: { type: 'string', enum: MOMENT_REMISE_ENUM } }),
+    autres_documents: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          nom: { type: 'string' },
+          obligatoire: { type: 'boolean' },
+          moment_remise: { type: 'string', enum: MOMENT_REMISE_ENUM },
+          statut: { type: 'string', enum: ['confirme', 'a_verifier', 'contradictoire', 'non_trouve'] },
+          document_source: { type: 'string' },
+          page_source: { type: 'string' },
+          extrait_source: { type: 'string' },
+          niveau_confiance: { type: 'string', enum: ['eleve', 'moyen', 'faible'] },
+        },
+        required: ['nom', 'obligatoire', 'moment_remise', 'statut', 'document_source', 'page_source', 'extrait_source', 'niveau_confiance'],
+        additionalProperties: false,
+      },
+    },
+    contradictions: { type: 'array', items: { type: 'string' } },
+  },
+  required: [
+    'date_debut_travaux', 'date_fin_travaux', 'methode_depot',
+    'cautionnement_soumission', 'cautionnement_execution',
+    'lettre_engagement', 'lettre_assureur', 'autres_documents', 'contradictions',
+  ],
+  additionalProperties: false,
+};
+
+const SYSTEM_EXIGENCES = `Tu analyses les documents d'un appel d'offres public au Québec (SEAO) pour Toitures Trois Étoiles Inc. (T3E, entrepreneur en couverture), afin d'en extraire les exigences administratives et contractuelles clés.
+
+Les documents te sont fournis avec des marqueurs "===== DOCUMENT: ... =====" et "--- page N ---". Tu DOIS citer, pour chaque champ, le nom du document exact (document_source), le numéro de page si connu (page_source, chaîne vide si non déterminée), et un COURT extrait littéral (extrait_source, 1-2 phrases) qui justifie ta réponse.
+
+=== CHAMPS ===
+- date_debut_travaux / date_fin_travaux : date prévue ou condition (ex: "10 jours suivant l'ordre de commencer", "après les vacances de la construction"). Si seule une DURÉE est indiquée sans date de départ connue, mets statut="a_verifier" et précise dans valeur qu'un calcul est impossible sans date de départ confirmée.
+- methode_depot : comment la soumission doit être remise (dépôt électronique SEAO, en personne, courrier, courriel, ou plusieurs méthodes) — inclus l'adresse/service/inscriptions requises si remise en personne.
+- cautionnement_soumission / cautionnement_execution : type, montant (fixe ou %), durée de validité, formulaire exigé.
+- lettre_engagement : lettre d'engagement d'une compagnie de cautionnement/institution financière à fournir les garanties après adjudication — type, émetteur autorisé, signatures requises.
+- lettre_assureur : lettre/attestation/certificat d'assurance exigé — type, montant minimal de couverture, moment de remise.
+- autres_documents : TOUS les autres documents à fournir avec la soumission ou après adjudication (expérience, licences RBQ, attestations CNESST/Revenu Québec/AMF, cautionnements de sous-traitants, échéanciers, plans de santé-sécurité, etc.) — une entrée par document distinct.
+- contradictions : liste de courtes phrases signalant toute contradiction entre documents (ex: deux dates de dépôt différentes) — [] si aucune.
+
+=== RÈGLES ===
+- statut="non_trouve" avec valeur="" si l'information n'apparaît dans AUCUN document fourni — n'invente JAMAIS une date, un montant ou une exigence absente.
+- statut="contradictoire" si deux documents se contredisent — dans ce cas valeur doit contenir LES DEUX valeurs trouvées, et signaler la priorité (l'addenda le plus récent prime sur les autres documents).
+- statut="confirme" seulement si l'information est explicite et non ambiguë dans une source fiable (addenda, formulaire de soumission, instructions aux soumissionnaires).
+- niveau_confiance="faible" pour toute information déduite plutôt que trouvée explicitement, ou si les sources se contredisent.
+- Réponds en français québécois professionnel.`;
+
+async function analyserExigencesAppelOffre(contexteDocuments) {
+  const userContent = `DOCUMENTS DE L'APPEL D'OFFRES :
+───────────────────────────────────────
+${contexteDocuments}
+───────────────────────────────────────
+
+Retourne un JSON avec tous les champs demandés.`;
+
+  return callOpenAI(SYSTEM_EXIGENCES, userContent, ANALYSE_EXIGENCES_SCHEMA, true, 4096);
+}
+
 module.exports = {
   analyserDevis, analyserDevisSoumission, analyserDevisManuel,
   extraireFournisseursDesFT, mapperChampsBordereau,
   analyserInfosEntreprise, mapperChampsFormulairePdf,
+  analyserExigencesAppelOffre,
   isConfigured,
 };

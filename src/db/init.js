@@ -236,6 +236,36 @@ async function initDb() {
     'CREATE INDEX IF NOT EXISTS idx_asbuilt_modifs_projet ON asbuilt_modifications(projet_id)',
     'CREATE INDEX IF NOT EXISTS idx_asbuilt_modifs_statut ON asbuilt_modifications(statut)',
     'CREATE INDEX IF NOT EXISTS idx_asbuilt_annot_document ON asbuilt_annotations(document_id)',
+    // Exigences extraites d'un appel d'offres SEAO (dates travaux, methode de
+    // depot, cautionnements, lettre d'engagement, lettre d'assureur, autres
+    // documents requis). Chaque ligne DOIT porter sa source (document +
+    // page + extrait) — jamais une valeur affichee sans preuve. Une ligne
+    // validee manuellement (valide_manuellement=1) n'est plus jamais
+    // ecrasee par une reanalyse (voir seao-exigences.js:analyserExigences).
+    `CREATE TABLE IF NOT EXISTS exigences (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      appel_offre_id INTEGER NOT NULL,
+      categorie TEXT NOT NULL,
+      titre TEXT NOT NULL,
+      valeur TEXT,
+      statut TEXT DEFAULT 'a_verifier' CHECK(statut IN ('confirme','a_verifier','contradictoire','non_trouve')),
+      obligatoire INTEGER DEFAULT 1,
+      moment_remise TEXT,
+      document_source TEXT,
+      numero_page TEXT,
+      extrait_source TEXT,
+      niveau_confiance TEXT DEFAULT 'faible' CHECK(niveau_confiance IN ('eleve','moyen','faible')),
+      valide_manuellement INTEGER DEFAULT 0,
+      valeur_corrigee TEXT,
+      corrige_par TEXT,
+      corrige_le TEXT,
+      responsable TEXT,
+      date_echeance TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (appel_offre_id) REFERENCES appels_offres_seao(id)
+    )`,
+    'CREATE INDEX IF NOT EXISTS idx_exigences_appel ON exigences(appel_offre_id)',
   ];
 
   const alterMigrations = [

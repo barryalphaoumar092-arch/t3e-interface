@@ -12,6 +12,7 @@ const {
 } = require('../services/seao-formulaire');
 const { fillTemplatePdf } = require('../services/pdf-filler');
 const { joindreAnnexesReelles } = require('../services/seao-annexes');
+const { analyserExigences } = require('../services/seao-exigences');
 const { downloadBuffer, uploadBuffer, removeFile, createSignedUrl, sanitizeKey, BUCKETS } = require('../services/storage');
 const { listerRepresentants, obtenirRepresentant, champsRepresentant } = require('../services/representants');
 
@@ -208,11 +209,53 @@ router.get('/:id', async (req, res) => {
   ];
   const pretADeposer = checklist.filter((c) => c.obligatoire).every((c) => c.ok);
 
+  const exigencesRes = await db.execute({ sql: 'SELECT * FROM exigences WHERE appel_offre_id = ? ORDER BY id', args: [id] });
+
   res.render('appel-offre-detail', {
     appel: r.rows[0], documents: documents.rows, formulaires: formulaires.rows, historique: historique.rows,
     donneesBrutes, statuts: STATUTS, labelsStatut: LABELS_STATUT, checklist, pretADeposer,
     joursRestants: joursRestants(r.rows[0].date_fermeture),
+    exigences: exigencesRes.rows,
   });
+});
+
+// Lance/relance l'analyse IA des exigences (dates travaux, methode de depot,
+// cautionnements, lettre d'engagement, lettre d'assureur, autres documents) —
+// ne touche jamais aux lignes deja validees manuellement.
+router.post('/:id/exigences/analyser', async (req, res) => {
+  const db = req.db;
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) return res.redirect('/appels-offres');
+
+  const resultat = await analyserExigences(db, id);
+  if (resultat.error) {
+    await enregistrerHistorique(db, id, 'exigences_analyse_echouee', resultat.error);
+  } else {
+    await enregistrerHistorique(db, id, 'exigences_analysees', `${resultat.inserees} exigence(s) mise(s) à jour à partir de ${resultat.documentsLus.length} document(s)${resultat.documentsIgnores.length ? ` — ${resultat.documentsIgnores.length} document(s) ignoré(s) (budget dépassé)` : ''}`);
+  }
+  res.redirect('/appels-offres/' + id + '#exigences');
+});
+
+// Correction manuelle d'une exigence — conserve la valeur extraite (colonne
+// `valeur`) et enregistre la correction a part (`valeur_corrigee`), jamais
+// ecrasee par une reanalyse ulterieure (valide_manuellement=1).
+router.post('/:id/exigences/:exigenceId/corriger', async (req, res) => {
+  const db = req.db;
+  const id = parseInt(req.params.id);
+  const exigenceId = parseInt(req.params.exigenceId);
+  const valeurCorrigee = (req.body.valeur_corrigee || '').trim();
+  const responsable = (req.body.responsable || '').trim();
+  const dateEcheance = (req.body.date_echeance || '').trim();
+
+  await db.execute({
+    sql: `UPDATE exigences SET
+      valeur_corrigee = ?, valide_manuellement = 1, corrige_par = ?, corrige_le = datetime('now'),
+      responsable = ?, date_echeance = ?, updated_at = datetime('now')
+      WHERE id = ? AND appel_offre_id = ?`,
+    args: [valeurCorrigee || null, req.body.corrige_par || null, responsable || null, dateEcheance || null, exigenceId, id],
+  });
+  await enregistrerHistorique(db, id, 'exigence_corrigee', `Exigence #${exigenceId} corrigée manuellement`);
+  res.redirect('/appels-offres/' + id + '#exigences');
 });
 
 router.post('/:id/statut', async (req, res) => {

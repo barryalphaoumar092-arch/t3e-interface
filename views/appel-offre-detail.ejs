@@ -90,6 +90,84 @@
       </div>
     </div>
 
+    <div class="card mb-3" id="exigences">
+      <div class="card-header bg-light d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-ul"></i> Résumé de l'appel d'offres — exigences</span>
+        <form method="POST" action="/appels-offres/<%= appel.id %>/exigences/analyser" class="d-inline">
+          <button type="submit" class="btn btn-sm btn-outline-primary"><i class="bi bi-magic"></i> <%= exigences.length ? 'Réanalyser' : 'Analyser avec l\'IA' %></button>
+        </form>
+      </div>
+      <div class="card-body">
+        <% if (exigences.length === 0) { %>
+        <p class="text-muted small mb-0">Aucune exigence extraite pour l'instant. Importez les documents (devis, formulaire de soumission, addendas...) puis lancez l'analyse.</p>
+        <% } else { %>
+        <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead><tr><th>Élément</th><th>Réponse</th><th>Statut</th><th>Confiance</th><th>Source</th><th></th></tr></thead>
+          <tbody>
+          <% exigences.forEach(function(e) { %>
+          <tr class="<%= e.valide_manuellement ? 'table-light' : '' %>">
+            <td>
+              <%= e.titre %>
+              <% if (!e.obligatoire) { %><span class="badge bg-secondary bg-opacity-50">facultatif</span><% } %>
+              <% if (e.valide_manuellement) { %><span class="badge bg-success bg-opacity-75" title="Corrigé manuellement"><i class="bi bi-pencil-fill"></i></span><% } %>
+            </td>
+            <td style="max-width:260px"><%= e.valide_manuellement && e.valeur_corrigee ? e.valeur_corrigee : (e.valeur || '—') %></td>
+            <td>
+              <% var badgeStatut = { confirme: 'bg-success', a_verifier: 'bg-warning text-dark', contradictoire: 'bg-danger', non_trouve: 'bg-secondary' }[e.statut] || 'bg-secondary'; %>
+              <span class="badge <%= badgeStatut %>"><%= (e.statut || '').replace('_', ' ') %></span>
+            </td>
+            <td>
+              <% var badgeConf = { eleve: 'bg-success', moyen: 'bg-warning text-dark', faible: 'bg-danger' }[e.niveau_confiance] || 'bg-secondary'; %>
+              <span class="badge <%= badgeConf %> bg-opacity-75"><%= e.niveau_confiance %></span>
+            </td>
+            <td class="small text-muted">
+              <% if (e.document_source) { %>
+              <button class="btn btn-sm btn-link p-0" type="button" data-bs-toggle="collapse" data-bs-target="#source-<%= e.id %>">
+                <i class="bi bi-search"></i> Voir la source
+              </button>
+              <div class="collapse mt-1" id="source-<%= e.id %>">
+                <div class="border rounded p-2 bg-light">
+                  <strong><%= e.document_source %></strong><% if (e.numero_page) { %>, page <%= e.numero_page %><% } %>
+                  <div class="fst-italic">« <%= e.extrait_source %> »</div>
+                </div>
+              </div>
+              <% } else { %>—<% } %>
+            </td>
+            <td>
+              <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#corriger-<%= e.id %>"><i class="bi bi-pencil"></i></button>
+              <div class="collapse" id="corriger-<%= e.id %>">
+                <form method="POST" action="/appels-offres/<%= appel.id %>/exigences/<%= e.id %>/corriger" class="mt-2 p-2 border rounded">
+                  <div class="mb-2">
+                    <label class="form-label small mb-0">Valeur corrigée</label>
+                    <input type="text" name="valeur_corrigee" class="form-control form-control-sm" value="<%= e.valeur_corrigee || '' %>">
+                  </div>
+                  <div class="row g-1 mb-2">
+                    <div class="col-6">
+                      <label class="form-label small mb-0">Responsable</label>
+                      <input type="text" name="responsable" class="form-control form-control-sm" value="<%= e.responsable || '' %>">
+                    </div>
+                    <div class="col-6">
+                      <label class="form-label small mb-0">Échéance</label>
+                      <input type="date" name="date_echeance" class="form-control form-control-sm" value="<%= (e.date_echeance || '').substring(0,10) %>">
+                    </div>
+                  </div>
+                  <button type="submit" class="btn btn-sm btn-success w-100">Enregistrer la correction</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          <% }) %>
+          </tbody>
+        </table>
+        </div>
+        <% if (exigences.some(function(e) { return e.statut === 'non_trouve' || e.niveau_confiance === 'faible'; })) { %>
+        <p class="text-warning small mb-0"><i class="bi bi-exclamation-triangle"></i> Certaines informations n'ont pas été confirmées — vérifiez-les manuellement avant le dépôt.</p>
+        <% } %>
+        <% } %>
+      </div>
+    </div>
+
     <div class="card mb-3">
       <div class="card-header bg-light"><i class="bi bi-file-earmark-text"></i> Formulaire de soumission</div>
       <div class="card-body">
