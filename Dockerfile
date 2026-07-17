@@ -22,15 +22,9 @@ WORKDIR /app
 COPY package*.json ./
 # npm install plutôt que npm ci : le lockfile n'a pas pu être régénéré ici
 # (pas de Node/npm dans l'environnement de développement de ce dépôt) après
-# l'ajout de la dépendance playwright — npm ci exige une synchronie stricte
+# un changement de dépendances — npm ci exige une synchronie stricte
 # lockfile/package.json que npm install n'impose pas.
 RUN npm install --omit=dev
-
-# Chromium pour le scraper SEAO (src/services/seao-scraper.js) — le site SEAO
-# est une application JavaScript qui nécessite un vrai navigateur avec session
-# (voir project_seao... : une requête HTTP simple retourne une page vide).
-# Ce navigateur ne tourne que sur ce service Render, jamais sur Vercel.
-RUN npx playwright install --with-deps chromium
 
 COPY . .
 

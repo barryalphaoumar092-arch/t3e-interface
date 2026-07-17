@@ -180,10 +180,12 @@ router.post('/actualiser', async (req, res) => {
 // Import DIRECT depuis SEAO (URL de l'avis ou numéro) — contrairement à
 // /importer (dépôt manuel de fichiers), celui-ci se connecte à SEAO avec la
 // session de l'entreprise et récupère lui-même les métadonnées ET tous les
-// documents (voir seao-scraper.js). Traitement délégué au service Render
-// (seul endroit avec Chromium) : on crée/marque la fiche "en_cours" tout de
-// suite, puis on revient sur la page de détail qui se rafraîchira une fois le
-// travail terminé (statut_import passe à 'succes' ou 'erreur').
+// documents (voir seao-scraper.js). Exécuté directement dans cette fonction
+// Vercel (Chromium serverless via @sparticuz/chromium) — contrairement à un
+// serveur persistant, la requête HTTP doit attendre la fin complète du
+// traitement (pas de vrai arrière-plan possible), plafonnée à 60 s (voir
+// vercel.json) : un avis avec beaucoup de documents volumineux peut échouer
+// par timeout plutôt que par une erreur applicative claire.
 router.post('/importer-direct', async (req, res) => {
   const db = req.db;
   const url = (req.body.url_seao || '').trim();
@@ -209,10 +211,10 @@ router.post('/importer-direct', async (req, res) => {
   }
 
   await enregistrerHistorique(db, appelId, 'import_seao_lance', url || numeroAvis);
-  const { lancerImportSeaoDistant } = require('../services/seao-import-distant');
-  const declenchement = await lancerImportSeaoDistant({ appelOffreId: appelId, url: url || null, numeroAvis: numeroAvis || null });
-  if (!declenchement.ok) {
-    await db.execute({ sql: `UPDATE appels_offres_seao SET statut_import = 'erreur', erreur_import = ? WHERE id = ?`, args: [declenchement.error, appelId] });
+  const { importerEtEnregistrer } = require('../services/seao-import-orchestrateur');
+  const resultat = await importerEtEnregistrer(db, { appelOffreId: appelId, url: url || null, numeroAvis: numeroAvis || null });
+  if (!resultat.ok) {
+    await db.execute({ sql: `UPDATE appels_offres_seao SET statut_import = 'erreur', erreur_import = ? WHERE id = ?`, args: [resultat.error, appelId] });
   }
 
   res.redirect(`/appels-offres/${appelId}`);
@@ -229,14 +231,14 @@ router.post('/:id/actualiser-seao', async (req, res) => {
 
   await db.execute({ sql: `UPDATE appels_offres_seao SET statut_import = 'en_cours' WHERE id = ?`, args: [id] });
   await enregistrerHistorique(db, id, 'import_seao_relance');
-  const { lancerImportSeaoDistant } = require('../services/seao-import-distant');
-  const declenchement = await lancerImportSeaoDistant({
+  const { importerEtEnregistrer } = require('../services/seao-import-orchestrateur');
+  const resultat = await importerEtEnregistrer(db, {
     appelOffreId: id,
     url: r.rows[0].url_seao && !r.rows[0].url_seao.startsWith('http') ? null : r.rows[0].url_seao,
     numeroAvis: r.rows[0].numero_seao && !r.rows[0].numero_seao.startsWith('EN_ATTENTE') ? r.rows[0].numero_seao : null,
   });
-  if (!declenchement.ok) {
-    await db.execute({ sql: `UPDATE appels_offres_seao SET statut_import = 'erreur', erreur_import = ? WHERE id = ?`, args: [declenchement.error, id] });
+  if (!resultat.ok) {
+    await db.execute({ sql: `UPDATE appels_offres_seao SET statut_import = 'erreur', erreur_import = ? WHERE id = ?`, args: [resultat.error, id] });
   }
   res.redirect(`/appels-offres/${id}`);
 });

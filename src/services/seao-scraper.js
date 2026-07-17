@@ -1,20 +1,34 @@
-// Scraper SEAO (seao.gouv.qc.ca) via navigateur headless (Playwright).
-// N'EXÉCUTE JAMAIS SUR VERCEL — le site SEAO est une application JavaScript
-// qui retourne une page vide à une requête HTTP simple (confirmé : fetch()
-// direct sur seao.gouv.qc.ca renvoie un corps vide) et nécessite une session
-// authentifiée. Ce module tourne uniquement sur le service Render (Dockerfile
-// installe Chromium — voir `npx playwright install --with-deps chromium`),
-// appelé depuis Vercel via /internal/seao-importer (même principe que
-// docx-to-pdf.js/convertirDocxEnPdfDistant).
+// Scraper SEAO (seao.gouv.qc.ca) via navigateur headless — le site SEAO est
+// une application JavaScript qui retourne une page vide à une requête HTTP
+// simple (confirmé : fetch() direct sur seao.gouv.qc.ca renvoie un corps
+// vide) et nécessite une session authentifiée.
+//
+// Tourne directement sur Vercel (fonction serverless) via `@sparticuz/chromium`
+// (binaire Chromium compressé, adapté aux environnements Lambda-like) +
+// `playwright-core` (playwright sans son propre téléchargement de navigateur).
+// Contrainte importante : la fonction Vercel entière est plafonnée à 60 s
+// (voir vercel.json, plan Hobby) — un avis avec beaucoup de documents volumineux
+// peut dépasser ce délai et échouer par timeout plutôt que par une erreur
+// applicative claire.
 //
 // AVERTISSEMENT — sélecteurs non vérifiés en conditions réelles : cet
 // environnement de développement n'a aucun accès navigateur pour inspecter
 // les pages SEAO authentifiées. Les sélecteurs ci-dessous visent le texte
 // visible (français, insensible à la casse) plutôt que des classes CSS
 // probablement instables, mais un ajustement après un premier test réel avec
-// un vrai compte SEAO est attendu — voir logs `[seao-scraper]` et captures
-// d'écran de secours (`capturerDiagnostic`) en cas d'échec.
+// un vrai compte SEAO est attendu — voir logs `[seao-scraper]` en cas d'échec.
 const crypto = require('crypto');
+
+async function lancerNavigateur() {
+  const chromium = require('@sparticuz/chromium');
+  const { chromium: playwrightChromium } = require('playwright-core');
+  const executablePath = await chromium.executablePath();
+  return playwrightChromium.launch({
+    args: chromium.args,
+    executablePath,
+    headless: true,
+  });
+}
 
 const URL_BASE = 'https://seao.gouv.qc.ca';
 const URL_CONNEXION = `${URL_BASE}/OpportunityPublication/Login.aspx`;
@@ -173,8 +187,7 @@ async function telechargerDocuments(page) {
 // extrait métadonnées + documents, ferme le navigateur (toujours, même en cas
 // d'erreur, pour ne jamais laisser un processus Chromium orphelin sur Render).
 async function importerAvisSeao({ url, numeroAvis }) {
-  const { chromium } = require('playwright');
-  const navigateur = await chromium.launch({ headless: true });
+  const navigateur = await lancerNavigateur();
   try {
     const contexte = await navigateur.newContext({ acceptDownloads: true, locale: 'fr-CA' });
     const page = await contexte.newPage();

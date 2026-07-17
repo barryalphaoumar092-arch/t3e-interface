@@ -21,9 +21,3 @@ services:
         sync: false
       - key: CONVERT_SERVICE_SECRET
         sync: false
-      - key: SEAO_USERNAME
-        sync: false
-      - key: SEAO_PASSWORD
-        sync: false
-      - key: PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD
-        value: "0"

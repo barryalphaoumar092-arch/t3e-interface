@@ -1,7 +1,6 @@
-// Orchestration de l'import direct depuis SEAO — appelé UNIQUEMENT depuis
-// l'endpoint /internal/seao-importer (server.js), lui-même appelé depuis
-// Vercel (voir seao-import-distant.js). Ce fichier assume qu'il tourne sur le
-// service Render (le seul où Chromium/Playwright est installé — Dockerfile).
+// Orchestration de l'import direct depuis SEAO — appelé directement par les
+// routes /appels-offres/importer-direct et /:id/actualiser-seao (Vercel,
+// synchrone : voir seao-scraper.js pour la contrainte de 60 s par requête).
 const crypto = require('crypto');
 const { importerAvisSeao } = require('./seao-scraper');
 const { uploadBuffer, sanitizeKey, BUCKETS } = require('./storage');
