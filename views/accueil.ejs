@@ -61,6 +61,15 @@
       </div>
     </a>
   </div>
+  <div class="col-md-3">
+    <a href="/asbuilt" class="text-decoration-none">
+      <div class="card stat-card text-center p-4">
+        <div class="stat-icon text-dark"><i class="bi bi-vector-pen"></i></div>
+        <h3 class="mt-2"><%= stats.asbuiltProjets || 0 %></h3>
+        <p class="text-muted mb-0">Tel que construit</p>
+      </div>
+    </a>
+  </div>
 </div>
 
 <div class="row g-4">
@@ -106,6 +115,15 @@
         <h5 class="card-title"><i class="bi bi-clipboard-check text-secondary"></i> Appels d'offres SEAO</h5>
         <p class="card-text">Appels d'offres publics pertinents (toiture), pré-remplissage IA du formulaire de soumission à partir de la base de connaissances.</p>
         <a href="/appels-offres" class="btn btn-secondary text-white">Voir les appels d'offres</a>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card h-100">
+      <div class="card-body">
+        <h5 class="card-title"><i class="bi bi-vector-pen text-dark"></i> Tel que construit</h5>
+        <p class="card-text">Importez les plans et documents d'un projet, l'IA détecte les modifications par rapport aux plans initiaux.</p>
+        <a href="/asbuilt" class="btn btn-dark">Voir les projets</a>
       </div>
     </div>
   </div>
