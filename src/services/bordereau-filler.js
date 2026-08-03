@@ -516,6 +516,24 @@ async function remplirBordereau(champs, buf) {
     if (valeursPlacees.has(valeur)) delete champsNonTrouves[cle];
   }
 
+  // Libellé combiné "Devis (section et article)" (gabarits d'architectes,
+  // ex. Leclerc/HEC) : repli déterministe AVANT l'IA — sans ça, SECTION et
+  // ARTICLE dépendaient entièrement du mapping IA pour ce gabarit (aucun
+  // libellé séparé "Section"/"Article"), donc tombaient dans le bloc
+  // générique "Renseignements complémentaires" dès que l'IA était
+  // indisponible (clé OpenAI absente/à court de crédits).
+  if (champsNonTrouves.SECTION || champsNonTrouves.ARTICLE) {
+    const valeurCombinee = [champs.SECTION, champs.ARTICLE].filter(Boolean).join(' / ');
+    if (valeurCombinee) {
+      const r = remplirChampDansXml(xml, 'Devis (section et article)', valeurCombinee);
+      if (r.trouve) {
+        xml = r.xml;
+        delete champsNonTrouves.SECTION;
+        delete champsNonTrouves.ARTICLE;
+      }
+    }
+  }
+
   // Blocs d'intervenants titrés en colonnes (gabarits tiers) : remplissage
   // déterministe AVANT le repli IA — les clés placées ici lui sont retirées.
   try {
