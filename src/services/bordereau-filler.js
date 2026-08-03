@@ -286,10 +286,12 @@ async function remplirFicheIdentification(champs, xml, zip) {
 // « Coordonnées : », « Responsable : », « Tél. : »). Le repli IA se trompait
 // régulièrement de bloc (constaté : le fournisseur écrit dans le Nom du
 // sous-traitant) et n'est PAS déterministe d'une exécution à l'autre.
-// Ici on parcourt les lignes/cellules du tableau en suivant le bloc actif PAR
-// COLONNE : un titre de bloc rencontré dans la colonne c s'applique aux
-// cellules suivantes de cette même colonne, jusqu'au titre suivant. Chaque
-// sous-libellé est alors rempli d'après le bloc de SA colonne — zéro IA.
+// Ici on parcourt les lignes du tableau : une ligne dont les cellules NE
+// contiennent QUE des titres (re)définit les blocs actifs, dans l'ordre
+// gauche→droite. Sur les lignes suivantes, chaque sous-libellé rencontré
+// (ex. « Nom : ») est associé au bloc actif du MÊME RANG D'APPARITION dans
+// la ligne (1er « Nom : » → 1er bloc, 2e « Nom : » → 2e bloc) plutôt qu'à un
+// index de cellule brut — zéro IA.
 const BLOC_TITRE_REGEX = /^(SOUS-TRAITANT|FOURNISSEUR|FABRICANT|MANUFACTURIER|ENTREPRENEUR(?:\s+GÉNÉRAL)?|PROFESSIONNEL|INGÉNIEUR|ARCHITECTE|PROPRIÉTAIRE)\b/;
 
 function remplirBlocsIntervenants(xml, champs, champsNonTrouves) {
@@ -328,38 +330,73 @@ function remplirBlocsIntervenants(xml, champs, champsNonTrouves) {
   blocs.MANUFACTURIER = blocs.FABRICANT;
 
   const ops = [];
-  const blocParColonne = {};
+  // Bloc actifs de la ligne de titres la plus récente, dans l'ORDRE
+  // D'APPARITION gauche→droite (ex. ["SOUS-TRAITANT", "FOURNISSEUR"]).
+  // NE PAS suivre par index de cellule <w:tc> brut : certains gabarits (ex.
+  // Leclerc/HEC) découpent chaque colonne visuelle en PLUSIEURS cellules
+  // étroites (libellé + espaceur + zone de saisie) sur les lignes de
+  // sous-libellés, alors que la ligne de titres utilise une seule cellule
+  // large (w:gridSpan) par bloc — l'index de cellule brut ne correspond donc
+  // PAS à la même colonne visuelle d'une ligne à l'autre (constaté : le bloc
+  // FOURNISSEUR restait vide, son « Nom : » atterrissait sur un index de
+  // colonne jamais initialisé). On suit plutôt, pour chaque sous-libellé
+  // connu (ex. « Nom : »), le RANG D'APPARITION de ce libellé DANS LA LIGNE
+  // (1er « Nom : » → 1er bloc actif, 2e « Nom : » → 2e bloc actif) : ce rang
+  // correspond à l'ordre gauche→droite des blocs quel que soit le découpage
+  // en cellules.
+  let blocsActifs = [];
   const trRegex = /<w:tr(?:\s[^>]*)?>[\s\S]*?<\/w:tr>/g;
   let tr;
   while ((tr = trRegex.exec(xml))) {
     const tcRegex = /<w:tc(?:\s[^>]*)?>[\s\S]*?<\/w:tc>/g;
     let tc;
-    let colonne = 0;
+    const cellules = [];
     while ((tc = tcRegex.exec(tr[0]))) {
       const debutCellule = tr.index + tc.index;
       const finCellule = debutCellule + tc[0].length;
       const texte = tc[0].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-      const titre = texte.length <= 60 ? BLOC_TITRE_REGEX.exec(texte) : null;
-      if (titre) {
-        // Tout titre (même un bloc qu'on ne remplit pas, ex. ENTREPRENEUR)
-        // remplace le bloc actif de la colonne — évite de déborder plus bas.
-        blocParColonne[colonne] = titre[1];
-      } else if (blocParColonne[colonne] && blocs[blocParColonne[colonne]]) {
-        const sousLibelles = blocs[blocParColonne[colonne]];
-        for (const [label, [cle, valeur]] of Object.entries(sousLibelles)) {
-          if (!valeur) continue;
-          if (CLES_LIBELLES_FIXES.has(cle) && !(cle in champsNonTrouves)) continue;
-          if (clesPlacees.has(cle)) continue;
-          for (const variant of labelVariants(label)) {
-            const idx = xml.indexOf(variant, debutCellule);
-            if (idx === -1 || idx >= finCellule) continue;
-            ops.push({ idx, variant, cle, valeur, label });
-            clesPlacees.add(cle);
-            break;
-          }
-        }
+      cellules.push({ debutCellule, finCellule, texte });
+    }
+
+    const titres = cellules
+      .map((c) => (c.texte.length <= 60 ? BLOC_TITRE_REGEX.exec(c.texte) : null))
+      .filter(Boolean)
+      .map((m) => m[1]);
+    if (titres.length > 0) {
+      // Ligne de titres : (re)définit les blocs actifs pour les lignes
+      // suivantes, dans l'ordre où ils apparaissent sur CETTE ligne.
+      blocsActifs = titres;
+      continue;
+    }
+    if (blocsActifs.length === 0) continue;
+
+    const rangParLabel = {};
+    for (const cellule of cellules) {
+      // Sur ce type de gabarit, une cellule "libellé" ne contient QUE le
+      // libellé (ex. "Nom :") — un match exact (pas juste "commence par")
+      // évite de confondre avec une cellule de contenu qui contiendrait par
+      // coïncidence le même mot.
+      let label = null;
+      for (const candidat of new Set(Object.values(blocs).flatMap((b) => Object.keys(b)))) {
+        if (labelVariants(candidat).includes(cellule.texte)) { label = candidat; break; }
       }
-      colonne++;
+      if (!label) continue;
+      const rang = rangParLabel[label] || 0;
+      rangParLabel[label] = rang + 1;
+      const blocNom = blocsActifs[rang];
+      const sousLibelles = blocNom && blocs[blocNom];
+      if (!sousLibelles || !sousLibelles[label]) continue;
+      const [cle, valeur] = sousLibelles[label];
+      if (!valeur) continue;
+      if (CLES_LIBELLES_FIXES.has(cle) && !(cle in champsNonTrouves)) continue;
+      if (clesPlacees.has(cle)) continue;
+      for (const variant of labelVariants(label)) {
+        const idx = xml.indexOf(variant, cellule.debutCellule);
+        if (idx === -1 || idx >= cellule.finCellule) continue;
+        ops.push({ idx, variant, cle, valeur, label });
+        clesPlacees.add(cle);
+        break;
+      }
     }
   }
 
