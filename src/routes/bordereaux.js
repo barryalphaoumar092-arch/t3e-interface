@@ -359,6 +359,37 @@ async function listerPdfsDossierFT(dossier) {
   return pdfs;
 }
 
+// Mots-clés fixes de tout nom de fichier FT (préfixe fabricant/langue/type de
+// document, communs à TOUS les PDF d'un même dossier) — à exclure du scoring
+// par mots-clés. Sans ça, un mot-clé COURT extrait du titre (ex. "sopra", issu
+// de "Sopra-Iso") est une SOUS-CHAÎNE d'un mot plus long présent dans un AUTRE
+// nom de fichier (ex. "soprasmart") : avec un matching par `includes()`, les
+// deux fichiers matchaient également et le mauvais gagnait selon l'ordre de
+// listage du bucket — constaté en production (dossier Ville de Laval 17525 :
+// "Sopra-Iso" → "Soprasmart ISO HD" retourné à la place).
+const MOTS_VIDES_NOM_FICHIER_FT = new Set([
+  'sopca', 'tds', 'pub', 'ca', 'fr', 'en', 'the', 'des', 'les', 'pour', 'avec', 'type',
+]);
+
+// Certains PDF fabricant emploient un mot ANGLAIS dans un nom de fichier par
+// ailleurs français (ex. Soprema : "...-hd-sanded.pdf" pour la variante
+// "Sablé", jamais "-sable"/"-sablee") — sans cette équivalence, le mot-clé
+// "sable" (extrait du titre français) ne correspond jamais au fichier et le
+// matching retombe sur la variante standard — constaté en production
+// (dossier Ville de Laval 17525 : "Soprasmart ISO HD Sablé" → variante
+// standard/thermofusible retournée à la place).
+const SYNONYMES_MOTS_CLES_FT = {
+  sable: ['sanded'], sablee: ['sanded'], sablees: ['sanded'],
+};
+
+function tokeniserNomFichierFT(nomFichier) {
+  return stripAccents(nomFichier)
+    .toLowerCase()
+    .replace(/\.[a-z0-9]+$/i, '')
+    .split(/[^a-z0-9]+/)
+    .filter(t => t.length > 1 && !MOTS_VIDES_NOM_FICHIER_FT.has(t));
+}
+
 async function trouverFichesTechniques(fabricant, titre) {
   if (!fabricant) return [];
 
@@ -373,20 +404,32 @@ async function trouverFichesTechniques(fabricant, titre) {
   const pdfs = await listerPdfsDossierFT(match);
   if (!titre || pdfs.length === 0) return pdfs.slice(0, 1).map(f => `${match}/${f}`);
 
-  const keywords = titre.toLowerCase()
-    .replace(/[^a-zàâäéèêëîïôùûü0-9]+/g, ' ')
+  const keywords = stripAccents(titre).toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
     .split(/\s+/)
     .filter(w => w.length > 2 && !['the', 'des', 'les', 'pour', 'avec', 'type'].includes(w));
 
   const scored = pdfs.map(f => {
-    const fname = f.toLowerCase();
-    const score = keywords.filter(k => fname.includes(k)).length;
-    return { file: f, score };
+    const tokensFichier = new Set(tokeniserNomFichierFT(f));
+    // Mot exact (pas sous-chaîne) : "sopra" ne matche plus "soprasmart".
+    const matches = keywords.filter(k => tokensFichier.has(k)
+      || (SYNONYMES_MOTS_CLES_FT[k] || []).some(s => tokensFichier.has(s))).length;
+    // À nombre de correspondances égal, préfère le nom de fichier le plus
+    // proche du titre cherché (moins de mots additionnels non demandés) —
+    // évite qu'une variante ("...-plus", "...-tapered") gagne à tort face au
+    // produit de base.
+    const ratio = tokensFichier.size > 0 ? matches / tokensFichier.size : 0;
+    // Site destiné à un usage exclusivement francophone (voir CLAUDE.md) :
+    // entre deux fiches par ailleurs équivalentes, toujours préférer la
+    // version FR à la EN (bonus minime, ne sert qu'à départager une égalité).
+    const versionFrancaise = /(^|[^a-z])fr([^a-z]|$)/.test(f.toLowerCase());
+    const score = matches + ratio + (versionFrancaise ? 0.01 : 0);
+    return { file: f, matches, score };
   }).sort((a, b) => b.score - a.score);
 
   const meilleur = scored[0];
-  if (meilleur && meilleur.score > 0) {
-    console.log('[FT] Match par titre:', meilleur.file, '(score:', meilleur.score + ')');
+  if (meilleur && meilleur.matches > 0) {
+    console.log('[FT] Match par titre:', meilleur.file, '(matches:', meilleur.matches + ', score:', meilleur.score.toFixed(3) + ')');
     return [`${match}/${meilleur.file}`];
   }
 
