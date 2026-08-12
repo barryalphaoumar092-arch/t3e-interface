@@ -845,6 +845,44 @@ async function rechercherProduitsEtFT(db, q) {
 }
 
 // ══════════════════════════════════════════════════════════════
+//  DIAGNOSTIC TEMPORAIRE — langue des fiches techniques du bucket
+//  Supabase "fiches-techniques". Pagine (offset/limit) pour rester sous le
+//  delai des fonctions serverless. A retirer une fois le nettoyage fait.
+// ══════════════════════════════════════════════════════════════
+router.get('/api/langues-ft', async (req, res) => {
+  const offset = parseInt(req.query.offset) || 0;
+  const limit = Math.min(parseInt(req.query.limit) || 40, 100);
+  try {
+    const dirs = await listerDossiersFT();
+    const pdfsParDossier = await Promise.all(dirs.map(d => listerPdfsDossierFT(d)));
+    const taches = [];
+    for (let i = 0; i < dirs.length; i++) {
+      for (const fichier of pdfsParDossier[i]) taches.push({ fabricant: dirs[i], fichier });
+    }
+    const page = taches.slice(offset, offset + limit);
+
+    const resultats = await Promise.all(page.map(async ({ fabricant, fichier }) => {
+      try {
+        const buf = await downloadBuffer(BUCKETS.FICHES_TECHNIQUES, `${fabricant}/${fichier}`);
+        if (!buf) return { fabricant, fichier, langue: 'INTROUVABLE' };
+        const { text } = await parsePdfBuffer(buf);
+        const t = (text || '');
+        const marqueursFr = (t.match(/fiche technique|caractéristiques|renseignements|résistance|épaisseur|données techniques|système|numéro|é|è|ê|ç/gi) || []).length;
+        const marqueursEn = (t.match(/technical data sheet|characteristics|installation instructions|safety information|product data/gi) || []).length;
+        const langue = marqueursFr > 0 ? 'FR_OU_BILINGUE' : (t.length > 50 ? 'ANGLAIS_SEULEMENT' : 'INDETERMINE');
+        return { fabricant, fichier, langue, marqueursFr, marqueursEn, longueurTexte: t.length };
+      } catch (e) {
+        return { fabricant, fichier, langue: 'ERREUR', erreur: e.message };
+      }
+    }));
+
+    res.json({ total: taches.length, offset, limit, hasMore: offset + limit < taches.length, resultats });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════
 //  ROUTES
 // ══════════════════════════════════════════════════════════════
 
