@@ -79,13 +79,24 @@ function extraireContextePertinent(texteDevis) {
   // Marqueur fiable de DÉBUT de section, observé dans les devis québécois type
   // CIMAISE/AMCQ : "Section 07 52 21 ... Page 1 de 29" (seule la première page
   // d'une section porte "Page 1 de", les suivantes portent "Page 2 de", etc.)
-  // "de" et "sur" sont TOUS LES DEUX utilisés selon le devis (parfois les deux
-  // dans le MÊME devis, une section par section) — ex. observé : "Page 1 sur
-  // 26" pour la section 07 52 00 (membranes) alors qu'une autre section du
-  // même devis dit "Page 1 de 1". Ne matcher que "de" fait disparaître de
-  // l'index des sections entières (souvent les plus importantes), ce qui
-  // forçait l'IA à deviner un numéro générique au lieu du vrai numéro.
-  const debutSectionRegex = /Section\s+((?:0[5-9])\s?\d{2}\s?\d{2})[^\n]*\r?\n[^\n]*Page\s*1\s*(?:de|sur)\s*\d+/gi;
+  // Variantes réellement observées entre devis (et parfois DANS le même
+  // devis, section par section) :
+  // - "de" ou "sur" avant le total de pages ("Page 1 sur 26" vs "Page 1 de 1")
+  // - total de pages absent ("Page 1" seul, gabarit PLA architectes)
+  // - "Section NNN NNN NN" et "Page 1" sur la MÊME ligne (pas de retour à la
+  //   ligne entre les deux), le texte extrait du PDF ne préservant pas
+  //   toujours les sauts de ligne d'origine — [\s\S] remplace [^\n]*\r?\n[^\n]*
+  //   pour matcher peu importe la présence d'un retour à la ligne.
+  // Ne matcher qu'un seul de ces styles fait disparaître de l'index des
+  // sections entières (souvent les plus importantes), ce qui forçait l'IA à
+  // deviner un numéro générique au lieu du vrai numéro de CE devis.
+  // "Section" et "Page" gardent leur majuscule initiale (pas de flag "i") :
+  // c'est ainsi qu'apparaissent les VRAIS en-têtes de page dans tous les
+  // devis observés, alors que les mentions "section 07 31 00" EN MINUSCULE
+  // dans le corps du texte (« Charpenterie, section 06 10 00 ») sont des
+  // renvois internes, pas des débuts de section — les ignorer réduit le
+  // risque de faux positifs maintenant que la fenêtre de recherche est large.
+  const debutSectionRegex = /Section\s+((?:0[5-9])\s?\d{2}\s?\d{2})[\s\S]{0,150}?Page\s*1\b(?!\d)(?:\s*(?:de|sur)\s*\d+)?/g;
   const positions = [];
   const vus = new Set();
   let m;
@@ -159,6 +170,34 @@ function extraireContextePertinent(texteDevis) {
       }
     }
 
+    // Convention C (devis d'architectes type PLA, observée en 2026-08) :
+    // pas de "PARTIE 2" explicite — seul "2. PRODUITS" marque le début, et
+    // les articles qui suivent ne répètent PAS le "2." (juste ".1 Titre :",
+    // ".2 Titre :"...). Le vrai numéro est donc "2." + le chiffre après le
+    // point (ex: ".4 Sous-couche synthétique :" → article 2.4). Le texte
+    // extrait du PDF ne contient pas toujours de retour à la ligne entre les
+    // articles (tout sur une seule "ligne" logique) — on ancre donc sur le
+    // point lui-même plutôt que sur \n, et on exige un ":" comme fin de
+    // titre pour éviter de confondre avec des nombres décimaux techniques
+    // (ex: "2.9 KPa" n'a jamais de ":" juste après, donc jamais retenu).
+    if (articles.length === 0) {
+      const produitsMatch = /\b2\.\s*PRODUITS\b/.exec(bloc);
+      if (produitsMatch) {
+        const debutPartieC = produitsMatch.index + produitsMatch[0].length;
+        const finPartieCMatch = /\b3\.\s*EX[EÉ]CUTION\b/.exec(bloc.substring(debutPartieC));
+        const finPartieC = finPartieCMatch ? debutPartieC + finPartieCMatch.index : bloc.length;
+        const blocPartieC = bloc.substring(debutPartieC, finPartieC);
+        const articleRegexC = /\.(\d{1,2})\s+([A-ZÉÈÀÇ][^.:\n]{2,180}?)\s*:/g;
+        let cm;
+        while ((cm = articleRegexC.exec(blocPartieC))) {
+          const numero = `2.${cm[1]}`;
+          if (vusArt.has(numero)) continue;
+          vusArt.add(numero);
+          articles.push(`${numero} ${cm[2].trim()}`);
+        }
+      }
+    }
+
     if (articles.length === 0) continue; // section sans PARTIE 2 identifiable (ex: administrative)
 
     morceaux.push(`SECTION ${numeroLisible(positions[i].numero)} (${positions[i].titre}) : ${articles.join(' | ')}`);
@@ -204,7 +243,11 @@ function motsCles(texte) {
 // plutôt qu'un numéro générique halluciné par l'IA.
 function rechercherArticleTexteBrut(texteDevisBrut, motsProduit) {
   if (!texteDevisBrut || motsProduit.length === 0) return null;
-  const texteMin = texteDevisBrut.toLowerCase();
+  // motsCles() a déjà retiré les accents des mots du produit (ex: "elastomere")
+  // — il faut retirer les accents du texte du devis de la MÊME façon, sinon
+  // "elastomere" (sans accent) ne matche jamais "élastomère" dans le texte
+  // brut et la recherche échoue silencieusement à chaque fois.
+  const texteMin = texteDevisBrut.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
   let position = -1;
   for (const mot of motsProduit) {
