@@ -20,8 +20,8 @@ app.locals.SUPABASE_URL = process.env.SUPABASE_URL || '';
 app.locals.SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY
   || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNmdWxjZHp2dGN5bXF3bnVpdG1rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI5MDEyMjEsImV4cCI6MjA5ODQ3NzIyMX0.bZkfLOVptBvuo3npjRRTOEN2AwLkVAJAmR2K9nS-UY8';
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Endpoint public pour le keep-alive (avant le middleware d'auth)
 app.get('/health', (req, res) => res.json({ status: 'ok', ts: Date.now() }));
