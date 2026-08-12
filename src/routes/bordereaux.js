@@ -903,6 +903,21 @@ router.post('/api/remplacer-ft', express.json({ limit: '15mb' }), async (req, re
   }
 });
 
+// Diagnostic temporaire — telecharge le contenu brut d'une FT (pour sauvegarde
+// avant remplacement via /api/remplacer-ft). A retirer avec les autres.
+router.get('/api/telecharger-ft-brut', async (req, res) => {
+  try {
+    const cle = req.query.cle;
+    if (!cle) return res.status(400).json({ error: 'cle requise' });
+    const buf = await downloadBuffer(BUCKETS.FICHES_TECHNIQUES, cle);
+    if (!buf) return res.status(404).json({ error: 'introuvable' });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.send(buf);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ══════════════════════════════════════════════════════════════
 //  ROUTES
 // ══════════════════════════════════════════════════════════════
