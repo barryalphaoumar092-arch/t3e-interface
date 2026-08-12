@@ -191,7 +191,17 @@ function motsCles(texte) {
 
 function completerSectionArticle(indexTexte, produitsBase, contexteProduits) {
   const sections = parserIndexSections(indexTexte);
-  if (sections.length === 0) return; // devis sans index exploitable — rien à garantir
+  if (sections.length === 0) {
+    // Devis sans index exploitable (aucune section "Page 1 de N" détectée) :
+    // on ne peut pas retrouver/valider un vrai numéro d'article, mais un
+    // ARTICLE sans aucun chiffre est à coup sûr un titre hallucine par l'IA
+    // (ex: "Membrane élastomère") — on l'efface plutôt que de le laisser
+    // s'afficher tel quel dans le bordereau final.
+    for (const ctx of contexteProduits) {
+      if (ctx && ctx.ARTICLE && !/\d/.test(String(ctx.ARTICLE))) ctx.ARTICLE = '';
+    }
+    return;
+  }
 
   for (let i = 0; i < produitsBase.length; i++) {
     const ctx = contexteProduits[i] = contexteProduits[i] || {};
@@ -1061,7 +1071,10 @@ router.post('/analyser', async (req, res) => {
       SECTION: ctx.SECTION || '',
       // Numéro seul (« 2.4.1.2 », « 5 ») même si l'IA a renvoyé le numéro
       // suivi du titre de l'article — même règle que bordereau-filler.
-      ARTICLE: ((ctx.ARTICLE || '').match(/\d+(?:\.\d+)*/) || [ctx.ARTICLE || ''])[0],
+      // Si aucun chiffre n'est présent, c'est un titre hallucine (pas un
+      // numéro d'article réel) : on laisse vide plutôt que d'afficher du
+      // texte à la place d'un numéro.
+      ARTICLE: ((ctx.ARTICLE || '').match(/\d+(?:\.\d+)*/) || [''])[0],
       DESCRIPTION: description,
       USAGE: ctx.USAGE || '',
       REMARQUE: '',

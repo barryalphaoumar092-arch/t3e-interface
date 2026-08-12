@@ -443,7 +443,10 @@ async function remplirBordereau(champs, buf) {
   // (ou « 2.4.1.2 »), comme sur les bordereaux remplis à la main.
   if (champs.ARTICLE) {
     const num = String(champs.ARTICLE).match(/\d+(?:\.\d+)*/);
-    if (num) champs = { ...champs, ARTICLE: num[0] };
+    // Sans chiffre, ce n'est pas un numéro d'article mais un titre
+    // hallucine (ex: « Membrane élastomère ») — on l'efface plutôt que de
+    // l'afficher tel quel à la place d'un numéro.
+    champs = { ...champs, ARTICLE: num ? num[0] : '' };
   }
 
   // Gabarit « FICHE D'IDENTIFICATION » (architectes tiers) → chemin dédié,
