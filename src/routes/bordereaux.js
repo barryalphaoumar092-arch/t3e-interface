@@ -870,7 +870,7 @@ router.get('/api/langues-ft', async (req, res) => {
         const marqueursFr = (t.match(/fiche technique|caractéristiques|renseignements|résistance|épaisseur|données techniques|système|numéro|é|è|ê|ç/gi) || []).length;
         const marqueursEn = (t.match(/technical data sheet|characteristics|installation instructions|safety information|product data/gi) || []).length;
         const langue = marqueursFr > 0 ? 'FR_OU_BILINGUE' : (t.length > 50 ? 'ANGLAIS_SEULEMENT' : 'INDETERMINE');
-        return { fabricant, fichier, langue, marqueursFr, marqueursEn, longueurTexte: t.length };
+        return { fabricant, fichier, langue, marqueursFr, marqueursEn, longueurTexte: t.length, extrait: t.substring(0, 400) };
       } catch (e) {
         return { fabricant, fichier, langue: 'ERREUR', erreur: e.message };
       }
