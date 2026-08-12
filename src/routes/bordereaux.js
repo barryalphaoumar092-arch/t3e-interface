@@ -195,7 +195,25 @@ function completerSectionArticle(indexTexte, produitsBase, contexteProduits) {
 
   for (let i = 0; i < produitsBase.length; i++) {
     const ctx = contexteProduits[i] = contexteProduits[i] || {};
-    if (ctx.SECTION && ctx.ARTICLE) continue;
+
+    // La SECTION renvoyée par l'IA n'est fiable QUE si elle correspond à une
+    // VRAIE section de l'index de CE devis — l'IA hallucine parfois un
+    // numéro "typique" du MasterFormat qu'elle connaît par ailleurs (ex:
+    // "07 53 00", numéro générique pour "membrane élastomère") au lieu du
+    // numéro réellement utilisé dans ce devis précis (ex: "07 52 16").
+    const sectionReelle = ctx.SECTION
+      ? sections.find((s) => s.numero.replace(/\s/g, '') === String(ctx.SECTION).replace(/\s/g, ''))
+      : null;
+
+    // L'ARTICLE n'est fiable que s'il contient un numéro qui existe VRAIMENT
+    // dans la section identifiée — sinon c'est un titre générique hallucine
+    // (ex: "Couche de finition" sans aucun chiffre, qui finirait sinon écrit
+    // tel quel dans le bordereau au lieu d'un numéro).
+    const articleNumBrut = (String(ctx.ARTICLE || '').match(/\d+(?:\.\d+)*/) || [''])[0];
+    const articleFiable = !!(sectionReelle && articleNumBrut &&
+      sectionReelle.articles.some((a) => a.numero.replace(/\s/g, '') === articleNumBrut));
+
+    if (sectionReelle && articleFiable) continue; // SECTION et ARTICLE confirmés réels, rien à faire
 
     const motsProduit = motsCles(`${produitsBase[i]?.nom || ''} ${ctx.USAGE || ''}`);
     const score = (titre) => {
@@ -203,12 +221,10 @@ function completerSectionArticle(indexTexte, produitsBase, contexteProduits) {
       return motsProduit.reduce((n, w) => n + (mots.has(w) ? 1 : 0), 0);
     };
 
-    // Si l'IA a donné la SECTION mais pas l'ARTICLE, on reste dans SA section.
-    let candidates = sections;
-    if (ctx.SECTION) {
-      const s = sections.find((x) => x.numero.replace(/\s/g, '') === ctx.SECTION.replace(/\s/g, ''));
-      if (s) candidates = [s];
-    }
+    // Si l'IA a donné une SECTION réelle (même sans article fiable dans
+    // cette section), on reste dans SA section plutôt que de rechercher
+    // dans tout le devis.
+    const candidates = sectionReelle ? [sectionReelle] : sections;
 
     let meilleur = { section: candidates[0], article: candidates[0].articles[0], points: -1 };
     for (const s of candidates) {
@@ -218,9 +234,11 @@ function completerSectionArticle(indexTexte, produitsBase, contexteProduits) {
       }
     }
 
-    if (!ctx.SECTION) ctx.SECTION = meilleur.section.numero;
-    if (!ctx.ARTICLE) ctx.ARTICLE = meilleur.article.numero;
-    console.log(`[analyser] SECTION/ARTICLE complétés par correspondance de mots pour "${produitsBase[i]?.nom}" → ${ctx.SECTION} / ${ctx.ARTICLE}`);
+    // On écrase (pas seulement complète) : un SECTION/ARTICLE non confirmé
+    // réel dans l'index ne doit jamais rester tel quel dans le bordereau.
+    ctx.SECTION = meilleur.section.numero;
+    ctx.ARTICLE = meilleur.article.numero;
+    console.log(`[analyser] SECTION/ARTICLE ${sectionReelle && articleFiable ? 'confirmés' : 'complétés/corrigés'} par correspondance de mots pour "${produitsBase[i]?.nom}" → ${ctx.SECTION} / ${ctx.ARTICLE}`);
   }
 }
 
@@ -1011,23 +1029,29 @@ router.post('/analyser', async (req, res) => {
     const mat = produitsBase[i];
     const ctx = contexteProduits[i] || {};
 
-    // Produits "FT seule" (pas encore catalogués comme matériau) : le nom
-    // de fichier (souvent bourré de codes internes XXX/FR/TDS) n'est pas un
-    // nom de produit fiable — on lit le contenu réel de sa fiche technique
-    // pour en tirer le TITRE et la DESCRIPTION tels qu'affichés sur la fiche.
-    // Repli sur le nom dérivé du fichier si l'extraction échoue ou si
-    // OPENAI_API_KEY est absente (voir extraireTitreDescriptionFT).
+    // Le TITRE catalogué (matériau) ou dérivé du nom de fichier (FT seule)
+    // n'est pas fiable comme DESCRIPTION courte, et peut lui-même être
+    // incomplet/bourré de codes internes (XXX/FR/TDS) — on lit le contenu
+    // RÉEL de la fiche technique et on en tire le TITRE et la DESCRIPTION
+    // tels qu'affichés sur la fiche. S'applique à TOUS les produits (pas
+    // seulement les FT seules) : le nom catalogué en base peut lui aussi
+    // être incomplet (ex: "Armourbond Flash" au lieu de "Armourbond Flash
+    // Sand HD"), et il n'a de toute façon jamais de description utilisable.
+    // Repli sur le nom d'origine si l'extraction échoue, si aucune FT n'est
+    // trouvée, ou si OPENAI_API_KEY est absente (voir extraireTitreDescriptionFT).
     let titre = mat.nom;
     let description = mat.nom;
-    if (mat._ftCheminConnu) {
-      try {
-        const bufFT = await downloadBuffer(BUCKETS.FICHES_TECHNIQUES, mat._ftCheminConnu);
-        const extrait = await extraireTitreDescriptionFT(bufFT);
+    try {
+      const buffersFT = mat._ftCheminConnu
+        ? [await downloadBuffer(BUCKETS.FICHES_TECHNIQUES, mat._ftCheminConnu)].filter(Boolean)
+        : await resoudreFichesTechniques(db, mat.fabricant, mat.nom);
+      if (buffersFT.length > 0) {
+        const extrait = await extraireTitreDescriptionFT(buffersFT[0]);
         if (extrait?.TITRE) titre = extrait.TITRE;
         if (extrait?.DESCRIPTION) description = extrait.DESCRIPTION;
-      } catch (e) {
-        console.warn('[analyser] Extraction TITRE/DESCRIPTION FT échouée pour', mat.nom, ':', e.message);
       }
+    } catch (e) {
+      console.warn('[analyser] Extraction TITRE/DESCRIPTION FT échouée pour', mat.nom, ':', e.message);
     }
 
     const p = {
