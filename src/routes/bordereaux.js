@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
-const { parseDevis } = require('../services/document-parser');
+const { parseDevis, parsePdfBuffer } = require('../services/document-parser');
 const { remplirBordereau } = require('../services/bordereau-filler');
 const { convertirDocxEnPdf } = require('../services/docx-to-pdf');
 const { convertirDocEnDocx, estDocLegacy, estDocxValide } = require('../services/doc-to-docx');
@@ -321,6 +321,82 @@ IMPORTANT : "produits" doit contenir EXACTEMENT ${produitsSelectionnes.length} e
 
   const data = await resp.json();
   return JSON.parse(data.choices[0].message.content);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  TITRE/DESCRIPTION depuis le CONTENU réel d'une fiche technique — pour
+//  les produits "FT seule" (pas encore catalogués comme matériau), dont le
+//  nom ne doit PAS venir du nom de fichier (qui contient souvent des codes
+//  internes du fabricant : XXX, FR/EN, TDS/PUB/PDS, numéros de référence)
+//  mais du produit tel qu'affiché sur sa propre fiche.
+// ══════════════════════════════════════════════════════════════
+const SYSTEM_PROMPT_FT = `Tu extrais deux informations depuis le texte d'une fiche technique (FT) de produit de construction/toiture.
+
+TITRE : le nom du produit tel qu'affiché sur la fiche (ex: "Torchflex TP-HD-Cap", "Cambridge", "Mystique", "S.A.M. Adhesive"). RÈGLES :
+- N'inclus JAMAIS le nom du fabricant (IKO, BP, Soprema, Canleaf, etc.) — celui-ci est déjà connu séparément.
+- N'inclus JAMAIS de codes internes : "XXX" (code couleur), "FR"/"EN" (langue), "TDS"/"PUB"/"PDS" (type de document), numéros de référence isolés qui ne font pas partie du nom commercial.
+- Le nom commercial peut lui-même contenir un modèle qui en fait partie (ex: "Mystique 42 po (RL621)" → garde seulement "Mystique", le format/numéro de référence n'est pas le nom commercial) — utilise ton jugement pour ne garder que le nom réellement distinctif du produit.
+
+DESCRIPTION : UNE SEULE phrase courte tirée ou déduite du texte de la fiche qui décrit ce qu'est le produit (ex: "Membrane de finition thermosoudée", "Sous-couche de toiture autocollante résistante aux hautes températures", "Bardeau d'asphalte laminé"). Ne recopie PAS une liste de caractéristiques, un slogan marketing, ni le nom du fabricant.
+
+Réponds UNIQUEMENT en JSON valide : {"TITRE": "...", "DESCRIPTION": "..."}
+Si le texte ne permet vraiment pas de déterminer un champ, retourne une chaîne vide pour ce champ.`;
+
+async function extraireTitreDescriptionFT(bufferFT) {
+  const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
+  if (!OPENAI_API_KEY || !bufferFT) return null;
+
+  let texte = '';
+  try {
+    const parsed = await parsePdfBuffer(bufferFT);
+    texte = (parsed.text || '').trim();
+  } catch (e) {
+    console.warn('[FT-extraction] Lecture PDF échouée:', e.message);
+    return null;
+  }
+  if (!texte) return null;
+
+  try {
+    const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + OPENAI_API_KEY },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        max_tokens: 200,
+        temperature: 0,
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'titre_description_ft',
+            schema: {
+              type: 'object',
+              properties: { TITRE: { type: 'string' }, DESCRIPTION: { type: 'string' } },
+              required: ['TITRE', 'DESCRIPTION'],
+              additionalProperties: false,
+            },
+            strict: true,
+          },
+        },
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT_FT },
+          { role: 'user', content: texte.substring(0, 6000) },
+        ],
+      }),
+    });
+    if (!resp.ok) {
+      console.warn('[FT-extraction] OpenAI', resp.status, (await resp.text()).substring(0, 200));
+      return null;
+    }
+    const data = await resp.json();
+    const out = JSON.parse(data.choices[0].message.content);
+    return {
+      TITRE: (out.TITRE || '').trim(),
+      DESCRIPTION: (out.DESCRIPTION || '').trim(),
+    };
+  } catch (e) {
+    console.warn('[FT-extraction] Appel IA échoué:', e.message);
+    return null;
+  }
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -934,15 +1010,35 @@ router.post('/analyser', async (req, res) => {
   for (let i = 0; i < produitsBase.length; i++) {
     const mat = produitsBase[i];
     const ctx = contexteProduits[i] || {};
+
+    // Produits "FT seule" (pas encore catalogués comme matériau) : le nom
+    // de fichier (souvent bourré de codes internes XXX/FR/TDS) n'est pas un
+    // nom de produit fiable — on lit le contenu réel de sa fiche technique
+    // pour en tirer le TITRE et la DESCRIPTION tels qu'affichés sur la fiche.
+    // Repli sur le nom dérivé du fichier si l'extraction échoue ou si
+    // OPENAI_API_KEY est absente (voir extraireTitreDescriptionFT).
+    let titre = mat.nom;
+    let description = mat.nom;
+    if (mat._ftCheminConnu) {
+      try {
+        const bufFT = await downloadBuffer(BUCKETS.FICHES_TECHNIQUES, mat._ftCheminConnu);
+        const extrait = await extraireTitreDescriptionFT(bufFT);
+        if (extrait?.TITRE) titre = extrait.TITRE;
+        if (extrait?.DESCRIPTION) description = extrait.DESCRIPTION;
+      } catch (e) {
+        console.warn('[analyser] Extraction TITRE/DESCRIPTION FT échouée pour', mat.nom, ':', e.message);
+      }
+    }
+
     const p = {
-      TITRE: mat.nom,
+      TITRE: titre,
       FABRICANT: mat.fabricant || '',
       FOURNISSEUR: mat.fournisseur || '',
       SECTION: ctx.SECTION || '',
       // Numéro seul (« 2.4.1.2 », « 5 ») même si l'IA a renvoyé le numéro
       // suivi du titre de l'article — même règle que bordereau-filler.
       ARTICLE: ((ctx.ARTICLE || '').match(/\d+(?:\.\d+)*/) || [ctx.ARTICLE || ''])[0],
-      DESCRIPTION: mat.nom,
+      DESCRIPTION: description,
       USAGE: ctx.USAGE || '',
       REMARQUE: '',
       ft_url: mat.lien_fiche_technique || '',
