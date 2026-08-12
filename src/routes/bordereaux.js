@@ -883,6 +883,27 @@ router.get('/api/langues-ft', async (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════════
+//  DIAGNOSTIC TEMPORAIRE — remplace le contenu d'une FT existante dans le
+//  bucket (meme cle, upsert) par une version fournie en base64. Usage
+//  ponctuel pour remplacer des FT anglaises par leur equivalent francais
+//  deja verifie — a retirer une fois le nettoyage fait.
+// ══════════════════════════════════════════════════════════════
+router.post('/api/remplacer-ft', express.json({ limit: '15mb' }), async (req, res) => {
+  try {
+    const { cle, contenuBase64 } = req.body || {};
+    if (!cle || !contenuBase64) return res.status(400).json({ error: 'cle et contenuBase64 requis' });
+    const buf = Buffer.from(contenuBase64, 'base64');
+    if (buf.length < 100 || buf.subarray(0, 4).toString('latin1') !== '%PDF') {
+      return res.status(400).json({ error: 'Le contenu fourni ne semble pas etre un PDF valide' });
+    }
+    await uploadBuffer(BUCKETS.FICHES_TECHNIQUES, cle, buf, 'application/pdf');
+    res.json({ ok: true, cle, taille: buf.length });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════
 //  ROUTES
 // ══════════════════════════════════════════════════════════════
 
