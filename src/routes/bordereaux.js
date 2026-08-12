@@ -79,7 +79,13 @@ function extraireContextePertinent(texteDevis) {
   // Marqueur fiable de DÉBUT de section, observé dans les devis québécois type
   // CIMAISE/AMCQ : "Section 07 52 21 ... Page 1 de 29" (seule la première page
   // d'une section porte "Page 1 de", les suivantes portent "Page 2 de", etc.)
-  const debutSectionRegex = /Section\s+((?:0[5-9])\s?\d{2}\s?\d{2})[^\n]*\r?\n[^\n]*Page\s*1\s*de\s*\d+/gi;
+  // "de" et "sur" sont TOUS LES DEUX utilisés selon le devis (parfois les deux
+  // dans le MÊME devis, une section par section) — ex. observé : "Page 1 sur
+  // 26" pour la section 07 52 00 (membranes) alors qu'une autre section du
+  // même devis dit "Page 1 de 1". Ne matcher que "de" fait disparaître de
+  // l'index des sections entières (souvent les plus importantes), ce qui
+  // forçait l'IA à deviner un numéro générique au lieu du vrai numéro.
+  const debutSectionRegex = /Section\s+((?:0[5-9])\s?\d{2}\s?\d{2})[^\n]*\r?\n[^\n]*Page\s*1\s*(?:de|sur)\s*\d+/gi;
   const positions = [];
   const vus = new Set();
   let m;
@@ -189,16 +195,50 @@ function motsCles(texte) {
     .split(/[^a-z0-9]+/).filter((w) => w.length > 2);
 }
 
-function completerSectionArticle(indexTexte, produitsBase, contexteProduits) {
+// Dernier recours quand aucun index de sections n'a pu être construit
+// (gabarit de devis non standard) : on cherche, dans le texte BRUT du devis,
+// où le produit est mentionné, puis on relève le numéro de section/article
+// réel le plus proche AVANT cette mention — exactement comme le ferait
+// quelqu'un qui lit le devis à la main. Un ARTICLE doit toujours référencer
+// le devis (jamais vide) ; ceci garantit un vrai numéro trouvé dans le texte
+// plutôt qu'un numéro générique halluciné par l'IA.
+function rechercherArticleTexteBrut(texteDevisBrut, motsProduit) {
+  if (!texteDevisBrut || motsProduit.length === 0) return null;
+  const texteMin = texteDevisBrut.toLowerCase();
+
+  let position = -1;
+  for (const mot of motsProduit) {
+    if (mot.length < 4) continue; // évite les mots trop courts/génériques
+    const idx = texteMin.indexOf(mot);
+    if (idx !== -1 && (position === -1 || idx < position)) position = idx;
+  }
+  if (position === -1) return null;
+
+  const avant = texteDevisBrut.substring(Math.max(0, position - 8000), position);
+  const sectionMatches = [...avant.matchAll(/Section\s+(\d{2}\s?\d{2}\s?\d{2})/gi)];
+  const articleMatches = [...avant.matchAll(/\n\s*(\d{1,2}(?:\.\d{1,2}){0,3})\s+[A-ZÉÈÀÇ]/g)];
+  const section = sectionMatches.length ? sectionMatches[sectionMatches.length - 1][1].replace(/\s/g, '') : null;
+  const article = articleMatches.length ? articleMatches[articleMatches.length - 1][1] : null;
+  if (!section && !article) return null;
+  return { section, article };
+}
+
+function completerSectionArticle(indexTexte, produitsBase, contexteProduits, texteDevisBrut) {
   const sections = parserIndexSections(indexTexte);
   if (sections.length === 0) {
-    // Devis sans index exploitable (aucune section "Page 1 de N" détectée) :
-    // on ne peut pas retrouver/valider un vrai numéro d'article, mais un
+    // Devis sans index exploitable (aucune section "Page 1 de/sur N"
+    // détectée) : on tente le repli par recherche brute (ci-dessus). Un
     // ARTICLE sans aucun chiffre est à coup sûr un titre hallucine par l'IA
-    // (ex: "Membrane élastomère") — on l'efface plutôt que de le laisser
-    // s'afficher tel quel dans le bordereau final.
-    for (const ctx of contexteProduits) {
-      if (ctx && ctx.ARTICLE && !/\d/.test(String(ctx.ARTICLE))) ctx.ARTICLE = '';
+    // (ex: "Membrane élastomère") — on ne le laisse jamais tel quel.
+    for (let i = 0; i < produitsBase.length; i++) {
+      const ctx = contexteProduits[i] = contexteProduits[i] || {};
+      if (ctx.ARTICLE && !/\d/.test(String(ctx.ARTICLE))) ctx.ARTICLE = '';
+      const motsProduit = motsCles(`${produitsBase[i]?.nom || ''} ${ctx.USAGE || ''}`);
+      const trouve = rechercherArticleTexteBrut(texteDevisBrut, motsProduit);
+      if (trouve) {
+        if (trouve.section) ctx.SECTION = trouve.section.replace(/^(\d{2})(\d{2})(\d{2})$/, '$1 $2 $3');
+        if (trouve.article) ctx.ARTICLE = trouve.article;
+      }
     }
     return;
   }
@@ -1012,7 +1052,7 @@ router.post('/analyser', async (req, res) => {
   // index contient au moins une section — couvre les vides laissés par l'IA
   // ET les produits au-delà du décalage (contexteProduits plus court).
   try {
-    completerSectionArticle(extraireContextePertinent(texteDevis), produitsBase, contexteProduits);
+    completerSectionArticle(extraireContextePertinent(texteDevis), produitsBase, contexteProduits, texteDevis);
   } catch (e) {
     console.error('[analyser] Filet SECTION/ARTICLE échoué:', e.message);
   }
