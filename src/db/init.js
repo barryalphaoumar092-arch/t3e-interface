@@ -299,6 +299,17 @@ async function initDb() {
     "ALTER TABLE appels_offres_seao ADD COLUMN statut_import TEXT DEFAULT 'jamais_tente'",
     'ALTER TABLE appels_offres_seao ADD COLUMN erreur_import TEXT',
     'ALTER TABLE appels_offres_seao ADD COLUMN derniere_synchronisation_documents TEXT',
+    // Nouveau remplisseur de soumissions privees (appel d'offre + plans +
+    // addendas uploades directement, sans lien SEAO) : champs_extraits =
+    // JSON du rapport d'extraction IA par champ ({valeur, statut,
+    // document_source, page_source, extrait_source, niveau_confiance}),
+    // documents_sources = JSON des fichiers uploades pour cette generation
+    // ([{nom_fichier, categorie, cle_storage}]). Colonnes additives —
+    // les anciennes colonnes generateur (type_isolant, methode_adhesion,
+    // etc.) restent en place mais ne sont plus utilisees par le nouveau
+    // service (voir soumission-filler.js).
+    'ALTER TABLE soumissions ADD COLUMN champs_extraits JSON',
+    'ALTER TABLE soumissions ADD COLUMN documents_sources JSON',
   ];
 
   for (const sql of migrations) {

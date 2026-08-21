@@ -777,10 +777,191 @@ Retourne un JSON avec tous les champs demandés.`;
   return callOpenAI(SYSTEM_EXIGENCES, userContent, ANALYSE_EXIGENCES_SCHEMA, true, 4096);
 }
 
+// ══════════════════════════════════════════════════════════════
+//  SOUMISSIONS PRIVÉES — remplissage automatique depuis appel d'offre +
+//  plans + addendas uploadés directement (aucun lien SEAO/appel d'offres
+//  public — voir soumission-filler.js). Même principe que
+//  analyserExigencesAppelOffre/champSourceSchema : CHAQUE champ porte sa
+//  source et son statut, jamais une valeur "nue". statut="non_trouve" ⇒ le
+//  filler insère un marqueur [À VALIDER], jamais une valeur inventée.
+// ══════════════════════════════════════════════════════════════
+
+// Champs communs à TOUS les templates (en-tête, tableau Re:/Objet:, prix,
+// exclusions, détails communs à presque tous les systèmes). Un système peut
+// ne pas avoir de bullet "manchons d'étanchéité" (Ancestral) — dans ce cas le
+// filler ignore simplement ce champ, il n'est jamais faux de le demander.
+function champsCommuns() {
+  return {
+    client_nom: champSourceSchema(),
+    client_adresse: champSourceSchema(),
+    client_ville_province_cp: champSourceSchema(),
+    client_contact: champSourceSchema(),
+    client_telephone: champSourceSchema(),
+    client_courriel: champSourceSchema(),
+    objet_projet: champSourceSchema(), // nom réel du bassin/scope (PAS "Bassin 1" par défaut)
+    superficie_pc: champSourceSchema(),
+    date_documents_recus: champSourceSchema(),
+    documents_recus_liste: champSourceSchema(), // ex: "Plans architecture émis 2026-03-01 (45 pages), Addenda 1 émis 2026-03-10"
+    exclusions_specifiques: champSourceSchema(),
+    prix_total: champSourceSchema(),
+    cout_remplacement_cp: champSourceSchema(), // $/pied carré, remplacement contreplaqué
+    cout_remplacement_isolant_humide: champSourceSchema(), // $/pied carré, isolant existant humide/endommagé — présent sur BUR et EPDM-PVC seulement, non_trouve ailleurs (attendu)
+    nb_drains: champSourceSchema(),
+    nb_manchons_events: champSourceSchema(),
+    nb_manchons_etancheite: champSourceSchema(), // Chem-Curbs — absent du système Ancestral, statut=non_trouve attendu
+    flashing_materiau_calibre: champSourceSchema(), // ex: "acier prépeint calibre 24" ou "cuivre 16oz"
+    gooseneck_ou_ventilateur: champSourceSchema(), // quantité cols de cygne "tel qu'existant" OU modèle Ventilateur Maximum
+  };
+}
+
+// Champs propres à chaque famille de template (voir le plan d'implémentation
+// pour le détail des trous réels par système, extraits directement des 18
+// fichiers). `valeur` doit toujours contenir le texte EXACT de l'option
+// choisie parmi un choix "/" (ex: "acier", pas "bois / acier / béton"), pour
+// que le filler puisse faire un remplacement littéral de l'option retenue.
+const CHAMPS_PAR_SYSTEME = {
+  BUR_REFECTION: {
+    pontage_materiau: champSourceSchema(), // bois | acier | béton | siporex
+    pare_vapeur_type: champSourceSchema(),
+    isolant_base_epaisseur: champSourceSchema(),
+    pente_isolant: champSourceSchema(),
+    isolant_materiau: champSourceSchema(),
+    fibre_bois_ou_perlite: champSourceSchema(),
+    fibre_bois_epaisseur: champSourceSchema(),
+    nb_plis_ou_membrane_alt: champSourceSchema(), // "4", "5", ou "deux (2) plis de membranes élastomères..."
+    gravier_type: champSourceSchema(), // standard 450 lbs | réfléchissant 650 lbs
+    releves_composition: champSourceSchema(),
+  },
+  BUR_PLEUMAGE: {
+    pente_isolant: champSourceSchema(),
+    isolant_materiau: champSourceSchema(),
+    fibre_bois_ou_perlite: champSourceSchema(),
+    fibre_bois_epaisseur: champSourceSchema(),
+    nb_plis_ou_membrane_alt: champSourceSchema(),
+    gravier_type: champSourceSchema(),
+    releves_composition: champSourceSchema(),
+  },
+  COLVENT_REFECTION: {
+    description_toiture_existante: champSourceSchema(),
+    pontage_materiau: champSourceSchema(), // bois | acier | béton | syporex | coupe-vapeur existant
+    pare_vapeur_type: champSourceSchema(),
+    pente_isolant: champSourceSchema(),
+    isolant_materiau: champSourceSchema(),
+    isolant_methode_fixation: champSourceSchema(),
+    isolant_base_epaisseur: champSourceSchema(),
+    releves_materiau: champSourceSchema(), // contreplaqué ½'' | asphaltique ½''
+    membrane_couleur: champSourceSchema(), // grise | réfléchissante blanche
+  },
+  EPDM_PVC_PLEUMAGE: {
+    pente_isolant: champSourceSchema(),
+    isolant_materiau: champSourceSchema(),
+    membrane_type: champSourceSchema(), // EPDM 60mils | PVC 60mils
+    ballast_type: champSourceSchema(), // pierre de rivière | géotextile + gravier réfléchissant
+  },
+  INVERSE_REFECTION: {
+    description_toiture_existante: champSourceSchema(),
+    methode_membrane: champSourceSchema(), // 2 plis thermosoudés | membrane liquide Hydrotech
+    releves_materiau: champSourceSchema(),
+    membrane_couleur: champSourceSchema(),
+    xps_epaisseur: champSourceSchema(),
+    ballast_type: champSourceSchema(),
+  },
+  SOPRAFIX_REFECTION: {
+    pontage_materiau: champSourceSchema(), // bois | acier
+    pare_vapeur_type: champSourceSchema(),
+    isolant_epaisseur: champSourceSchema(),
+    pente_isolant: champSourceSchema(),
+    isolant_materiau: champSourceSchema(),
+    releves_materiau: champSourceSchema(),
+    membrane_couleur: champSourceSchema(),
+  },
+  SOPRASMART_REFECTION: {
+    pontage_materiau: champSourceSchema(), // bois | acier
+    coupe_vapeur_type: champSourceSchema(),
+    isolant_sopraiso_epaisseur: champSourceSchema(),
+    panneau_support_epaisseur: champSourceSchema(),
+    membrane_couleur: champSourceSchema(),
+  },
+  TPO_PVC_RHINOBOND: {
+    pontage_materiau: champSourceSchema(), // bois | acier
+    pare_vapeur_type: champSourceSchema(),
+    isolant_epaisseur: champSourceSchema(),
+    pente_isolant: champSourceSchema(),
+    isolant_materiau: champSourceSchema(),
+    membrane_type: champSourceSchema(), // TPO | PVC — doit rester cohérent avec manchons/solins
+  },
+  ANCESTRAL: {
+    pontage_materiau: champSourceSchema(), // contreplaqué | planche (bois seulement)
+    // 8 items candidats (baguettes, tôle canadienne, joints debout, ardoise,
+    // lucarnes, gouttières, ornements, solins) — un projet réel n'en utilise
+    // généralement que 2-4. present=false ⇒ le filler SUPPRIME le paragraphe
+    // entier plutôt que de le laisser en placeholder.
+    items_toiture_metallique: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          type: { type: 'string', enum: ['baguettes', 'tole_canadienne', 'joints_debout', 'ardoise', 'lucarnes', 'gouttieres', 'ornements', 'solins'] },
+          present: { type: 'boolean' },
+          metal_ou_materiau: { type: 'string' },
+          dimension_ou_quantite: { type: 'string' },
+          valeur: { type: 'string' },
+          statut: { type: 'string', enum: ['confirme', 'a_verifier', 'contradictoire', 'non_trouve'] },
+          document_source: { type: 'string' },
+          page_source: { type: 'string' },
+          extrait_source: { type: 'string' },
+          niveau_confiance: { type: 'string', enum: ['eleve', 'moyen', 'faible'] },
+        },
+        required: ['type', 'present', 'metal_ou_materiau', 'dimension_ou_quantite', 'valeur', 'statut', 'document_source', 'page_source', 'extrait_source', 'niveau_confiance'],
+        additionalProperties: false,
+      },
+    },
+  },
+};
+
+function construireSchemaExtraction(systeme) {
+  const proprietes = { ...champsCommuns(), ...(CHAMPS_PAR_SYSTEME[systeme] || {}) };
+  return {
+    type: 'object',
+    properties: proprietes,
+    required: Object.keys(proprietes),
+    additionalProperties: false,
+  };
+}
+
+const SYSTEM_SOUMISSION_PRIVEE = `Tu analyses les documents d'un projet PRIVÉ de réfection de toiture (appel d'offre du client, plans, addendas — PAS un appel d'offres public SEAO) pour Toitures Trois Étoiles Inc. (T3E), afin de remplir automatiquement une lettre de soumission.
+
+Les documents te sont fournis avec des marqueurs "===== DOCUMENT: nom (catégorie) =====" et "--- page N ---". Les ADDENDAS priment sur l'appel d'offre et les plans en cas de contradiction (ils sont placés en premier dans le contexte). Pour CHAQUE champ, cite le document exact (document_source), la page si connue (page_source, chaîne vide sinon), et un court extrait littéral (extrait_source) qui justifie ta réponse.
+
+=== RÈGLES ABSOLUES ===
+- statut="non_trouve" avec valeur="" si l'information n'apparaît dans AUCUN document — N'INVENTE JAMAIS une dimension, une épaisseur, une quantité, un prix ou une spécification absente des documents. C'est la règle la plus importante : mieux vaut un champ vide et signalé que rempli avec une valeur plausible mais non prouvée.
+- Pour un choix "X / Y / Z" (plusieurs options séparées par des barres obliques dans un gabarit), la valeur retournée doit être le texte EXACT de la SEULE option retenue (ex: "acier", pas "bois / acier / béton / siporex") — jamais la phrase complète avec les options non retenues.
+- statut="confirme" seulement si l'information est explicite et non ambiguë. statut="a_verifier" si elle est déduite/implicite. statut="contradictoire" si deux documents se contredisent (valeur doit alors contenir les deux, en précisant que l'addenda prime).
+- niveau_confiance="faible" pour toute déduction plutôt qu'une mention explicite.
+- Les plans sont parfois des dessins vectoriels/scannés avec peu de texte extractible — c'est normal, ne force pas une réponse à partir d'un plan illisible.
+- Réponds en français québécois professionnel.`;
+
+async function analyserProjetSoumissionPrivee(contexteDocuments, systeme) {
+  if (!OPENAI_API_KEY) return { error: 'OPENAI_API_KEY manquante' };
+
+  const schema = construireSchemaExtraction(systeme);
+  const userContent = `SYSTÈME DE TOITURE CHOISI : ${systeme}
+
+DOCUMENTS DU PROJET :
+───────────────────────────────────────
+${contexteDocuments}
+───────────────────────────────────────
+
+Retourne un JSON avec tous les champs demandés pour ce système.`;
+
+  return callOpenAI(SYSTEM_SOUMISSION_PRIVEE, userContent, schema, true, 8000);
+}
+
 module.exports = {
   analyserDevis, analyserDevisSoumission, analyserDevisManuel,
   extraireFournisseursDesFT, mapperChampsBordereau,
   analyserInfosEntreprise, mapperChampsFormulairePdf,
   analyserExigencesAppelOffre,
+  analyserProjetSoumissionPrivee,
   isConfigured,
 };
