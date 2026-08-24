@@ -5,15 +5,35 @@ const { createClient } = require('@supabase/supabase-js');
 
 let _client = null;
 
+// Nettoie une valeur d'env var copiee-collee depuis un tableau de bord :
+// guillemets/apostrophes/backticks entourant accidentellement la valeur
+// (erreur frequente en collant depuis certaines interfaces), et slash final
+// (storage-js construit ses URLs avec un "/" -- un double "//" en resultant
+// peut faire echouer la validation de chemin cote Supabase avec l'erreur
+// generique "Invalid path specified in request URL").
+function nettoyerValeurEnv(v) {
+  return String(v || '').trim().replace(/^['"`]+|['"`]+$/g, '').replace(/\/+$/, '');
+}
+
 function getClient() {
   if (_client) return _client;
-  const url = (process.env.SUPABASE_URL || '').trim();
-  const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+  const url = nettoyerValeurEnv(process.env.SUPABASE_URL);
+  const key = nettoyerValeurEnv(process.env.SUPABASE_SERVICE_ROLE_KEY);
   if (!url || !key) {
     throw new Error('SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY manquantes.');
   }
   _client = createClient(url, key, { auth: { persistSession: false } });
   return _client;
+}
+
+// Diagnostic (non sensible : l'URL du projet Supabase est publique, la cle
+// n'est jamais exposee) -- utilise par /api/admin/reparer-buckets pour
+// afficher la valeur EXACTE reellement utilisee par le serveur, notamment sa
+// longueur et sa forme JSON (revele espaces/guillemets invisibles a l'oeil).
+function diagnosticUrl() {
+  const brut = process.env.SUPABASE_URL || '';
+  const nettoye = nettoyerValeurEnv(brut);
+  return { brut: JSON.stringify(brut), nettoye: JSON.stringify(nettoye), longueurBrute: brut.length };
 }
 
 const BUCKETS = {
@@ -131,4 +151,4 @@ function resoudreBucketEtCle(cheminFichier, nomFichier) {
   return { bucket: BUCKETS.DOCUMENTS, key: sanitizeKey(path.basename(brut)) };
 }
 
-module.exports = { getClient, BUCKETS, ensureBucket, uploadBuffer, downloadBuffer, createSignedUploadUrl, createSignedUrl, removeFile, listFiles, sanitizeKey, stripAccents, resoudreBucketEtCle };
+module.exports = { getClient, BUCKETS, ensureBucket, uploadBuffer, downloadBuffer, createSignedUploadUrl, createSignedUrl, removeFile, listFiles, sanitizeKey, stripAccents, resoudreBucketEtCle, diagnosticUrl };

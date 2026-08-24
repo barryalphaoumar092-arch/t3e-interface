@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const { createSignedUploadUrl, sanitizeKey, BUCKETS, ensureBucket } = require('../services/storage');
+const { createSignedUploadUrl, sanitizeKey, BUCKETS, ensureBucket, diagnosticUrl } = require('../services/storage');
 
 // Recree les buckets Storage manquants (ex: apres restauration d'un projet
 // Supabase mis en pause, qui peut reinitialiser le Storage sans toucher a la
@@ -18,7 +18,7 @@ router.post('/admin/reparer-buckets', async (req, res) => {
       resultats[bucket] = 'erreur: ' + e.message;
     }
   }
-  res.json({ resultats });
+  res.json({ resultats, diagnostic: diagnosticUrl() });
 });
 
 // URL d'upload signee — le navigateur envoie ensuite le fichier DIRECTEMENT a
