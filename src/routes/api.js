@@ -1,7 +1,25 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const { createSignedUploadUrl, sanitizeKey, BUCKETS } = require('../services/storage');
+const { createSignedUploadUrl, sanitizeKey, BUCKETS, ensureBucket } = require('../services/storage');
+
+// Recree les buckets Storage manquants (ex: apres restauration d'un projet
+// Supabase mis en pause, qui peut reinitialiser le Storage sans toucher a la
+// base Postgres) — idempotent (ensureBucket ne recree pas un bucket deja
+// present), protege par la meme session que le reste du site (middleware
+// global dans server.js), pas de suppression/ecrasement de donnees.
+router.post('/admin/reparer-buckets', async (req, res) => {
+  const resultats = {};
+  for (const bucket of Object.values(BUCKETS)) {
+    try {
+      await ensureBucket(bucket);
+      resultats[bucket] = 'ok';
+    } catch (e) {
+      resultats[bucket] = 'erreur: ' + e.message;
+    }
+  }
+  res.json({ resultats });
+});
 
 // URL d'upload signee — le navigateur envoie ensuite le fichier DIRECTEMENT a
 // Supabase Storage, en contournant la limite de 4.5 Mo par requete des
