@@ -15,9 +15,21 @@ function nettoyerValeurEnv(v) {
   return String(v || '').trim().replace(/^['"`]+|['"`]+$/g, '').replace(/\/+$/, '');
 }
 
+// Le nouveau tableau de bord Supabase affiche plusieurs URLs sur la meme
+// page "API Keys"/"Data API" (Project URL, REST URL, GraphQL URL...) -- un
+// piege frequent est de copier l'URL REST (".../rest/v1") au lieu de l'URL
+// racine du projet attendue par createClient(). storage-js ajoute ensuite
+// son propre "/storage/v1/..." a la suite, ce qui produit une route invalide
+// ("/rest/v1/storage/v1/...") et l'erreur generique "Invalid path specified
+// in request URL" sur TOUTES les operations, pas seulement un bucket precis.
+// On retire ce suffixe connu pour rester tolerant a cette erreur de copie.
+function nettoyerUrlProjet(url) {
+  return nettoyerValeurEnv(url).replace(/\/(rest|storage|auth|realtime|functions)\/v\d+\/?$/i, '');
+}
+
 function getClient() {
   if (_client) return _client;
-  const url = nettoyerValeurEnv(process.env.SUPABASE_URL);
+  const url = nettoyerUrlProjet(process.env.SUPABASE_URL);
   const key = nettoyerValeurEnv(process.env.SUPABASE_SERVICE_ROLE_KEY);
   if (!url || !key) {
     throw new Error('SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY manquantes.');
@@ -32,7 +44,7 @@ function getClient() {
 // longueur et sa forme JSON (revele espaces/guillemets invisibles a l'oeil).
 function diagnosticUrl() {
   const brut = process.env.SUPABASE_URL || '';
-  const nettoye = nettoyerValeurEnv(brut);
+  const nettoye = nettoyerUrlProjet(brut);
   return { brut: JSON.stringify(brut), nettoye: JSON.stringify(nettoye), longueurBrute: brut.length };
 }
 
@@ -151,4 +163,4 @@ function resoudreBucketEtCle(cheminFichier, nomFichier) {
   return { bucket: BUCKETS.DOCUMENTS, key: sanitizeKey(path.basename(brut)) };
 }
 
-module.exports = { getClient, BUCKETS, ensureBucket, uploadBuffer, downloadBuffer, createSignedUploadUrl, createSignedUrl, removeFile, listFiles, sanitizeKey, stripAccents, resoudreBucketEtCle, diagnosticUrl };
+module.exports = { getClient, BUCKETS, ensureBucket, uploadBuffer, downloadBuffer, createSignedUploadUrl, createSignedUrl, removeFile, listFiles, sanitizeKey, stripAccents, resoudreBucketEtCle, diagnosticUrl, nettoyerUrlProjet, nettoyerValeurEnv };

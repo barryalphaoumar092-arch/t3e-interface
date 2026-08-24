@@ -16,7 +16,11 @@ app.set('views', path.join(__dirname, 'views'));
 // Cle anon Supabase : concue pour etre publique (elle ne donne aucun droit
 // sans policy explicite), utilisee par le navigateur pour uploader les gros
 // fichiers directement vers Supabase Storage (voir public/js/direct-upload.js).
-app.locals.SUPABASE_URL = process.env.SUPABASE_URL || '';
+// nettoyerUrlProjet() protege contre l'erreur de copie frequente depuis le
+// nouveau tableau de bord Supabase (URL REST ".../rest/v1" au lieu de l'URL
+// racine du projet) -- voir src/services/storage.js pour le detail.
+const { nettoyerUrlProjet } = require('./src/services/storage');
+app.locals.SUPABASE_URL = nettoyerUrlProjet(process.env.SUPABASE_URL);
 app.locals.SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY
   || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNmdWxjZHp2dGN5bXF3bnVpdG1rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI5MDEyMjEsImV4cCI6MjA5ODQ3NzIyMX0.bZkfLOVptBvuo3npjRRTOEN2AwLkVAJAmR2K9nS-UY8';
 
