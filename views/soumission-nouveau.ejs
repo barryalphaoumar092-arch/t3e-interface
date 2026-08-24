@@ -9,7 +9,7 @@
 
 <h2><i class="bi bi-magic"></i> Nouvelle soumission privée</h2>
 <p class="text-muted small">
-  Choisissez le système de toiture et déposez l'appel d'offre du client (obligatoire), les plans et les addendas (optionnels). L'IA lit ces documents et remplit automatiquement le template Word correspondant — <strong>seules les informations réellement trouvées dans vos documents sont insérées</strong> ; tout le reste est marqué <span class="badge bg-warning text-dark">À VALIDER</span> plutôt que deviné.
+  Choisissez le système de toiture et déposez les documents du projet (appel d'offre, devis, plans, addendas — tous optionnels sauf au moins un document). Vous pouvez glisser plusieurs fichiers à la suite dans une même case, notamment pour les addendas : chaque ajout s'accumule, rien n'est remplacé. L'IA lit ces documents et remplit automatiquement le template Word correspondant — <strong>seules les informations réellement trouvées dans vos documents sont insérées</strong> ; tout le reste est marqué <span class="badge bg-warning text-dark">À VALIDER</span> plutôt que deviné.
 </p>
 
 <% if (!iaConfiguree) { %>
@@ -40,19 +40,28 @@
   </div>
 
   <hr>
-  <h6 class="mb-3">Documents du projet</h6>
-  <div class="row g-2 mb-3">
-    <div class="col-md-12">
-      <label class="form-label small">Appel d'offre du client <span class="text-danger">*</span></label>
-      <input type="file" id="fichierAppelOffre" class="form-control form-control-sm" accept=".pdf,.docx,.doc" multiple>
+  <h6 class="mb-1">Documents du projet</h6>
+  <p class="text-muted small mb-3">Chaque case accepte plusieurs fichiers, ajoutés un par un ou en groupe — les fichiers déjà déposés restent affichés en dessous ; cliquez sur un badge pour le retirer.</p>
+  <div class="row g-3 mb-3">
+    <div class="col-md-6">
+      <label class="form-label small fw-bold">Appel d'offre du client</label>
+      <input type="file" id="inputAppelOffre" class="form-control form-control-sm" accept=".pdf,.docx,.doc" multiple>
+      <div class="mt-1" id="inputAppelOffreListe"></div>
     </div>
     <div class="col-md-6">
-      <label class="form-label small">Plans</label>
-      <input type="file" id="fichierPlans" class="form-control form-control-sm" accept=".pdf" multiple>
+      <label class="form-label small fw-bold">Devis</label>
+      <input type="file" id="inputDevis" class="form-control form-control-sm" accept=".pdf,.docx,.doc" multiple>
+      <div class="mt-1" id="inputDevisListe"></div>
     </div>
     <div class="col-md-6">
-      <label class="form-label small">Addendas</label>
-      <input type="file" id="fichierAddendas" class="form-control form-control-sm" accept=".pdf,.docx,.doc" multiple>
+      <label class="form-label small fw-bold">Plans</label>
+      <input type="file" id="inputPlans" class="form-control form-control-sm" accept=".pdf" multiple>
+      <div class="mt-1" id="inputPlansListe"></div>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label small fw-bold">Addendas</label>
+      <input type="file" id="inputAddendas" class="form-control form-control-sm" accept=".pdf,.docx,.doc" multiple>
+      <div class="mt-1" id="inputAddendasListe"></div>
     </div>
   </div>
 
@@ -61,14 +70,19 @@
 
 <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="/js/direct-upload.js"></script>
+<script src="/js/accumulateur-fichiers.js"></script>
 <script>
 window.T3E_SUPABASE_URL = "<%= SUPABASE_URL %>";
 window.T3E_SUPABASE_ANON_KEY = "<%= SUPABASE_ANON_KEY %>";
 
-var inputsParCategorie = {
-  appel_offre: document.getElementById('fichierAppelOffre'),
-  plans: document.getElementById('fichierPlans'),
-  addendas: document.getElementById('fichierAddendas'),
+// Chaque case accumule les fichiers choisis au fil des selections successives
+// (glisser un fichier puis un autre AJOUTE au lieu de remplacer) — voir
+// accumulateur-fichiers.js, deja utilise par la page "Manuels".
+var accumulateurs = {
+  appel_offre: t3eAccumulateur.attacher(document.getElementById('inputAppelOffre'), document.getElementById('inputAppelOffreListe')),
+  devis: t3eAccumulateur.attacher(document.getElementById('inputDevis'), document.getElementById('inputDevisListe')),
+  plans: t3eAccumulateur.attacher(document.getElementById('inputPlans'), document.getElementById('inputPlansListe')),
+  addendas: t3eAccumulateur.attacher(document.getElementById('inputAddendas'), document.getElementById('inputAddendasListe')),
 };
 
 document.getElementById('formSoumission').addEventListener('submit', function (e) {
@@ -76,9 +90,11 @@ document.getElementById('formSoumission').addEventListener('submit', function (e
   var form = e.target;
   var btn = document.getElementById('btnGenerer');
   var taches = [];
+  var totalFichiers = 0;
 
-  Object.keys(inputsParCategorie).forEach(function (categorie) {
-    Array.prototype.slice.call(inputsParCategorie[categorie].files).forEach(function (fichier) {
+  Object.keys(accumulateurs).forEach(function (categorie) {
+    accumulateurs[categorie].getFiles().forEach(function (fichier) {
+      totalFichiers++;
       taches.push(t3eDirectUpload.uploadDirect(fichier, 'temp').then(function (info) {
         var inpKey = document.createElement('input');
         inpKey.type = 'hidden'; inpKey.name = categorie + '_key'; inpKey.value = info.key;
@@ -90,7 +106,7 @@ document.getElementById('formSoumission').addEventListener('submit', function (e
     });
   });
 
-  if (taches.length === 0) { form.submit(); return; }
+  if (totalFichiers === 0) { form.submit(); return; }
 
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Envoi et analyse en cours (peut prendre une minute)…';

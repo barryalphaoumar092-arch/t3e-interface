@@ -35,11 +35,12 @@ async function texteDuFichier(buffer, nomFichier) {
   }
 }
 
-// documents: [{ nom_fichier, categorie: 'appel_offre'|'plans'|'addenda', buffer }]
+// documents: [{ nom_fichier, categorie: 'appel_offre'|'devis'|'plans'|'addendas', buffer }]
 // Les addendas sont places en PREMIER dans le contexte (priorite en cas de
 // contradiction, meme convention que le prompt d'analyserExigencesAppelOffre).
+// appel_offre et devis sont au meme palier (documents de base du projet).
 async function construireContexte(documents) {
-  const ordre = { addenda: 0, appel_offre: 1, plans: 2 };
+  const ordre = { addendas: 0, addenda: 0, appel_offre: 1, devis: 1, plans: 2 };
   const tries = [...documents].sort((a, b) => (ordre[a.categorie] ?? 9) - (ordre[b.categorie] ?? 9));
 
   let budgetRestant = BUDGET_TOTAL;

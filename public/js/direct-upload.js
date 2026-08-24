@@ -10,9 +10,16 @@
     return _sb;
   }
 
+  function attendre(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
   // dest: 'temp' (fichier ephemere, traite puis supprime par le serveur)
   //       'documents' (destination finale, bucket "documents")
-  async function uploadDirect(file, dest) {
+  // Une tentative unique de reessai (delai court) : "fetch failed" cote
+  // serveur (Node/Vercel appelant l'API Supabase) est generalement un blip
+  // reseau transitoire plutot qu'une erreur de configuration — un reessai
+  // evite de faire echouer tout un envoi de plusieurs fichiers pour un seul
+  // blip isole, sans masquer une vraie erreur persistante (2e echec -> rejet).
+  async function tenterUneFois(file, dest) {
     var resp = await fetch('/api/upload-url', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -25,6 +32,15 @@
     if (error) throw error;
 
     return { bucket: info.bucket, key: info.key, name: file.name, size: file.size };
+  }
+
+  async function uploadDirect(file, dest) {
+    try {
+      return await tenterUneFois(file, dest);
+    } catch (e) {
+      await attendre(1200);
+      return await tenterUneFois(file, dest);
+    }
   }
 
   window.t3eDirectUpload = { uploadDirect: uploadDirect };

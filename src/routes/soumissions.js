@@ -5,7 +5,7 @@ const { construireContexte } = require('../services/soumission-parser');
 const { analyserProjetSoumissionPrivee, isConfigured } = require('../services/claude-client');
 const { TEMPLATE_MAP, LABELS_SYSTEME, genererSoumissionPrivee } = require('../services/soumission-filler');
 
-const CATEGORIES = ['appel_offre', 'plans', 'addendas'];
+const CATEGORIES = ['appel_offre', 'devis', 'plans', 'addendas'];
 
 // Cles generees exclusivement par /api/upload-url : jamais de separateur de chemin.
 function cleTempValide(key) {
@@ -87,7 +87,7 @@ router.post('/generer', async (req, res) => {
     return res.render('soumission-nouveau', {
       systemes: Object.keys(TEMPLATE_MAP).map(k => ({ cle: k, label: LABELS_SYSTEME[k] || k })),
       iaConfiguree: isConfigured(),
-      erreur: "Déposez au moins l'appel d'offre du client avant de générer la soumission.",
+      erreur: "Déposez au moins un document du projet (appel d'offre, devis, plans ou addenda) avant de générer la soumission.",
     });
   }
 
