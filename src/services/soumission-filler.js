@@ -207,6 +207,11 @@ function reglesCommunes(champs, dateAujourdhui) {
     {
       test: t => /présentée à\s+NOM DU CLIENT\s+portant sur le projet/i.test(t),
       build: t => t
+        // "1er octobre 2024" = résultat mis en cache d'un CHAMP Word (TIME \@
+        // "d MMMM yyyy") dans le même paragraphe — reconstruireParagraphe()
+        // aplati tout le paragraphe en texte simple de toute façon, donc on
+        // remplace directement ce texte plutôt que de préserver le champ.
+        .replace(/1er octobre 2024/, formaterDateFrCourte(dateAujourdhui))
         .replace(/NOM DU CLIENT/, texteOuAValider(champs.client_nom))
         .replace(/#SOUMISSION/, texteOuAValider(champs.numero_reference_projet))
         .replace(/NOM DU PROJET ET CLIENT/, texteOuAValider(champs.client_adresse)),
