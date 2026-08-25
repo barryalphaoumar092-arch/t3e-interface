@@ -86,17 +86,17 @@ function appliquerReglesParagraphes(xml, regles) {
 }
 
 // ── Aides d'extraction du rapport IA ────────────────────────────────────
-const MARQUEUR_A_VALIDER = '[À VALIDER]';
-
 function val(champ) {
   return champ && typeof champ.valeur === 'string' ? champ.valeur.trim() : '';
 }
 
-// Retourne la valeur trouvee, ou un marqueur explicite plutot qu'une chaine
-// vide silencieuse — jamais une valeur inventee (voir claude-client.js).
+// Retourne la valeur trouvee, ou une chaine vide sinon — jamais de marqueur
+// [À VALIDER] dans le document genere (demande explicite de l'utilisateur :
+// un champ non trouve doit rester silencieusement vide dans le .docx, le
+// rapport d'extraction sur la page de la soumission reste l'endroit ou
+// signaler les champs manquants, pas le document lui-meme).
 function texteOuAValider(champ) {
-  const v = val(champ);
-  return v || MARQUEUR_A_VALIDER;
+  return val(champ);
 }
 
 function rapportChamp(cle, champ, notes) {
@@ -124,7 +124,7 @@ function formaterDateFrCourte(d) {
 
 function formaterPrix(champ) {
   const v = val(champ);
-  if (!v) return MARQUEUR_A_VALIDER + ' $';
+  if (!v) return '';
   const nombre = Number(String(v).replace(/[^\d.,]/g, '').replace(',', '.'));
   if (!isNaN(nombre) && nombre > 0) return `${nombre.toLocaleString('fr-CA')} $`;
   return v;
@@ -162,7 +162,7 @@ function reglesCommunes(champs, dateAujourdhui) {
     // Ligne "conformément aux documents reçus le ______ pour soumission"
     {
       test: t => /documents reçus le\s*_+\s*pour soumission/i.test(t),
-      build: t => t.replace(/_+(?=\s*pour soumission)/i, val(champs.date_documents_recus) || 'À VALIDER'),
+      build: t => t.replace(/_+(?=\s*pour soumission)/i, val(champs.date_documents_recus)),
     },
     // 3 lignes d'exemple de documents (Plans/Sections/Addendas) — remplacées
     // par UNE ligne réelle la première fois, supprimées ensuite.
@@ -182,7 +182,7 @@ function reglesCommunes(champs, dateAujourdhui) {
       test: t => /^Bassin\s*1\s*[–-]/i.test(t.trim()),
       build: t => val(champs.objet_projet) || t, // pas trouvé -> on garde le libellé générique du template
     },
-    { test: t => t.trim() === 'superficie', build: () => { const v = val(champs.superficie_pc); return v ? `${v} pi²` : MARQUEUR_A_VALIDER; } },
+    { test: t => t.trim() === 'superficie', build: () => { const v = val(champs.superficie_pc); return v ? `${v} pi²` : ''; } },
     // "Re :" — la cellule de valeur du tableau est une cellule VIDE distincte
     // (pas de texte à cibler) ; on met donc l'adresse du projet directement
     // dans la cellule du libellé, plutôt qu'une manipulation XML par index de
@@ -212,7 +212,7 @@ function reglesCommunes(champs, dateAujourdhui) {
     // sur BUR et EPDM-PVC ; n'a aucun paragraphe correspondant ailleurs (no-op).
     { test: t => /isolants existants humides.*\$_+\s*\/\s*pied carré/i.test(t), build: t => t.replace(/\$_+(?=\s*\/\s*pied carré)/, '$' + texteOuAValider(champs.cout_remplacement_isolant_humide)) },
     // Superficie de la zone à arracher ("environ______pieds carrés")
-    { test: t => /environ\s*_+\s*pieds carrés/i.test(t), build: t => t.replace(/_+(?=\s*pieds carrés)/, val(champs.superficie_pc) || 'À VALIDER') },
+    { test: t => /environ\s*_+\s*pieds carrés/i.test(t), build: t => t.replace(/_+(?=\s*pieds carrés)/, val(champs.superficie_pc)) },
     // Drains / manchons (communs à presque tous les systèmes)
     { test: t => /installer\s*_+\s*nouveaux drains/i.test(t), build: t => t.replace(/_+(?=\s*nouveaux drains)/i, texteOuAValider(champs.nb_drains)) },
     { test: t => /installer\s*_+\s*nouveaux manchons d['’]év[ée]nts/i.test(t), build: t => t.replace(/_+(?=\s*nouveaux manchons)/i, texteOuAValider(champs.nb_manchons_events)) },
@@ -301,7 +301,7 @@ const REGLES_PAR_SYSTEME = {
     function texteItem(type) {
       const it = parType[type];
       if (!it || !it.present) return null; // absent des documents -> paragraphe supprimé
-      return val(it) || MARQUEUR_A_VALIDER;
+      return val(it);
     }
     const CINQ_METAUX = /cuivre naturel 16oz\s*\/\s*cuivre étamé 16oz\s*\/\s*acier galvanisé calibre 24 ou 26\s*\/\s*acier galvalume calibre 24 ou 26\s*\/\s*acier prépeint calibre 24 ou 26/i;
 
@@ -381,5 +381,5 @@ async function genererSoumissionPrivee({ systeme, langue, champs, numero }) {
 
 module.exports = {
   TEMPLATE_MAP, LABELS_SYSTEME, selectTemplate, getTemplateFile,
-  genererSoumissionPrivee, construireRapport, MARQUEUR_A_VALIDER,
+  genererSoumissionPrivee, construireRapport,
 };
