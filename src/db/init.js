@@ -310,6 +310,17 @@ async function initDb() {
     // service (voir soumission-filler.js).
     'ALTER TABLE soumissions ADD COLUMN champs_extraits JSON',
     'ALTER TABLE soumissions ADD COLUMN documents_sources JSON',
+    // Generation en arriere-plan (meme principe que manuels/bordereaux, voir
+    // /internal/generer-soumission dans server.js) : necessaire des que
+    // plusieurs documents sont combines (surtout avec un plan, qui declenche
+    // l'analyse visuelle) — depasse alors le delai de 60s d'une fonction
+    // Vercel. generation_requete = JSON {systeme, langue, fichiers:[{cle,
+    // nom, categorie}]} sauvegarde AVANT le traitement lourd (pour que Render
+    // puisse le relire) ; generation_statut n'a pas de CHECK (contrairement
+    // a `statut`) pour rester simple a etendre : 'en_cours'|'termine'|'erreur'.
+    'ALTER TABLE soumissions ADD COLUMN generation_requete JSON',
+    'ALTER TABLE soumissions ADD COLUMN generation_statut TEXT',
+    'ALTER TABLE soumissions ADD COLUMN generation_erreur TEXT',
   ];
 
   for (const sql of migrations) {

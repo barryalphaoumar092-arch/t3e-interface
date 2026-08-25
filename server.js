@@ -162,6 +162,40 @@ app.post('/internal/generer-bordereaux', async (req, res) => {
   }
 });
 
+// Meme principe que /internal/generer-bordereaux : la generation d'une
+// soumission privee (telechargement des documents + IA texte + IA vision des
+// plans + remplissage du gabarit) depasse facilement les 60s d'une fonction
+// Vercel des qu'un plan est fourni (vision) ou que plusieurs documents sont
+// combines. Repond 202 puis continue ; genererEtSauvegarderSoumission met a
+// jour la base directement une fois termine (ou en cas d'echec).
+app.post('/internal/generer-soumission', async (req, res) => {
+  const secret = (process.env.CONVERT_SERVICE_SECRET || '').trim();
+  const fourni = typeof req.headers['x-convert-secret'] === 'string'
+    ? req.headers['x-convert-secret'].trim() : '';
+  const valide = secret.length > 0 && fourni.length > 0
+    && Buffer.byteLength(fourni) === Buffer.byteLength(secret)
+    && crypto.timingSafeEqual(Buffer.from(fourni), Buffer.from(secret));
+  if (!valide) {
+    console.error(`[convert-auth] refuse — secret configure: ${secret.length} caracteres, recu: ${fourni.length} caracteres`);
+    return res.status(403).send('Forbidden');
+  }
+
+  const soumissionId = parseInt(req.body && req.body.soumissionId);
+  if (!soumissionId) return res.status(400).json({ error: 'soumissionId manquant' });
+
+  res.status(202).json({ ok: true });
+
+  try {
+    await initDb();
+    const db = getDb();
+    const { genererEtSauvegarderSoumission } = require('./src/routes/soumissions');
+    const resultat = await genererEtSauvegarderSoumission(db, soumissionId);
+    if (!resultat.ok) console.error('[internal/generer-soumission] echec pour', soumissionId, ':', resultat.erreur);
+  } catch (e) {
+    console.error('[internal/generer-soumission] exception pour', soumissionId, ':', e.message);
+  }
+});
+
 // Analyse en arrière-plan des documents d'un projet « tel que construit » —
 // même principe que /internal/generer-manuel : N documents à télécharger,
 // parser et passer à l'IA dépassent facilement les 60 s de Vercel. Répond 202

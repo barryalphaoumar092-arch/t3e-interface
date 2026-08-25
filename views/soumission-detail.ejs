@@ -13,7 +13,7 @@
     <p class="text-muted mb-0"><%= labelSysteme %> — <%= soumission.langue %></p>
   </div>
   <div>
-    <% if (soumission.fichier_genere) { %>
+    <% if (soumission.generation_statut !== 'en_cours' && soumission.fichier_genere) { %>
     <a href="/soumissions/<%= soumission.id %>/telecharger" class="btn btn-success"><i class="bi bi-download"></i> Télécharger le .docx</a>
     <% } %>
     <form method="POST" action="/soumissions/<%= soumission.id %>/supprimer" class="d-inline" onsubmit="return confirm('Supprimer cette soumission ?')">
@@ -22,14 +22,30 @@
   </div>
 </div>
 
+<% if (soumission.generation_statut === 'en_cours') { %>
+<div class="alert alert-info">
+  <span class="spinner-border spinner-border-sm me-2"></span>
+  Génération en cours (lecture des documents, analyse IA)… Cette page se recharge automatiquement.
+</div>
+<script>setTimeout(function() { location.reload(); }, 6000);</script>
+<% } else if (soumission.generation_statut === 'erreur') { %>
+<div class="alert alert-danger">
+  <i class="bi bi-exclamation-octagon"></i> <strong>La génération a échoué</strong>
+  <% if (soumission.generation_erreur) { %><div class="small mt-1"><%= soumission.generation_erreur %></div><% } %>
+  <form method="POST" action="/soumissions/<%= soumission.id %>/relancer" class="mt-2">
+    <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-arrow-clockwise"></i> Réessayer</button>
+  </form>
+</div>
+<% } %>
+
 <% var aValider = rapport.filter(function(r) { return r.statut !== 'confirme'; }); %>
-<% if (aValider.length > 0) { %>
+<% if (soumission.generation_statut !== 'en_cours' && aValider.length > 0) { %>
 <div class="alert alert-warning">
   <i class="bi bi-exclamation-triangle"></i> <strong><%= aValider.length %> champ(s) à valider</strong> avant l'envoi — voir surlignés ci-dessous.
 </div>
 <% } %>
 
-<% if (documentsSources.length > 0) { %>
+<% if (soumission.generation_statut !== 'en_cours' && documentsSources.length > 0) { %>
 <div class="card card-body mb-3">
   <h6 class="mb-2"><i class="bi bi-paperclip"></i> Documents analysés</h6>
   <ul class="mb-0 small">
@@ -43,6 +59,7 @@
 </div>
 <% } %>
 
+<% if (soumission.generation_statut !== 'en_cours') { %>
 <div class="table-responsive">
   <table class="table table-sm table-hover align-middle">
     <thead class="table-light">
@@ -64,5 +81,6 @@
     </tbody>
   </table>
 </div>
+<% } %>
 
 <%- include('partials/footer', { scripts: [] }) %>
