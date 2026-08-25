@@ -16,8 +16,12 @@ const { parseDevis, texteParPage } = require('./document-parser');
 // Budget total de caracteres envoyes a l'IA, reparti entre documents par
 // ordre de priorite (addendas d'abord — ils priment en cas de contradiction
 // avec l'appel d'offre ou les plans — meme regle que seao-exigences.js).
-const BUDGET_TOTAL = 140000;
-const CAP_PAR_DOCUMENT = 60000;
+// Releve depuis 140000/60000 : le compte OpenAI a une limite de 500000
+// tokens/minute sur gpt-5 (verifie via les en-tetes x-ratelimit-*), tres
+// loin d'etre le facteur limitant desormais — le vrai plafond restant est
+// le delai de 60s de la fonction Vercel (voir vercel.json), pas les tokens.
+const BUDGET_TOTAL = 220000;
+const CAP_PAR_DOCUMENT = 90000;
 
 // Marqueur du DEBUT de la section technique de toiture (division CSI 07)
 // dans un devis de construction — un gros devis commence typiquement par des
