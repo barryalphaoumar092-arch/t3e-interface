@@ -1,5 +1,5 @@
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
-const MODEL = 'gpt-4o';
+const MODEL = 'gpt-5';
 const API_URL = 'https://api.openai.com/v1/chat/completions';
 
 async function callOpenAI(systemPrompt, userContent, jsonSchema, strictMode = true, maxTokens = 4096) {
