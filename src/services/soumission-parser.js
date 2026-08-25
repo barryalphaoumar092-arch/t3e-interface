@@ -19,6 +19,33 @@ const { parseDevis, texteParPage } = require('./document-parser');
 const BUDGET_TOTAL = 140000;
 const CAP_PAR_DOCUMENT = 60000;
 
+// Marqueurs indiquant le debut de la section technique de toiture (division
+// CSI 07) dans un devis de construction — un gros devis commence typiquement
+// par des dizaines de pages de conditions generales/administratives avant
+// d'atteindre les sections techniques ; une simple troncature depuis le
+// debut du texte peut donc couper AVANT la section toiture. Constate sur un
+// vrai devis (projet 25-190-01, École Laval Senior Academy) : les champs
+// administratifs (client, adresse, date) etaient tous extraits correctement
+// mais TOUS les champs de composition (pontage, isolant, membrane, plis...)
+// restaient non_trouve — meme cause/meme fix que extraireSectionUtile() dans
+// claude-client.js pour le module manuels.
+const MARQUEUR_SECTION_TOITURE = /\b(section\s*07\s*5|07\s*5\d\s*\d\d|07\s*6\d\s*\d\d|couverture|membrane\s+(de\s+)?toiture|isolation\s+de\s+toiture|toiture\s+(multicouche|monocouche|invers[ée]e))\b/i;
+
+// Si le marqueur n'est pas trouve, ou tombe deja dans la portion qu'une
+// simple troncature aurait couverte, le comportement precedent (troncature
+// simple depuis le debut) suffit — pas de risque de regression.
+function extraireTexteUtile(texte, capMax) {
+  if (texte.length <= capMax) return texte;
+  const idx = texte.search(MARQUEUR_SECTION_TOITURE);
+  if (idx === -1 || idx < capMax * 0.6) return texte.substring(0, capMax);
+
+  const longueurPrefixe = Math.min(4000, Math.floor(capMax * 0.15));
+  const prefixe = texte.substring(0, longueurPrefixe);
+  const budgetRestant = capMax - longueurPrefixe;
+  const suite = texte.substring(idx, idx + budgetRestant);
+  return prefixe + '\n[...sections générales/administratives omises...]\n' + suite;
+}
+
 async function texteDuFichier(buffer, nomFichier) {
   const ext = path.extname(nomFichier).toLowerCase();
   const tmpPath = path.join(os.tmpdir(), `${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
@@ -61,7 +88,7 @@ async function construireContexte(documents) {
       continue;
     }
     const cap = Math.min(CAP_PAR_DOCUMENT, budgetRestant);
-    const extrait = texte.substring(0, cap);
+    const extrait = extraireTexteUtile(texte, cap);
     morceaux.push(`===== DOCUMENT: ${doc.nom_fichier} (${doc.categorie}) =====\n${extrait}`);
     budgetRestant -= extrait.length;
   }
