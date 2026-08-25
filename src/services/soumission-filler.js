@@ -196,13 +196,20 @@ function reglesCommunes(champs, dateAujourdhui) {
     },
     // Prix
     { test: t => /100[\s ]?000\$/.test(t), build: t => t.replace(/100[\s ]?000\$/, formaterPrix(champs.prix_total)) },
-    // Intro Annexe : 3 blancs cachés (espaces doubles, pas de soulignés)
+    // Intro Annexe (page ~5) — PIÈGE : le gabarit contient les MOTS littéraux
+    // "NOM DU CLIENT"/"#SOUMISSION"/"NOM DU PROJET ET CLIENT" dans la phrase
+    // (pas des espaces/soulignés cachés comme supposé par une version
+    // précédente de cette règle, dont le test ne matchait donc jamais le
+    // vrai texte — les 3 placeholders restaient visibles tels quels dans le
+    // document généré). #SOUMISSION -> numero_reference_projet (comme sur la
+    // page de garde), NOM DU PROJET ET CLIENT -> client_adresse (même
+    // convention que la page de garde, voir plus haut).
     {
-      test: t => /présentée à\s+portant sur le projet\s+\/\s+\(Ci-après/i.test(t),
-      build: t => t.replace(
-        /présentée à\s+portant sur le projet\s+\/\s+\(Ci-après/i,
-        `présentée à ${texteOuAValider(champs.client_nom)} portant sur le projet ${texteOuAValider(champs.objet_projet)} / ${texteOuAValider(champs.client_adresse)} (Ci-après`
-      ),
+      test: t => /présentée à\s+NOM DU CLIENT\s+portant sur le projet/i.test(t),
+      build: t => t
+        .replace(/NOM DU CLIENT/, texteOuAValider(champs.client_nom))
+        .replace(/#SOUMISSION/, texteOuAValider(champs.numero_reference_projet))
+        .replace(/NOM DU PROJET ET CLIENT/, texteOuAValider(champs.client_adresse)),
     },
     // Coût remplacement contreplaqué ($/pied carré) — ancré sur "contreplaqués"
     // pour ne jamais happer la ligne distincte "isolants existants humides"
