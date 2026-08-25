@@ -137,12 +137,28 @@ function reglesCommunes(champs, dateAujourdhui) {
   return [
     // Date d'en-tête (ex: "Montréal, mardi, 1er octobre 2024")
     { test: t => /^Montréal,\s*\w+,\s*\d/.test(t.trim()), build: () => formaterDateFr(dateAujourdhui) },
+    // Identité du projet sur la page de garde (numéro de référence trouvé
+    // dans les documents sources — PAS le numéro interne T3E — et nom du
+    // client destinataire). Ces 3 libellés apparaissent chacun DEUX FOIS sur
+    // la page de garde (bloc titre + bloc "Re :"), remplacés identiquement
+    // aux deux endroits par cette même règle. Laissés VIDES si non trouvés
+    // (pas de marqueur [À VALIDER] sur ces champs d'identité — cohérent avec
+    // Attention/Cellulaire/Courriel ci-dessous).
+    { test: t => t.trim() === '#SOUMISSION', build: () => val(champs.numero_reference_projet) },
+    { test: t => t.trim() === 'NOM DU CLIENT', build: () => val(champs.client_nom) },
+    // Le libellé du gabarit dit "NOM DU PROJET ET CLIENT" mais la case sert
+    // en pratique à identifier l'adresse du chantier sur la lettre.
+    { test: t => t.trim() === 'NOM DU PROJET ET CLIENT', build: () => val(champs.client_adresse) },
     // Adresse / Ville client (placeholders littéraux)
     { test: t => t.trim() === 'Adresse', build: () => texteOuAValider(champs.client_adresse) },
     { test: t => t.trim() === 'Ville, Province, Code Postal', build: () => texteOuAValider(champs.client_ville_province_cp) },
-    { test: t => /^Attention\s*:/.test(t.trim()), build: () => `Attention:\t${texteOuAValider(champs.client_contact)}` },
-    { test: t => /^Cellulaire\s*:/.test(t.trim()), build: () => `Cellulaire:\t${texteOuAValider(champs.client_telephone)}` },
-    { test: t => /^Courriel\s*:/.test(t.trim()), build: () => `Courriel:\t${texteOuAValider(champs.client_courriel)}` },
+    // Pas de marqueur [À VALIDER] sur ces 3 champs (contrairement aux champs
+    // techniques plus bas) — un "Attention: [À VALIDER]" imprimé sur une
+    // vraie lettre a l'air cassé ; mieux vaut un espace vide que l'estimateur
+    // remplira lui-même, demande explicite de l'utilisateur.
+    { test: t => /^Attention\s*:/.test(t.trim()), build: () => `Attention:\t${val(champs.client_contact)}` },
+    { test: t => /^Cellulaire\s*:/.test(t.trim()), build: () => `Cellulaire:\t${val(champs.client_telephone)}` },
+    { test: t => /^Courriel\s*:/.test(t.trim()), build: () => `Courriel:\t${val(champs.client_courriel)}` },
     // Ligne "conformément aux documents reçus le ______ pour soumission"
     {
       test: t => /documents reçus le\s*_+\s*pour soumission/i.test(t),

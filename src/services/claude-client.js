@@ -792,7 +792,14 @@ Retourne un JSON avec tous les champs demandés.`;
 // filler ignore simplement ce champ, il n'est jamais faux de le demander.
 function champsCommuns() {
   return {
+    // L'entreprise/institution qui a ÉMIS l'appel d'offre (le destinataire de
+    // la lettre de soumission) — PAS l'entrepreneur général ni un
+    // sous-traitant mentionné dans les documents.
     client_nom: champSourceSchema(),
+    // Numéro de référence du projet/appel d'offre TEL QU'INDIQUÉ dans les
+    // documents (ex: "25-190-01") — jamais le numéro interne T3E (généré
+    // séparément, voir genererNumero() dans soumissions.js).
+    numero_reference_projet: champSourceSchema(),
     client_adresse: champSourceSchema(),
     client_ville_province_cp: champSourceSchema(),
     client_contact: champSourceSchema(),
@@ -932,6 +939,10 @@ function construireSchemaExtraction(systeme) {
 const SYSTEM_SOUMISSION_PRIVEE = `Tu analyses les documents d'un projet PRIVÉ de réfection de toiture (appel d'offre du client, plans, addendas — PAS un appel d'offres public SEAO) pour Toitures Trois Étoiles Inc. (T3E), afin de remplir automatiquement une lettre de soumission.
 
 Les documents te sont fournis avec des marqueurs "===== DOCUMENT: nom (catégorie) =====" et "--- page N ---". Les ADDENDAS priment sur l'appel d'offre et les plans en cas de contradiction (ils sont placés en premier dans le contexte). Pour CHAQUE champ, cite le document exact (document_source), la page si connue (page_source, chaîne vide sinon), et un court extrait littéral (extrait_source) qui justifie ta réponse.
+
+=== CHAMPS CLÉS ===
+- client_nom : l'entreprise/institution qui a ÉMIS l'appel d'offre (le DESTINATAIRE de la lettre de soumission — à qui elle s'adresse) — PAS un entrepreneur général, un architecte ou un sous-traitant mentionné en passant dans les documents.
+- numero_reference_projet : le numéro de projet/soumission/appel d'offre TEL QU'INDIQUÉ dans les documents eux-mêmes (page de garde, en-tête, nom de fichier répété dans le texte — ex: "25-190-01"). Ne confonds jamais ceci avec un numéro que T3E génère en interne, qui n'existe pas dans les documents sources.
 
 === RÈGLES ABSOLUES ===
 - statut="non_trouve" avec valeur="" si l'information n'apparaît dans AUCUN document — N'INVENTE JAMAIS une dimension, une épaisseur, une quantité, un prix ou une spécification absente des documents. C'est la règle la plus importante : mieux vaut un champ vide et signalé que rempli avec une valeur plausible mais non prouvée.
