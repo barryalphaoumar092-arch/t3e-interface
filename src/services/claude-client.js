@@ -19,7 +19,7 @@ async function callOpenAI(systemPrompt, userContent, jsonSchema, strictMode = tr
     // niveau de raisonnement par defaut, une extraction sur un gros devis a
     // depasse les 60s de la fonction Vercel (FUNCTION_INVOCATION_TIMEOUT,
     // voir vercel.json) avant meme de repondre.
-    reasoning_effort: 'low',
+    reasoning_effort: 'medium',
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userContent },
