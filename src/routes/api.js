@@ -3,6 +3,26 @@ const router = express.Router();
 const crypto = require('crypto');
 const { createSignedUploadUrl, sanitizeKey, BUCKETS, ensureBucket, diagnosticUrl } = require('../services/storage');
 
+// DIAGNOSTIC TEMPORAIRE — appel minimal a OpenAI pour lire les vrais
+// en-tetes de limite de debit (x-ratelimit-*) du palier actuel du compte,
+// pour le modele demande (defaut gpt-5) — a retirer une fois verifie.
+router.get('/debug/rate-limits', async (req, res) => {
+  const modele = req.query.modele || 'gpt-5';
+  try {
+    const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + process.env.OPENAI_API_KEY },
+      body: JSON.stringify({ model: modele, messages: [{ role: 'user', content: 'test' }], max_completion_tokens: 5 }),
+    });
+    const entetes = {};
+    resp.headers.forEach((v, k) => { if (k.startsWith('x-ratelimit')) entetes[k] = v; });
+    const corps = await resp.text();
+    res.json({ statut: resp.status, entetesLimite: entetes, corps: corps.substring(0, 500) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Recree les buckets Storage manquants (ex: apres restauration d'un projet
 // Supabase mis en pause, qui peut reinitialiser le Storage sans toucher a la
 // base Postgres) — idempotent (ensureBucket ne recree pas un bucket deja
