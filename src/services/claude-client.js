@@ -14,6 +14,12 @@ async function callOpenAI(systemPrompt, userContent, jsonSchema, strictMode = tr
     // defaut (1) -- envoyer temperature:0.1 (utile avec gpt-4o pour reduire
     // la variance d'extraction) renvoie une erreur 400 "unsupported_value"
     // avec ce modele. Pas de parametre = comportement par defaut du modele.
+    // reasoning_effort "low" : ces appels sont de l'extraction structuree
+    // (schema JSON strict), pas un probleme de raisonnement complexe -- au
+    // niveau de raisonnement par defaut, une extraction sur un gros devis a
+    // depasse les 60s de la fonction Vercel (FUNCTION_INVOCATION_TIMEOUT,
+    // voir vercel.json) avant meme de repondre.
+    reasoning_effort: 'low',
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userContent },
