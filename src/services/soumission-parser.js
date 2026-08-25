@@ -29,16 +29,25 @@ const CAP_PAR_DOCUMENT = 60000;
 // correctement mais TOUS les champs de composition (pontage, isolant,
 // membrane, plis...) restaient non_trouve.
 //
-// PIÈGE : le mot "SECTION" est OBLIGATOIRE dans ce marqueur. Une première
+// PIÈGE #1 : le mot "SECTION" est OBLIGATOIRE dans ce marqueur. Une première
 // version sans ce prefixe (juste "07 5X XX" ou "couverture") matchait la
 // TABLE DES MATIÈRES ("07 52 00            Couvertures à membrane...", vers
 // le tout début du document) ou même "Couverture de devis" (page de garde,
 // section 00 00 00) — ces faux positifs tombaient sous le seuil de 0.6 et
-// faisaient retomber sur la troncature simple, sans aucun effet réel. Sur
-// ce même devis, "SECTION 07 52 00" (avec le mot complet) n'apparaît QUE
-// comme en-tête de page répété DANS la vraie section (confirmé : absent de
-// la table des matières, qui n'utilise jamais le mot "SECTION").
-const MARQUEUR_SECTION_TOITURE = /\bSECTION\s*07\s*5\d\s*\d\d|\bSECTION\s*07\s*6\d\s*\d\d/i;
+// faisaient retomber sur la troncature simple, sans aucun effet réel.
+//
+// PIÈGE #2 : la regex doit être SENSIBLE À LA CASSE (pas de /i). Un devis
+// contient presque toujours des renvois narratifs du genre "se référer à
+// la section 07 52 00" (minuscule, dans une phrase d'une AUTRE section)
+// AVANT le vrai en-tête — avec /i, ce renvoi est trouvé en premier (position
+// ~273000 sur le devis 25-190-01) et le fix "saute" pile avant le vrai
+// contenu (qui commence ~68000 caractères plus loin, à ~341000), ratant
+// entièrement les produits nommés (Sopralene, Sopra-Iso, Soprastar...)
+// malgré un idx apparemment valide. Les vrais en-têtes de page répétés dans
+// la section utilisent TOUJOURS "SECTION" en majuscules ; les renvois
+// narratifs utilisent presque toujours "section" en minuscules — la casse
+// est donc un signal fiable pour les distinguer.
+const MARQUEUR_SECTION_TOITURE = /\bSECTION\s*07\s*5\d\s*\d\d|\bSECTION\s*07\s*6\d\s*\d\d/;
 
 // Si le marqueur n'est pas trouve, ou tombe deja dans la portion qu'une
 // simple troncature aurait couverte, le comportement precedent (troncature

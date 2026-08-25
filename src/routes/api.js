@@ -1,39 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const { createSignedUploadUrl, sanitizeKey, BUCKETS, ensureBucket, diagnosticUrl, downloadBuffer } = require('../services/storage');
-
-// DIAGNOSTIC TEMPORAIRE — a retirer une fois le diagnostic termine. Retourne
-// le texte brut extrait par texteParPage() (pdf-parse) pour un fichier deja
-// uploade dans uploads-temp, pour comparer avec une extraction locale
-// (pdftotext) sur le meme PDF sans devoir deployer un vrai flux complet.
-router.post('/debug/texte-pdf', async (req, res) => {
-  const { texteParPage } = require('../services/document-parser');
-  const cle = req.body && req.body.cle;
-  if (!cle) return res.status(400).send('cle manquante');
-  const buf = await downloadBuffer(BUCKETS.UPLOADS_TEMP, cle);
-  if (!buf) return res.status(404).send('fichier introuvable dans uploads-temp');
-  const pages = await texteParPage(buf);
-  const texte = pages.map((p, i) => `--- page ${i + 1} ---\n${p}`).join('\n');
-  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-  res.send(texte);
-});
-
-// DIAGNOSTIC TEMPORAIRE — retourne le CONTEXTE FINAL (post-troncature, tel
-// qu'assemble par construireContexte()) reellement envoye a l'IA pour une
-// soumission privee, pour verifier si le fix de ciblage de section produit
-// bien le texte attendu.
-router.post('/debug/contexte-soumission', async (req, res) => {
-  const { construireContexte } = require('../services/soumission-parser');
-  const cle = req.body && req.body.cle;
-  const nom = (req.body && req.body.nom) || 'document.pdf';
-  if (!cle) return res.status(400).send('cle manquante');
-  const buf = await downloadBuffer(BUCKETS.UPLOADS_TEMP, cle);
-  if (!buf) return res.status(404).send('fichier introuvable dans uploads-temp');
-  const { contexte, documentsVides } = await construireContexte([{ nom_fichier: nom, categorie: 'devis', buffer: buf }]);
-  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-  res.send(`[documentsVides: ${JSON.stringify(documentsVides)}]\n[longueur contexte: ${contexte.length}]\n\n${contexte}`);
-});
+const { createSignedUploadUrl, sanitizeKey, BUCKETS, ensureBucket, diagnosticUrl } = require('../services/storage');
 
 // Recree les buckets Storage manquants (ex: apres restauration d'un projet
 // Supabase mis en pause, qui peut reinitialiser le Storage sans toucher a la
