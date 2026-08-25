@@ -1,7 +1,23 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const { createSignedUploadUrl, sanitizeKey, BUCKETS, ensureBucket, diagnosticUrl } = require('../services/storage');
+const { createSignedUploadUrl, sanitizeKey, BUCKETS, ensureBucket, diagnosticUrl, downloadBuffer } = require('../services/storage');
+
+// DIAGNOSTIC TEMPORAIRE — a retirer une fois le diagnostic termine. Retourne
+// le texte brut extrait par texteParPage() (pdf-parse) pour un fichier deja
+// uploade dans uploads-temp, pour comparer avec une extraction locale
+// (pdftotext) sur le meme PDF sans devoir deployer un vrai flux complet.
+router.post('/debug/texte-pdf', async (req, res) => {
+  const { texteParPage } = require('../services/document-parser');
+  const cle = req.body && req.body.cle;
+  if (!cle) return res.status(400).send('cle manquante');
+  const buf = await downloadBuffer(BUCKETS.UPLOADS_TEMP, cle);
+  if (!buf) return res.status(404).send('fichier introuvable dans uploads-temp');
+  const pages = await texteParPage(buf);
+  const texte = pages.map((p, i) => `--- page ${i + 1} ---\n${p}`).join('\n');
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.send(texte);
+});
 
 // Recree les buckets Storage manquants (ex: apres restauration d'un projet
 // Supabase mis en pause, qui peut reinitialiser le Storage sans toucher a la
