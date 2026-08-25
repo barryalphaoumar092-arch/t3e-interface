@@ -19,17 +19,26 @@ const { parseDevis, texteParPage } = require('./document-parser');
 const BUDGET_TOTAL = 140000;
 const CAP_PAR_DOCUMENT = 60000;
 
-// Marqueurs indiquant le debut de la section technique de toiture (division
-// CSI 07) dans un devis de construction — un gros devis commence typiquement
-// par des dizaines de pages de conditions generales/administratives avant
+// Marqueur du DEBUT de la section technique de toiture (division CSI 07)
+// dans un devis de construction — un gros devis commence typiquement par des
+// dizaines de pages de conditions generales/administratives avant
 // d'atteindre les sections techniques ; une simple troncature depuis le
 // debut du texte peut donc couper AVANT la section toiture. Constate sur un
-// vrai devis (projet 25-190-01, École Laval Senior Academy) : les champs
-// administratifs (client, adresse, date) etaient tous extraits correctement
-// mais TOUS les champs de composition (pontage, isolant, membrane, plis...)
-// restaient non_trouve — meme cause/meme fix que extraireSectionUtile() dans
-// claude-client.js pour le module manuels.
-const MARQUEUR_SECTION_TOITURE = /\b(section\s*07\s*5|07\s*5\d\s*\d\d|07\s*6\d\s*\d\d|couverture|membrane\s+(de\s+)?toiture|isolation\s+de\s+toiture|toiture\s+(multicouche|monocouche|invers[ée]e))\b/i;
+// vrai devis (projet 25-190-01, École Laval Senior Academy, 175 pages) :
+// les champs administratifs (client, adresse, date) etaient tous extraits
+// correctement mais TOUS les champs de composition (pontage, isolant,
+// membrane, plis...) restaient non_trouve.
+//
+// PIÈGE : le mot "SECTION" est OBLIGATOIRE dans ce marqueur. Une première
+// version sans ce prefixe (juste "07 5X XX" ou "couverture") matchait la
+// TABLE DES MATIÈRES ("07 52 00            Couvertures à membrane...", vers
+// le tout début du document) ou même "Couverture de devis" (page de garde,
+// section 00 00 00) — ces faux positifs tombaient sous le seuil de 0.6 et
+// faisaient retomber sur la troncature simple, sans aucun effet réel. Sur
+// ce même devis, "SECTION 07 52 00" (avec le mot complet) n'apparaît QUE
+// comme en-tête de page répété DANS la vraie section (confirmé : absent de
+// la table des matières, qui n'utilise jamais le mot "SECTION").
+const MARQUEUR_SECTION_TOITURE = /\bSECTION\s*07\s*5\d\s*\d\d|\bSECTION\s*07\s*6\d\s*\d\d/i;
 
 // Si le marqueur n'est pas trouve, ou tombe deja dans la portion qu'une
 // simple troncature aurait couverte, le comportement precedent (troncature
