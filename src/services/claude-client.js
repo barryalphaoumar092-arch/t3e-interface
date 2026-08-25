@@ -957,11 +957,57 @@ Retourne un JSON avec tous les champs demandés pour ce système.`;
   return callOpenAI(SYSTEM_SOUMISSION_PRIVEE, userContent, schema, true, 8000);
 }
 
+// Construit un schema d'extraction limite a une liste de cles (utilise pour
+// l'analyse visuelle des plans : ne redemande QUE les champs que le texte
+// n'a pas trouves, voir plan-vision.js). Reutilise les memes definitions de
+// champs que construireSchemaExtraction — champCommuns/CHAMPS_PAR_SYSTEME
+// restent l'unique source de verite pour la forme de chaque champ.
+function construireSchemaPourChamps(systeme, cles) {
+  const toutesProps = { ...champsCommuns(), ...(CHAMPS_PAR_SYSTEME[systeme] || {}) };
+  const proprietes = {};
+  cles.forEach((c) => { if (toutesProps[c]) proprietes[c] = toutesProps[c]; });
+  return { type: 'object', properties: proprietes, required: Object.keys(proprietes), additionalProperties: false };
+}
+
+const SYSTEM_VISION_PLANS = `Tu analyses des IMAGES de pages de plans/dessins d'un projet de réfection de toiture pour Toitures Trois Étoiles Inc. (T3E). Le texte des autres documents (appel d'offre, devis, addendas) n'a pas permis de trouver certains champs — tu dois chercher UNIQUEMENT ces champs sur les plans fournis (légendes, tableaux, notes, cotes, cartouche).
+
+Chaque image correspond à un document et un numéro de page précisés dans le message (dans l'ordre des images).
+
+=== RÈGLES ABSOLUES ===
+- statut="non_trouve" avec valeur="" si l'information n'est visible sur AUCUNE des images fournies — N'INVENTE JAMAIS une dimension, une superficie ou une quantité.
+- document_source = nom exact du fichier de plan indiqué pour l'image concernée.
+- page_source = le numéro de page indiqué pour cette image.
+- extrait_source = brève description de ce qui est visible sur l'image qui justifie la valeur (ex: "tableau de superficie totale en bas à droite de la page 2"), PAS une citation de texte.
+- niveau_confiance="faible" si le plan est difficile à lire, une cote est partiellement masquée, ou l'information est déduite d'un dessin plutôt que lue directement.
+- Réponds en français québécois professionnel.`;
+
+// images: [{ page, base64, nomFichier }] (voir plan-vision.js). cles: noms
+// des champs a chercher (deja filtres a ceux non_trouve par le texte).
+async function analyserPlansVision(images, systeme, cles) {
+  if (!OPENAI_API_KEY) return { error: 'OPENAI_API_KEY manquante' };
+  if (!cles.length || !images.length) return {};
+
+  const schema = construireSchemaPourChamps(systeme, cles);
+  if (Object.keys(schema.properties).length === 0) return {};
+
+  const contentBlocks = [
+    {
+      type: 'text',
+      text: `CHAMPS À CHERCHER SUR CES PLANS : ${cles.join(', ')}\n\nIMAGES FOURNIES (dans l'ordre) :\n` +
+        images.map((img, i) => `${i + 1}. ${img.nomFichier}, page ${img.page}`).join('\n'),
+    },
+    ...images.map((img) => ({ type: 'image_url', image_url: { url: `data:image/png;base64,${img.base64}`, detail: 'high' } })),
+  ];
+
+  return callOpenAI(SYSTEM_VISION_PLANS, contentBlocks, schema, true, 4000);
+}
+
 module.exports = {
   analyserDevis, analyserDevisSoumission, analyserDevisManuel,
   extraireFournisseursDesFT, mapperChampsBordereau,
   analyserInfosEntreprise, mapperChampsFormulairePdf,
   analyserExigencesAppelOffre,
   analyserProjetSoumissionPrivee,
+  analyserPlansVision,
   isConfigured,
 };

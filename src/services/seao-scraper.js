@@ -18,17 +18,7 @@
 // probablement instables, mais un ajustement après un premier test réel avec
 // un vrai compte SEAO est attendu — voir logs `[seao-scraper]` en cas d'échec.
 const crypto = require('crypto');
-
-async function lancerNavigateur() {
-  const chromium = require('@sparticuz/chromium');
-  const { chromium: playwrightChromium } = require('playwright-core');
-  const executablePath = await chromium.executablePath();
-  return playwrightChromium.launch({
-    args: chromium.args,
-    executablePath,
-    headless: true,
-  });
-}
+const { lancerNavigateurHeadless: lancerNavigateur } = require('./navigateur-headless');
 
 const URL_BASE = 'https://seao.gouv.qc.ca';
 const URL_CONNEXION = `${URL_BASE}/OpportunityPublication/Login.aspx`;

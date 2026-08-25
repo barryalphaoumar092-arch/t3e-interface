@@ -3,6 +3,7 @@ const router = express.Router();
 const { downloadBuffer, removeFile, createSignedUrl, BUCKETS } = require('../services/storage');
 const { construireContexte } = require('../services/soumission-parser');
 const { analyserProjetSoumissionPrivee, isConfigured } = require('../services/claude-client');
+const { completerAvecVisionPlans } = require('../services/plan-vision');
 const { TEMPLATE_MAP, LABELS_SYSTEME, genererSoumissionPrivee } = require('../services/soumission-filler');
 
 const CATEGORIES = ['appel_offre', 'devis', 'plans', 'addendas'];
@@ -105,13 +106,25 @@ router.post('/generer', async (req, res) => {
 
   const { contexte, documentsVides } = await construireContexte(documents);
 
-  const champs = await analyserProjetSoumissionPrivee(contexte, systeme);
+  let champs = await analyserProjetSoumissionPrivee(contexte, systeme);
   if (champs.error) {
     return res.render('soumission-nouveau', {
       systemes: Object.keys(TEMPLATE_MAP).map(k => ({ cle: k, label: LABELS_SYSTEME[k] || k })),
       iaConfiguree: isConfigured(),
       erreur: "Erreur d'analyse IA : " + champs.error,
     });
+  }
+
+  // Analyse visuelle des plans (Chromium headless -> images -> vision IA) pour
+  // combler les champs que le texte seul n'a pas trouves — jamais bloquant,
+  // une erreur ici ne doit pas empecher la generation du document.
+  const documentsPlans = documents.filter((d) => d.categorie === 'plans');
+  if (documentsPlans.length > 0) {
+    try {
+      champs = await completerAvecVisionPlans(champs, documentsPlans, systeme);
+    } catch (e) {
+      console.error('[soumissions] Analyse visuelle des plans échouée (non bloquant):', e.message);
+    }
   }
 
   const numero = await genererNumero(db);
