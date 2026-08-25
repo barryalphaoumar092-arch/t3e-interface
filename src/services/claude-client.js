@@ -10,7 +10,10 @@ async function callOpenAI(systemPrompt, userContent, jsonSchema, strictMode = tr
   const body = {
     model: MODEL,
     max_completion_tokens: maxTokens,
-    temperature: 0.1,
+    // gpt-5 (modele de raisonnement) ne supporte que la temperature par
+    // defaut (1) -- envoyer temperature:0.1 (utile avec gpt-4o pour reduire
+    // la variance d'extraction) renvoie une erreur 400 "unsupported_value"
+    // avec ce modele. Pas de parametre = comportement par defaut du modele.
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userContent },
