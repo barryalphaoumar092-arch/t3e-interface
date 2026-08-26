@@ -18,15 +18,17 @@ const { parseDevis, texteParPage } = require('./document-parser');
 // avec l'appel d'offre ou les plans — meme regle que seao-exigences.js).
 // Le compte OpenAI a une limite de 500000 tokens/minute sur gpt-5 (verifie
 // via les en-tetes x-ratelimit-*) — les TOKENS ne sont plus le facteur
-// limitant. MAIS un contexte plus gros = plus de temps de traitement pour
-// le modele, et le vrai plafond restant est le delai de 60s de la fonction
-// Vercel (voir vercel.json) : teste et CONSTATE en depassement avec 220000/
-// 90000 des que 2 documents ou plus sont combines (meme sans plans/vision).
-// CAP_PAR_DOCUMENT reste a 90000 (beneficie un devis technique unique volumineux,
-// deja teste avec succes en ~55s) mais BUDGET_TOTAL redescend a 140000 pour
-// que la combinaison de plusieurs documents reste sous 60s.
-const BUDGET_TOTAL = 140000;
-const CAP_PAR_DOCUMENT = 90000;
+// limitant. Un budget de 140000 avait ete choisi pour rester sous les 60s
+// d'une fonction Vercel, MAIS depuis le passage a la generation en
+// arriere-plan (Render, voir declencherGenerationDistanteSoumission dans
+// soumissions.js), cette contrainte de 60s ne s'applique plus au traitement
+// lui-meme. Constate sur un vrai dossier (25-190-01, 4 documents combines) :
+// avec 140000 partages entre addenda+contrat+bordereau+plan, l'addenda et le
+// contrat (priorite la plus haute) epuisaient le budget avant meme d'atteindre
+// le bordereau de prix — des champs deja trouves seuls (ex: prix_total)
+// redevenaient non_trouve une fois combines. Remonte largement.
+const BUDGET_TOTAL = 500000;
+const CAP_PAR_DOCUMENT = 150000;
 
 // Marqueur du DEBUT de la section technique de toiture (division CSI 07)
 // dans un devis de construction — un gros devis commence typiquement par des
