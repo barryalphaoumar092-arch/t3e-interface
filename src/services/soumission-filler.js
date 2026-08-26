@@ -170,12 +170,12 @@ function reglesCommunes(champs, dateAujourdhui) {
       test: t => /^Plans architectures?,\s*émis pour soumission/i.test(t.trim())
         || /^Sections?\s+[\d ]+\/?[\d ]*,?\s*émis pour soumission/i.test(t.trim())
         || /^Addendas?\s+.*,\s*émis/i.test(t.trim()),
-      build: () => {
-        if (docsRecusInseres) return null;
-        docsRecusInseres = true;
-        const v = val(champs.documents_recus_liste);
-        return v || null; // rien trouvé -> on supprime la ligne d'exemple plutôt que la garder
-      },
+      // Toujours supprimées (jamais remplacées par documents_recus_liste) —
+      // demande explicite de l'utilisateur : la phrase "documents reçus le
+      // [date] pour soumission :" s'arrête au deux-points, sans énumérer les
+      // documents. docsRecusInseres n'a plus d'utilite mais reste pour
+      // clarifier que les 3 variantes de cette ligne d'exemple sont visées.
+      build: () => { docsRecusInseres = true; return null; },
     },
     // Objet / superficie (table Re:/Objet:)
     {
