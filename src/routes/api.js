@@ -3,47 +3,6 @@ const router = express.Router();
 const crypto = require('crypto');
 const { createSignedUploadUrl, sanitizeKey, BUCKETS, ensureBucket, diagnosticUrl } = require('../services/storage');
 
-// DIAGNOSTIC TEMPORAIRE — teste la connectivite vers le service Render de
-// generation/conversion (CONVERT_SERVICE_URL) sans rien generer, pour
-// diagnostiquer pourquoi declencherGenerationDistante* retombe toujours en
-// synchrone. A retirer une fois le diagnostic termine.
-router.get('/debug/render-connectivite', async (req, res) => {
-  const url = (process.env.CONVERT_SERVICE_URL || '').trim();
-  const secret = (process.env.CONVERT_SERVICE_SECRET || '').trim();
-  const resultat = { url_configuree: !!url, secret_configure: !!secret, url_longueur: url.length };
-  if (!url) return res.json(resultat);
-
-  // 1. Le service repond-il du tout (racine, sans auth) ?
-  try {
-    const controller1 = new AbortController();
-    const t1 = setTimeout(() => controller1.abort(), 8000);
-    const r1 = await fetch(url.replace(/\/$/, '') + '/', { signal: controller1.signal });
-    clearTimeout(t1);
-    resultat.racine_statut = r1.status;
-  } catch (e) {
-    resultat.racine_erreur = e.message;
-  }
-
-  // 2. La route /internal/generer-soumission existe-t-elle (avec le bon secret) ?
-  try {
-    const controller2 = new AbortController();
-    const t2 = setTimeout(() => controller2.abort(), 8000);
-    const r2 = await fetch(url.replace(/\/$/, '') + '/internal/generer-soumission', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-convert-secret': secret },
-      body: JSON.stringify({ soumissionId: -1 }),
-      signal: controller2.signal,
-    });
-    clearTimeout(t2);
-    resultat.route_soumission_statut = r2.status;
-    resultat.route_soumission_corps = (await r2.text()).substring(0, 300);
-  } catch (e) {
-    resultat.route_soumission_erreur = e.message;
-  }
-
-  res.json(resultat);
-});
-
 // Recree les buckets Storage manquants (ex: apres restauration d'un projet
 // Supabase mis en pause, qui peut reinitialiser le Storage sans toucher a la
 // base Postgres) — idempotent (ensureBucket ne recree pas un bucket deja
