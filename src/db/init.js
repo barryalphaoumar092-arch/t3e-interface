@@ -321,6 +321,12 @@ async function initDb() {
     'ALTER TABLE soumissions ADD COLUMN generation_requete JSON',
     'ALTER TABLE soumissions ADD COLUMN generation_statut TEXT',
     'ALTER TABLE soumissions ADD COLUMN generation_erreur TEXT',
+    // Estimation de prix indicative (voir estimation-prix.js) — calculee a
+    // partir de la superficie/des quantites extraites + des taux de marche
+    // generiques (PAS les couts reels T3E). Toujours une SUGGESTION distincte
+    // de prix_total, jamais ecrite dans prix_total ni dans le .docx genere —
+    // la decision du prix final reste humaine.
+    'ALTER TABLE soumissions ADD COLUMN prix_estime_note TEXT',
   ];
 
   for (const sql of migrations) {

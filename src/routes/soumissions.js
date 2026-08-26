@@ -5,6 +5,7 @@ const { construireContexte } = require('../services/soumission-parser');
 const { analyserProjetSoumissionPrivee, isConfigured } = require('../services/claude-client');
 const { completerAvecVisionPlans } = require('../services/plan-vision');
 const { TEMPLATE_MAP, LABELS_SYSTEME, genererSoumissionPrivee } = require('../services/soumission-filler');
+const { estimerPrix } = require('../services/estimation-prix');
 
 const CATEGORIES = ['appel_offre', 'devis', 'plans', 'addendas'];
 
@@ -164,10 +165,22 @@ async function genererEtSauvegarderSoumission(db, id) {
     return marquerErreur('Erreur de génération du document : ' + e.message);
   }
 
+  // Estimation de prix INDICATIVE (taux de marché génériques, pas les coûts
+  // T3E) — jamais écrite dans prix_total ni dans le .docx, uniquement une
+  // suggestion affichée à part sur la page de la soumission. Non bloquante :
+  // sans superficie extraite, estimerPrix() retourne simplement null.
+  let estimation = null;
+  try {
+    estimation = estimerPrix(champs, systeme);
+  } catch (e) {
+    console.error('[soumissions] Estimation de prix échouée (non bloquant):', e.message);
+  }
+
   await db.execute({
     sql: `UPDATE soumissions SET
       client_nom = ?, projet_nom = ?, statut = 'genere',
       template_utilise = ?, fichier_genere = ?, champs_extraits = ?, documents_sources = ?,
+      prix_estime_note = ?,
       generation_statut = 'termine', generation_erreur = NULL, updated_at = datetime('now')
       WHERE id = ?`,
     args: [
@@ -176,6 +189,7 @@ async function genererEtSauvegarderSoumission(db, id) {
       resultat.templateUsed, resultat.filename,
       JSON.stringify({ rapport: resultat.rapport, documentsVides }),
       JSON.stringify(documentsSources),
+      estimation ? estimation.texte : null,
       id,
     ],
   });

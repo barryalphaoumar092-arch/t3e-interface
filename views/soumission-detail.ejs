@@ -45,6 +45,15 @@
 </div>
 <% } %>
 
+<% if (soumission.generation_statut !== 'en_cours' && soumission.prix_estime_note) { %>
+<div class="card mb-3 border-info-subtle">
+  <div class="card-header bg-info-subtle"><i class="bi bi-calculator"></i> Estimation de prix — suggestion, pas le prix soumissionné</div>
+  <div class="card-body">
+    <pre class="mb-0 small" style="white-space: pre-wrap; font-family: inherit;"><%= soumission.prix_estime_note %></pre>
+  </div>
+</div>
+<% } %>
+
 <% if (soumission.generation_statut !== 'en_cours' && documentsSources.length > 0) { %>
 <div class="card card-body mb-3">
   <h6 class="mb-2"><i class="bi bi-paperclip"></i> Documents analysés</h6>
