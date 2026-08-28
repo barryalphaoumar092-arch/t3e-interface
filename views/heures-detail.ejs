@@ -48,8 +48,24 @@ var infosLignes = f.lignes_corrigees ? JSON.parse(f.lignes_corrigees) : null;
 </div>
 <% } %>
 
-<% if (['valide_etape1', 'ajoute_maitre', 'valide_etape2', 'ajoute_suivi', 'termine'].includes(f.statut)) { %>
-<div class="alert alert-success"><i class="bi bi-check2-circle"></i> Étape 1 validée. Les étapes 2 (Feuille Maître) et 3 (Suivi des heures) sont en développement.</div>
+<% if (f.statut === 'valide_etape1') { %>
+<div class="alert alert-info"><span class="spinner-border spinner-border-sm me-2"></span>Ajout dans la Feuille Maître en cours…</div>
+<script>setTimeout(function () { location.reload(); }, 5000);</script>
+<% } %>
+
+<% if (f.statut === 'ajoute_maitre') { %>
+<div class="card card-body mb-3">
+  <h5><i class="bi bi-journal-check"></i> Révision de l'étape 2 — Feuille Maître mise à jour</h5>
+  <p>Les lignes de cette semaine ont été ajoutées à <code>Feuilles Maître heures - 2026.xlsx</code> (par ordre chronologique).</p>
+  <a href="/heures/<%= f.id %>/telecharger-maitre" class="btn btn-success mb-3"><i class="bi bi-download"></i> Télécharger la Feuille Maître</a>
+  <form method="POST" action="/heures/<%= f.id %>/valider-etape2">
+    <button type="submit" class="btn btn-primary"><i class="bi bi-check2-circle"></i> Confirmer l'étape 2</button>
+  </form>
+</div>
+<% } %>
+
+<% if (['valide_etape2', 'ajoute_suivi', 'termine'].includes(f.statut)) { %>
+<div class="alert alert-success"><i class="bi bi-check2-circle"></i> Étape 2 confirmée. L'étape 3 (Suivi des heures / ABCD-COPIE.xlsx) est en développement.</div>
 <% } %>
 
 <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>

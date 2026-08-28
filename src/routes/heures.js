@@ -3,6 +3,7 @@ const router = express.Router();
 const crypto = require('crypto');
 const { downloadBuffer, uploadBuffer, createSignedUrl, removeFile, BUCKETS } = require('../services/storage');
 const { lireClasseurBrut, corrigerDepot } = require('../services/heures-excel-writer');
+const { MASTER_KEY, ajouterSemaineDansMaitre } = require('../services/heures-maitre-writer');
 const { envoyerNotificationEtape } = require('../services/heures-email');
 
 // Cles generees exclusivement par /api/upload-url (dest=temp) : jamais de
@@ -30,38 +31,11 @@ router.post('/apercu-onglets', async (req, res) => {
   res.json({ onglets: onglets.map(o => ({ nom: o.nomOnglet, nbLignes: o.lignes.length })) });
 });
 
-// Delegue le traitement (lecture du brut, correction, ecriture du fichier
-// cible) au service Render t3e-interface-jfxe — meme mecanique que
-// declencherGenerationDistanteSoumission (soumissions.js) : Render est
-// persistant (pas de plafond 60s), utile des que le fichier brut est gros ou
-// contient plusieurs semaines.
-async function declencherGenerationDistanteHeures(id) {
-  const url = (process.env.CONVERT_SERVICE_URL || '').trim();
-  const secret = (process.env.CONVERT_SERVICE_SECRET || '').trim();
-  if (!url || !secret) throw new Error('service distant non configuré (CONVERT_SERVICE_URL/SECRET manquant)');
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
-  try {
-    const resp = await fetch(url.replace(/\/$/, '') + '/internal/generer-heures', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-convert-secret': secret },
-      body: JSON.stringify({ feuilleTempsId: id }),
-      signal: controller.signal,
-    });
-    if (!resp.ok) {
-      const corps = await resp.text().catch(() => '');
-      throw new Error(`service distant a répondu ${resp.status}: ${corps.slice(0, 200)}`);
-    }
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 // Traitement complet de l'etape 1 pour UNE ligne (= un onglet/semaine deja
 // associe) : retelecharge le fichier brut, corrige SEULEMENT l'onglet
-// concerne, sauvegarde le resultat. Appelable en synchrone ou depuis
-// /internal/generer-heures (server.js, declenche a distance depuis Vercel).
+// concerne, sauvegarde le resultat. Toujours execute en synchrone (pas de
+// delegation Render pour ce module — decision explicite : Render n'est pas
+// fiable actuellement, voir diagnostic de suspension plus tot en session).
 async function genererEtSauvegarderHeures(db, id) {
   const r = await db.execute({ sql: 'SELECT * FROM feuilles_temps WHERE id = ?', args: [id] });
   if (r.rows.length === 0) return { ok: false, erreur: 'Feuille de temps introuvable' };
@@ -110,6 +84,73 @@ async function genererEtSauvegarderHeures(db, id) {
   }
 }
 
+// Bootstrap (une seule fois) : importe la copie actuelle de "Feuilles
+// Maître heures - 2026.xlsx" sur Supabase (bucket HEURES_MAITRES) — elle
+// devient ensuite LE fichier de reference que la plateforme met a jour elle-
+// meme (voir plan : "le resultat final sera sur la plateforme"). A refaire
+// seulement si on veut resynchroniser manuellement depuis OneDrive.
+router.post('/admin/importer-maitre', async (req, res) => {
+  const { fichier_key } = req.body || {};
+  if (!cleTempValide(fichier_key)) return res.status(400).send('Fichier invalide.');
+  const buffer = await downloadBuffer(BUCKETS.UPLOADS_TEMP, fichier_key);
+  if (!buffer) return res.status(404).send('Fichier introuvable.');
+  await uploadBuffer(BUCKETS.HEURES_MAITRES, MASTER_KEY, buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.redirect('/heures');
+});
+
+// Etape 2 : ajoute la semaine (validee a l'etape 1) dans le fichier maitre.
+// Toujours synchrone (pas de Render pour ce module). Le fichier maitre etant
+// gros (~9000 lignes), on accepte le cout en temps sur la fonction Vercel —
+// a surveiller si ca approche les 60s en usage reel.
+async function appliquerEtape2(db, id) {
+  const r = await db.execute({ sql: 'SELECT * FROM feuilles_temps WHERE id = ?', args: [id] });
+  if (r.rows.length === 0) return { ok: false, erreur: 'Feuille de temps introuvable' };
+  const row = r.rows[0];
+
+  async function marquerErreur(message) {
+    console.error('[heures] Echec etape 2', id, ':', message);
+    try {
+      await db.execute({ sql: `UPDATE feuilles_temps SET statut = 'erreur', generation_erreur = ? WHERE id = ?`, args: [message, id] });
+    } catch (_) {}
+    return { ok: false, erreur: message };
+  }
+
+  try {
+    const bufferCorrige = await downloadBuffer(BUCKETS.HEURES_CORRIGEES, row.fichier_corrige_key);
+    if (!bufferCorrige) return marquerErreur('fichier corrigé introuvable');
+    const bufferMaitre = await downloadBuffer(BUCKETS.HEURES_MAITRES, MASTER_KEY);
+    if (!bufferMaitre) return marquerErreur(`fichier maître non initialisé — utiliser /heures/admin/importer-maitre (clé attendue: ${MASTER_KEY})`);
+
+    const { buffer, nbLignesAjoutees } = await ajouterSemaineDansMaitre(bufferMaitre, bufferCorrige, { debut: row.semaine_debut, fin: row.semaine_fin });
+    await uploadBuffer(BUCKETS.HEURES_MAITRES, MASTER_KEY, buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+
+    await db.execute({
+      sql: `UPDATE feuilles_temps SET etape = 2, statut = 'ajoute_maitre', updated_at = datetime('now') WHERE id = ?`,
+      args: [id],
+    });
+    console.log(`[heures] etape 2 OK pour ${id} : ${nbLignesAjoutees} ligne(s) ajoutee(s) au fichier maitre`);
+
+    try { await envoyerNotificationEtape(2, [row]); } catch (e) { console.error('[heures] notification etape 2 echouee (non bloquant):', e.message); }
+    return { ok: true, nbLignesAjoutees };
+  } catch (e) {
+    return marquerErreur(e.message);
+  }
+}
+
+router.get('/:id/telecharger-maitre', async (req, res) => {
+  const url = await createSignedUrl(BUCKETS.HEURES_MAITRES, MASTER_KEY, 300, MASTER_KEY);
+  res.redirect(url);
+});
+
+router.post('/:id/valider-etape2', async (req, res) => {
+  const db = req.db;
+  await db.execute({
+    sql: `UPDATE feuilles_temps SET statut = 'valide_etape2', valide_etape2_par = ?, updated_at = datetime('now') WHERE id = ?`,
+    args: [req.session && req.session.utilisateur || '', req.params.id],
+  });
+  res.redirect('/heures/' + req.params.id);
+});
+
 // Etape 1b : Josiane a associe une semaine (debut/fin, format YYYY-MM-DD) a
 // chaque onglet retenu — cree UNE ligne par onglet et lance la correction.
 router.post('/deposer', async (req, res) => {
@@ -131,11 +172,6 @@ router.post('/deposer', async (req, res) => {
   }
 
   for (const id of idsCreees) {
-    if (process.env.VERCEL) {
-      try { await declencherGenerationDistanteHeures(id); continue; } catch (e) {
-        console.error('[heures] delegation Render echouee, fallback synchrone:', e.message);
-      }
-    }
     await genererEtSauvegarderHeures(db, id);
   }
 
@@ -177,6 +213,10 @@ router.post('/:id/valider-etape1', async (req, res) => {
     sql: `UPDATE feuilles_temps SET statut = 'valide_etape1', valide_etape1_par = ?, updated_at = datetime('now') WHERE id = ?`,
     args: [req.session && req.session.utilisateur || '', row.id],
   });
+
+  const resultat = await appliquerEtape2(db, row.id);
+  if (!resultat.ok) console.error('[heures] etape 2 non declenchee automatiquement pour', row.id, ':', resultat.erreur);
+
   res.redirect('/heures/' + row.id);
 });
 

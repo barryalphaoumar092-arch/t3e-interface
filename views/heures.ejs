@@ -17,6 +17,14 @@
   <div id="messageDepot" class="mt-2"></div>
 </div>
 
+<details class="mb-4">
+  <summary class="text-muted">Administration : (ré)importer le fichier maître depuis un fichier local</summary>
+  <div class="card card-body mt-2">
+    <p class="small text-muted mb-2">À utiliser une seule fois pour initialiser la référence sur la plateforme (ou pour resynchroniser manuellement) — <code>Feuilles Maître heures - 2026.xlsx</code>.</p>
+    <input type="file" id="inputMaitre" class="form-control" accept=".xlsx">
+  </div>
+</details>
+
 <table class="table table-hover">
   <thead>
     <tr><th>Semaine</th><th>Statut</th><th>Étape</th><th>Fichier source</th><th>Déposée le</th><th></th></tr>
@@ -74,6 +82,20 @@ inputFichier.addEventListener('change', async function () {
   } catch (e) {
     messageDepot.textContent = 'Erreur : ' + e.message;
   }
+});
+
+var inputMaitre = document.getElementById('inputMaitre');
+inputMaitre.addEventListener('change', async function () {
+  var file = inputMaitre.files[0];
+  if (!file) return;
+  var info = await window.t3eDirectUpload.uploadDirect(file, 'temp');
+  var form = document.createElement('form');
+  form.method = 'POST'; form.action = '/heures/admin/importer-maitre';
+  var input = document.createElement('input');
+  input.type = 'hidden'; input.name = 'fichier_key'; input.value = info.key;
+  form.appendChild(input);
+  document.body.appendChild(form);
+  form.submit();
 });
 
 btnDeposer.addEventListener('click', async function () {
