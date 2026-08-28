@@ -39,7 +39,12 @@
       <td>Étape <%= f.etape %></td>
       <td><%= f.fichier_source_nom %></td>
       <td><%= f.created_at %></td>
-      <td><a href="/heures/<%= f.id %>" class="btn btn-sm btn-outline-primary">Voir</a></td>
+      <td>
+        <a href="/heures/<%= f.id %>" class="btn btn-sm btn-outline-primary">Voir</a>
+        <form method="POST" action="/heures/<%= f.id %>/supprimer" class="d-inline" onsubmit="return confirm('Supprimer cette semaine de la plateforme ?')">
+          <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+        </form>
+      </td>
     </tr>
     <% }) %>
     <% if (feuilles.length === 0) { %>

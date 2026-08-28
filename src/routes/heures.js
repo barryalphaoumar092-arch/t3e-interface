@@ -277,6 +277,23 @@ router.post('/:id/relancer', async (req, res) => {
   res.redirect('/heures/' + req.params.id);
 });
 
+// Supprime un depot errone (ex: mauvaise correction, test) — retire la ligne
+// et le fichier corrige associe (le fichier source brut, dans le bucket
+// temporaire, reste — potentiellement partage avec d'autres semaines du
+// meme depot). N'affecte JAMAIS la Feuille Maitre / le Suivi des heures :
+// seules les lignes deja ecrites la-bas (etape >= 2) y restent, supprimer
+// ici ne fait que retirer le suivi/brouillon de cette semaine sur la
+// plateforme.
+router.post('/:id/supprimer', async (req, res) => {
+  const db = req.db;
+  const r = await db.execute({ sql: 'SELECT * FROM feuilles_temps WHERE id = ?', args: [req.params.id] });
+  if (r.rows.length > 0 && r.rows[0].fichier_corrige_key) {
+    try { await removeFile(BUCKETS.HEURES_CORRIGEES, r.rows[0].fichier_corrige_key); } catch (_) {}
+  }
+  await db.execute({ sql: 'DELETE FROM feuilles_temps WHERE id = ?', args: [req.params.id] });
+  res.redirect('/heures');
+});
+
 router.get('/:id', async (req, res) => {
   const db = req.db;
   const r = await db.execute({ sql: 'SELECT * FROM feuilles_temps WHERE id = ?', args: [req.params.id] });

@@ -4,17 +4,24 @@
 // IMPORTANT : le fichier corrige doit rester visuellement IDENTIQUE a
 // l'original (couleurs, largeurs de colonnes, styles, bordures) — la seule
 // correction autorisee est la SUPPRESSION de colonnes/lignes inutiles.
-// Constate en test reel : reconstruire un classeur neuf (ancienne version de
-// ce fichier) perdait toute la mise en forme — corrige en operant EN PLACE
-// sur le classeur charge (ExcelJS), jamais en reconstruisant les cellules.
+//
+// Deux approches testees et rejetees en cours de session :
+// 1) reconstruire un classeur neuf avec addRow(valeurs) -- perd TOUTE la
+//    mise en forme (aucun style copie).
+// 2) ws.spliceColumns()/spliceRows() sur le classeur charge -- ExcelJS ne
+//    deplace pas correctement les largeurs de colonnes (worksheet.columns
+//    reste indexe sur les positions d'origine) ni certains styles de
+//    cellule apres suppression -- constate en test reel (en-tete devenu
+//    gras + fond blanc alors que l'original ne l'etait pas).
+// Solution retenue : copier cellule par cellule (valeur ET style deep-clone)
+// dans une feuille neuve, en ne gardant que les lignes/colonnes voulues,
+// puis copier explicitement les largeurs de colonnes et hauteurs de lignes
+// conservees depuis leurs positions d'origine -- fidelite garantie car on ne
+// depend plus des methodes splice internes d'ExcelJS.
 const XLSX = require('xlsx');
 const ExcelJS = require('exceljs');
 const { COLONNES_GARDEES, estProjetExclu, estCodeStandard, construirePivotStatique } = require('./heures-corrector');
 
-// Lit un classeur brut (via xlsx, plus simple pour un simple apercu des
-// onglets/lignes) et retourne un tableau {nomOnglet, entetes, lignes} par
-// onglet — utilise pour /apercu-onglets et pour le calcul du pivot (qui n'a
-// pas besoin de la mise en forme, seulement des valeurs).
 function lireClasseurBrut(buffer) {
   const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true });
   return wb.SheetNames.map(nom => {
@@ -26,82 +33,90 @@ function lireClasseurBrut(buffer) {
   });
 }
 
-// Traite un classeur brut deja depose : pour l'onglet demande, charge le
-// classeur EN PLACE (ExcelJS), supprime les colonnes/lignes non voulues sur
-// CETTE feuille (formatage intact partout ailleurs), retire les autres
-// onglets du classeur (chaque semaine devient son propre fichier), ajoute
-// "Feuil2" (pivot, feuille neuve — aucune mise en forme a preserver puisque
-// absente de l'original).
+function clonerStyle(style) {
+  return style ? JSON.parse(JSON.stringify(style)) : undefined;
+}
+
 async function corrigerDepot(buffer, mappingSemaines) {
   const resultats = [];
 
   for (const [nomOnglet, semaine] of Object.entries(mappingSemaines)) {
     try {
-      const wb = new ExcelJS.Workbook();
-      await wb.xlsx.load(buffer); // recharge a chaque onglet : spliceColumns/Rows mute le classeur
-      const ws = wb.getWorksheet(nomOnglet);
-      if (!ws) { resultats.push({ nomOnglet, erreur: `onglet "${nomOnglet}" introuvable dans le fichier` }); continue; }
+      const wbSource = new ExcelJS.Workbook();
+      await wbSource.xlsx.load(buffer);
+      const wsSource = wbSource.getWorksheet(nomOnglet);
+      if (!wsSource) { resultats.push({ nomOnglet, erreur: `onglet "${nomOnglet}" introuvable dans le fichier` }); continue; }
 
-      // Retire tous les AUTRES onglets — un fichier corrige = une semaine.
-      for (const autre of wb.worksheets.slice()) {
-        if (autre.name !== nomOnglet) wb.removeWorksheet(autre.id);
-      }
-
-      const entetesBrutes = (ws.getRow(1).values || []).slice(1).map(v => (v === null || v === undefined ? '' : String(v)));
+      const entetesBrutes = (wsSource.getRow(1).values || []).slice(1).map(v => (v === null || v === undefined ? '' : String(v)));
       const idxProjetBrut = entetesBrutes.findIndex(h => h.trim() === 'No, Projet') + 1; // 1-based
       if (idxProjetBrut === 0) { resultats.push({ nomOnglet, erreur: 'colonne "No, Projet" introuvable' }); continue; }
 
-      // 1) Determiner les lignes a retirer (projets R-/I-/SHOP) + les codes
-      // ambigus a signaler — AVANT toute suppression de colonne, pendant
-      // qu'on connait encore l'index brut de la colonne projet.
-      const lignesASupprimer = [];
-      const lignesExclues = [];
-      const codesAConfirmerSet = new Set();
-      const nbLignes = ws.rowCount;
-      for (let r = 2; r <= nbLignes; r++) {
-        const code = String(ws.getCell(r, idxProjetBrut).value || '').trim();
-        if (!code) { lignesASupprimer.push(r); continue; } // ligne vide (separateur brut)
-        if (estProjetExclu(code)) { lignesASupprimer.push(r); lignesExclues.push({ code }); continue; }
-        if (!estCodeStandard(code)) codesAConfirmerSet.add(code);
-      }
-      // spliceRows du bas vers le haut pour ne pas decaler les index restants.
-      for (let i = lignesASupprimer.length - 1; i >= 0; i--) ws.spliceRows(lignesASupprimer[i], 1);
-
-      // 2) Determiner les colonnes a retirer (tout ce qui n'est pas dans
-      // COLONNES_GARDEES) — gere les doublons ("Date" x2) en gardant CHAQUE
-      // occurrence presente dans COLONNES_GARDEES, dans l'ordre.
+      // Colonnes a garder, dans l'ORDRE d'origine (verifie : l'ordre des 44
+      // colonnes de reference est deja un sous-ensemble ordonne des colonnes
+      // brutes — aucun reordonnancement necessaire, seulement un filtre).
       const comptesGardees = {};
       COLONNES_GARDEES.forEach(nom => { comptesGardees[nom] = (comptesGardees[nom] || 0) + 1; });
       const vusBrut = {};
-      const colonnesAGarder = new Set(); // index 1-based
+      const colsAGarder = [];
       entetesBrutes.forEach((nom, i) => {
         const cle = nom.trim();
         vusBrut[cle] = (vusBrut[cle] || 0) + 1;
-        if (vusBrut[cle] <= (comptesGardees[cle] || 0)) colonnesAGarder.add(i + 1);
+        if (vusBrut[cle] <= (comptesGardees[cle] || 0)) colsAGarder.push(i + 1);
       });
-      const colonnesASupprimer = [];
-      for (let c = 1; c <= entetesBrutes.length; c++) if (!colonnesAGarder.has(c)) colonnesASupprimer.push(c);
-      for (let i = colonnesASupprimer.length - 1; i >= 0; i--) ws.spliceColumns(colonnesASupprimer[i], 1);
 
-      // 3) Pivot (Feuil2) — calcule a partir des valeurs deja filtrees.
-      const entetesFinales = (ws.getRow(1).values || []).slice(1).map(v => (v === null || v === undefined ? '' : String(v)));
-      const lignesFinales = [];
-      for (let r = 2; r <= ws.rowCount; r++) {
-        lignesFinales.push(ws.getRow(r).values.slice(1));
+      // Lignes a garder (exclut R-/I-/SHOP et lignes vides) + signalement
+      // des codes non standards (ni exclus, ni reconnus).
+      const rowsAGarder = [];
+      const lignesExclues = [];
+      const codesAConfirmerSet = new Set();
+      const nbLignesSource = wsSource.rowCount;
+      for (let r = 2; r <= nbLignesSource; r++) {
+        const code = String(wsSource.getCell(r, idxProjetBrut).value || '').trim();
+        if (!code) continue; // ligne vide (separateur brut)
+        if (estProjetExclu(code)) { lignesExclues.push({ code }); continue; }
+        if (!estCodeStandard(code)) codesAConfirmerSet.add(code);
+        rowsAGarder.push(r);
       }
+
+      // Construction de la feuille corrigee : copie cellule par cellule
+      // (valeur + style), colonne par colonne, ligne par ligne.
+      const wbCible = new ExcelJS.Workbook();
+      const wsCible = wbCible.addWorksheet(nomOnglet.slice(0, 31));
+
+      colsAGarder.forEach((srcCol, i) => {
+        wsCible.getColumn(i + 1).width = wsSource.getColumn(srcCol).width;
+      });
+
+      const lignesSourceOrdre = [1, ...rowsAGarder]; // 1 = en-tete
+      lignesSourceOrdre.forEach((srcRow, destIdx) => {
+        const destRow = destIdx + 1;
+        const rowSource = wsSource.getRow(srcRow);
+        wsCible.getRow(destRow).height = rowSource.height;
+        colsAGarder.forEach((srcCol, colIdx) => {
+          const destCol = colIdx + 1;
+          const celluleSource = rowSource.getCell(srcCol);
+          const celluleCible = wsCible.getCell(destRow, destCol);
+          celluleCible.value = celluleSource.value;
+          celluleCible.style = clonerStyle(celluleSource.style);
+        });
+      });
+
+      // Pivot (Feuil2) — feuille neuve, aucune mise en forme a preserver.
+      const entetesFinales = colsAGarder.map((_, i) => String(wsCible.getCell(1, i + 1).value || ''));
+      const lignesFinales = rowsAGarder.map((_, r) => colsAGarder.map((_, c) => wsCible.getCell(r + 2, c + 1).value));
       const pivot = construirePivotStatique(entetesFinales, lignesFinales);
-      const feuilPivot = wb.addWorksheet('Feuil2');
+      const feuilPivot = wbCible.addWorksheet('Feuil2');
       feuilPivot.addRow([]);
       feuilPivot.addRow([]);
       for (const ligne of pivot) feuilPivot.addRow(ligne);
       feuilPivot.getRow(3).font = { bold: true };
 
       const labelSemaine = `${semaine.debut} au ${semaine.fin}`;
-      const fichier = Buffer.from(await wb.xlsx.writeBuffer());
+      const fichier = Buffer.from(await wbCible.xlsx.writeBuffer());
 
       resultats.push({
         nomOnglet, semaine, labelSemaine,
-        nbLignes: lignesFinales.length,
+        nbLignes: rowsAGarder.length,
         nbLignesExclues: lignesExclues.length,
         lignesExclues,
         codesAConfirmer: Array.from(codesAConfirmerSet),

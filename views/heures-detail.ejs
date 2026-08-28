@@ -9,8 +9,15 @@ var infosLignes = f.lignes_corrigees ? JSON.parse(f.lignes_corrigees) : null;
   <ol class="breadcrumb"><li class="breadcrumb-item"><a href="/heures">Heures</a></li><li class="breadcrumb-item active">Semaine <%= f.semaine_debut %> au <%= f.semaine_fin %></li></ol>
 </nav>
 
-<h2>Semaine <%= f.semaine_debut %> au <%= f.semaine_fin %></h2>
-<p><span class="badge bg-secondary">Étape <%= f.etape %></span> <span class="badge bg-info-subtle text-dark"><%= f.statut %></span></p>
+<div class="d-flex justify-content-between align-items-start">
+  <div>
+    <h2>Semaine <%= f.semaine_debut %> au <%= f.semaine_fin %></h2>
+    <p><span class="badge bg-secondary">Étape <%= f.etape %></span> <span class="badge bg-info-subtle text-dark"><%= f.statut %></span></p>
+  </div>
+  <form method="POST" action="/heures/<%= f.id %>/supprimer" onsubmit="return confirm('Supprimer cette semaine de la plateforme ?')">
+    <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash"></i> Supprimer</button>
+  </form>
+</div>
 
 <% if (f.statut === 'en_cours') { %>
 <div class="alert alert-info"><span class="spinner-border spinner-border-sm me-2"></span>Correction en cours…</div>
