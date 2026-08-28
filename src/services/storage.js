@@ -59,6 +59,9 @@ const BUCKETS = {
   BORDEREAUX_FT_PROJET: 'bordereaux-fiches-projet',
   BORDEREAUX_GENERES: 'bordereaux-generes',
   PLANS_ASBUILT: 'plans-asbuilt',
+  HEURES_UPLOADS: 'heures-uploads',
+  HEURES_CORRIGEES: 'heures-corrigees',
+  HEURES_MAITRES: 'heures-maitres',
 };
 
 // Supabase Storage rejette les cles avec accents/caracteres speciaux.

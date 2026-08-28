@@ -1,0 +1,101 @@
+<%- include('partials/header', { title: 'Heures', page: 'heures' }) %>
+
+<h2><i class="bi bi-clock-history"></i> Feuilles de temps</h2>
+<p class="text-muted">Dépôt (Josiane) → correction automatique → révision (Joël/projets) → Feuille Maître → Suivi des heures.</p>
+
+<% if (enAttenteRevision > 0) { %>
+<div class="alert alert-warning">
+  <i class="bi bi-exclamation-triangle"></i> <strong><%= enAttenteRevision %></strong> feuille(s) de temps prête(s) à être révisée(s).
+</div>
+<% } %>
+
+<div class="card card-body mb-4">
+  <h5><i class="bi bi-upload"></i> Déposer une ou plusieurs feuilles de temps</h5>
+  <input type="file" id="inputFichier" class="form-control mb-2" accept=".xlsx">
+  <div id="zoneOnglets"></div>
+  <button class="btn btn-primary mt-2" id="btnDeposer" disabled>Déposer et lancer la correction</button>
+  <div id="messageDepot" class="mt-2"></div>
+</div>
+
+<table class="table table-hover">
+  <thead>
+    <tr><th>Semaine</th><th>Statut</th><th>Étape</th><th>Fichier source</th><th>Déposée le</th><th></th></tr>
+  </thead>
+  <tbody>
+    <% feuilles.forEach(function(f) { %>
+    <tr>
+      <td><%= f.semaine_debut %> au <%= f.semaine_fin %></td>
+      <td><span class="badge bg-<%= f.statut === 'erreur' ? 'danger' : (f.statut === 'a_valider' ? 'warning text-dark' : 'secondary') %>"><%= f.statut %></span></td>
+      <td>Étape <%= f.etape %></td>
+      <td><%= f.fichier_source_nom %></td>
+      <td><%= f.created_at %></td>
+      <td><a href="/heures/<%= f.id %>" class="btn btn-sm btn-outline-primary">Voir</a></td>
+    </tr>
+    <% }) %>
+    <% if (feuilles.length === 0) { %>
+    <tr><td colspan="6" class="text-center text-muted py-4">Aucune feuille de temps déposée.</td></tr>
+    <% } %>
+  </tbody>
+</table>
+
+<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="/js/direct-upload.js"></script>
+<script>
+window.T3E_SUPABASE_URL = "<%= SUPABASE_URL %>";
+window.T3E_SUPABASE_ANON_KEY = "<%= SUPABASE_ANON_KEY %>";
+
+var fichierDepose = null;
+var inputFichier = document.getElementById('inputFichier');
+var zoneOnglets = document.getElementById('zoneOnglets');
+var btnDeposer = document.getElementById('btnDeposer');
+var messageDepot = document.getElementById('messageDepot');
+
+inputFichier.addEventListener('change', async function () {
+  var file = inputFichier.files[0];
+  if (!file) return;
+  messageDepot.textContent = 'Envoi du fichier…';
+  try {
+    fichierDepose = await window.t3eDirectUpload.uploadDirect(file, 'temp');
+    var resp = await fetch('/heures/apercu-onglets', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fichier_key: fichierDepose.key }),
+    });
+    var data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Erreur');
+    zoneOnglets.innerHTML = data.onglets.map(function (o, i) {
+      return '<div class="row g-2 align-items-center mb-2">' +
+        '<div class="col-4"><strong>' + o.nom + '</strong> <span class="text-muted">(' + o.nbLignes + ' lignes)</span></div>' +
+        '<div class="col-4"><input type="date" class="form-control debut" data-onglet="' + o.nom + '"></div>' +
+        '<div class="col-4"><input type="date" class="form-control fin" data-onglet="' + o.nom + '"></div>' +
+        '</div>';
+    }).join('');
+    messageDepot.textContent = 'Associez une semaine (début/fin) à chaque onglet, puis déposez.';
+    btnDeposer.disabled = false;
+  } catch (e) {
+    messageDepot.textContent = 'Erreur : ' + e.message;
+  }
+});
+
+btnDeposer.addEventListener('click', async function () {
+  var mapping = {};
+  zoneOnglets.querySelectorAll('.debut').forEach(function (inputDebut) {
+    var onglet = inputDebut.getAttribute('data-onglet');
+    var inputFin = zoneOnglets.querySelector('.fin[data-onglet="' + onglet + '"]');
+    if (inputDebut.value && inputFin.value) mapping[onglet] = { debut: inputDebut.value, fin: inputFin.value };
+  });
+  if (Object.keys(mapping).length === 0) { messageDepot.textContent = 'Associez au moins une semaine à un onglet.'; return; }
+
+  var form = document.createElement('form');
+  form.method = 'POST'; form.action = '/heures/deposer';
+  ['fichier_key', 'fichier_nom', 'mapping'].forEach(function (nom) {
+    var input = document.createElement('input');
+    input.type = 'hidden'; input.name = nom;
+    input.value = nom === 'fichier_key' ? fichierDepose.key : (nom === 'fichier_nom' ? fichierDepose.name : JSON.stringify(mapping));
+    form.appendChild(input);
+  });
+  document.body.appendChild(form);
+  form.submit();
+});
+</script>
+
+<%- include('partials/footer', { scripts: [] }) %>

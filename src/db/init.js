@@ -268,6 +268,44 @@ async function initDb() {
     'CREATE INDEX IF NOT EXISTS idx_exigences_appel ON exigences(appel_offre_id)',
   ];
 
+  const migrationsHeures = [
+    // Module « Heures » (feuilles de temps) — voir plan squishy-skipping-cook.
+    // Un depot (Josiane) peut contenir plusieurs semaines (onglets) ; chaque
+    // semaine devient sa PROPRE ligne des l'etape 1, suivie independamment a
+    // travers les 3 etapes (correction -> feuille maitre -> suivi des heures).
+    `CREATE TABLE IF NOT EXISTS feuilles_temps (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      semaine_debut TEXT NOT NULL,
+      semaine_fin TEXT NOT NULL,
+      fichier_source_key TEXT,
+      fichier_source_nom TEXT,
+      onglet_source TEXT,
+      etape INTEGER NOT NULL DEFAULT 1 CHECK(etape IN (1,2,3)),
+      statut TEXT NOT NULL DEFAULT 'en_cours' CHECK(statut IN (
+        'en_cours','a_valider','valide_etape1',
+        'ajoute_maitre','valide_etape2',
+        'ajoute_suivi','termine','erreur'
+      )),
+      lignes_corrigees JSON,
+      lignes_ignorees JSON,
+      codes_a_confirmer JSON,
+      fichier_corrige_key TEXT,
+      generation_requete JSON,
+      generation_statut TEXT,
+      generation_erreur TEXT,
+      depose_par TEXT,
+      valide_etape1_par TEXT,
+      valide_etape2_par TEXT,
+      valide_etape3_par TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    )`,
+    'CREATE INDEX IF NOT EXISTS idx_feuilles_temps_statut ON feuilles_temps(statut)',
+  ];
+  for (const sql of migrationsHeures) {
+    try { await db.execute(sql); } catch (e) { /* table deja existante */ }
+  }
+
   const alterMigrations = [
     'ALTER TABLE soumissions ADD COLUMN type_isolant TEXT',
     'ALTER TABLE soumissions ADD COLUMN type_releves TEXT',

@@ -1,0 +1,72 @@
+<%
+var lignesExclues = f.lignes_ignorees ? JSON.parse(f.lignes_ignorees) : [];
+var codesAConfirmer = f.codes_a_confirmer ? JSON.parse(f.codes_a_confirmer) : [];
+var infosLignes = f.lignes_corrigees ? JSON.parse(f.lignes_corrigees) : null;
+%>
+<%- include('partials/header', { title: 'Feuille de temps', page: 'heures' }) %>
+
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb"><li class="breadcrumb-item"><a href="/heures">Heures</a></li><li class="breadcrumb-item active">Semaine <%= f.semaine_debut %> au <%= f.semaine_fin %></li></ol>
+</nav>
+
+<h2>Semaine <%= f.semaine_debut %> au <%= f.semaine_fin %></h2>
+<p><span class="badge bg-secondary">Étape <%= f.etape %></span> <span class="badge bg-info-subtle text-dark"><%= f.statut %></span></p>
+
+<% if (f.statut === 'en_cours') { %>
+<div class="alert alert-info"><span class="spinner-border spinner-border-sm me-2"></span>Correction en cours…</div>
+<script>setTimeout(function () { location.reload(); }, 6000);</script>
+<% } else if (f.statut === 'erreur') { %>
+<div class="alert alert-danger"><i class="bi bi-exclamation-octagon"></i> <%= f.generation_erreur %></div>
+<% } %>
+
+<% if (f.statut === 'a_valider') { %>
+<div class="card card-body mb-3">
+  <h5><i class="bi bi-clipboard-check"></i> Révision de l'étape 1</h5>
+  <% if (infosLignes) { %><p><%= infosLignes.nbLignes %> ligne(s) conservée(s).</p><% } %>
+
+  <% if (codesAConfirmer.length > 0) { %>
+  <div class="alert alert-warning">
+    <strong>Codes projet non standards à confirmer</strong> (ni exclus automatiquement, ni reconnus) :
+    <ul class="mb-0"><% codesAConfirmer.forEach(function (c) { %><li><%= c %></li><% }) %></ul>
+  </div>
+  <% } %>
+
+  <% if (lignesExclues.length > 0) { %>
+  <details class="mb-2"><summary><%= lignesExclues.length %> ligne(s) exclue(s) automatiquement (R-/I-/SHOP)</summary>
+    <ul><% lignesExclues.slice(0, 50).forEach(function (l) { %><li><%= l.code %></li><% }) %></ul>
+  </details>
+  <% } %>
+
+  <a href="/heures/<%= f.id %>/telecharger" class="btn btn-success mb-3"><i class="bi bi-download"></i> Télécharger le fichier corrigé</a>
+
+  <form method="POST" action="/heures/<%= f.id %>/valider-etape1" id="formValider">
+    <p class="text-muted small">Si vous avez modifié le fichier téléchargé, re-déposez-le ci-dessous avant de valider — sinon validez directement.</p>
+    <input type="file" id="inputRevise" class="form-control mb-2" accept=".xlsx">
+    <input type="hidden" name="fichier_key" id="ficheirKeyRevise">
+    <button type="submit" class="btn btn-primary"><i class="bi bi-check2-circle"></i> Valider l'étape 1</button>
+  </form>
+</div>
+<% } %>
+
+<% if (['valide_etape1', 'ajoute_maitre', 'valide_etape2', 'ajoute_suivi', 'termine'].includes(f.statut)) { %>
+<div class="alert alert-success"><i class="bi bi-check2-circle"></i> Étape 1 validée. Les étapes 2 (Feuille Maître) et 3 (Suivi des heures) sont en développement.</div>
+<% } %>
+
+<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="/js/direct-upload.js"></script>
+<script>
+window.T3E_SUPABASE_URL = "<%= SUPABASE_URL %>";
+window.T3E_SUPABASE_ANON_KEY = "<%= SUPABASE_ANON_KEY %>";
+var inputRevise = document.getElementById('inputRevise');
+if (inputRevise) {
+  document.getElementById('formValider').addEventListener('submit', async function (e) {
+    if (!inputRevise.files[0]) return; // pas de re-upload, valider tel quel
+    e.preventDefault();
+    var info = await window.t3eDirectUpload.uploadDirect(inputRevise.files[0], 'temp');
+    document.getElementById('ficheirKeyRevise').value = info.key;
+    e.target.submit();
+  });
+}
+</script>
+
+<%- include('partials/footer', { scripts: [] }) %>

@@ -196,6 +196,34 @@ app.post('/internal/generer-soumission', async (req, res) => {
   }
 });
 
+// Correction en arrière-plan d'une feuille de temps (module "Heures") — même
+// principe que /internal/generer-soumission : la lecture/reconstruction du
+// classeur Excel peut dépasser les 60s de Vercel sur un gros fichier brut.
+app.post('/internal/generer-heures', async (req, res) => {
+  const secret = (process.env.CONVERT_SERVICE_SECRET || '').trim();
+  const fourni = typeof req.headers['x-convert-secret'] === 'string'
+    ? req.headers['x-convert-secret'].trim() : '';
+  const valide = secret.length > 0 && fourni.length > 0
+    && Buffer.byteLength(fourni) === Buffer.byteLength(secret)
+    && crypto.timingSafeEqual(Buffer.from(fourni), Buffer.from(secret));
+  if (!valide) return res.status(403).send('Forbidden');
+
+  const feuilleTempsId = parseInt(req.body && req.body.feuilleTempsId);
+  if (!feuilleTempsId) return res.status(400).json({ error: 'feuilleTempsId manquant' });
+
+  res.status(202).json({ ok: true });
+
+  try {
+    await initDb();
+    const db = getDb();
+    const { genererEtSauvegarderHeures } = require('./src/routes/heures');
+    const resultat = await genererEtSauvegarderHeures(db, feuilleTempsId);
+    if (!resultat.ok) console.error('[internal/generer-heures] echec pour', feuilleTempsId, ':', resultat.erreur);
+  } catch (e) {
+    console.error('[internal/generer-heures] exception pour', feuilleTempsId, ':', e.message);
+  }
+});
+
 // Analyse en arrière-plan des documents d'un projet « tel que construit » —
 // même principe que /internal/generer-manuel : N documents à télécharger,
 // parser et passer à l'IA dépassent facilement les 60 s de Vercel. Répond 202
@@ -323,6 +351,7 @@ app.use('/', require('./src/routes/index'));
 app.use('/connaissances', require('./src/routes/connaissances'));
 app.use('/bordereaux', require('./src/routes/bordereaux'));
 app.use('/soumissions', require('./src/routes/soumissions'));
+app.use('/heures', require('./src/routes/heures'));
 app.use('/manuels', require('./src/routes/manuels'));
 app.use('/appels-offres', require('./src/routes/appels-offres'));
 
