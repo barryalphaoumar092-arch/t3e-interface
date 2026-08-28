@@ -60,7 +60,8 @@ async function genererEtSauvegarderHeures(db, id) {
     if (!buffer) return marquerErreur('fichier source introuvable dans le stockage temporaire (a peut-etre expire)');
 
     const mapping = { [row.onglet_source]: { debut: row.semaine_debut, fin: row.semaine_fin } };
-    const [resultat] = await corrigerDepot(buffer, mapping);
+    const resultats = await corrigerDepot(buffer, mapping);
+    const resultat = resultats.find(r => r.nomOnglet === row.onglet_source);
     if (!resultat || resultat.erreur) return marquerErreur((resultat && resultat.erreur) || 'correction impossible');
 
     const cle = `${id}-${resultat.labelSemaine.replace(/[^A-Za-z0-9-]/g, '_')}.xlsx`;
@@ -264,6 +265,16 @@ router.post('/deposer', async (req, res) => {
   }
 
   res.redirect('/heures');
+});
+
+// Relance apres une erreur (ex: bug corrige entre-temps) — sans re-upload,
+// reutilise le meme fichier source deja en stockage temporaire.
+router.post('/:id/relancer', async (req, res) => {
+  const db = req.db;
+  await db.execute({ sql: `UPDATE feuilles_temps SET statut = 'en_cours', generation_erreur = NULL WHERE id = ?`, args: [req.params.id] });
+  const resultat = await genererEtSauvegarderHeures(db, req.params.id);
+  if (!resultat.ok) console.error('[heures] relance echouee pour', req.params.id, ':', resultat.erreur);
+  res.redirect('/heures/' + req.params.id);
 });
 
 router.get('/:id', async (req, res) => {

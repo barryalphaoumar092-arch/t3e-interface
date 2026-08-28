@@ -17,6 +17,11 @@ var infosLignes = f.lignes_corrigees ? JSON.parse(f.lignes_corrigees) : null;
 <script>setTimeout(function () { location.reload(); }, 6000);</script>
 <% } else if (f.statut === 'erreur') { %>
 <div class="alert alert-danger"><i class="bi bi-exclamation-octagon"></i> <%= f.generation_erreur %></div>
+<% if (f.etape === 1) { %>
+<form method="POST" action="/heures/<%= f.id %>/relancer">
+  <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-arrow-clockwise"></i> Réessayer</button>
+</form>
+<% } %>
 <% } %>
 
 <% if (f.statut === 'a_valider') { %>
