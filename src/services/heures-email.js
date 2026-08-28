@@ -56,4 +56,17 @@ async function envoyerNotificationEtape(etape, feuilles) {
   await envoyer(DESTINATAIRES_ETAPE[etape], sujets[etape] || 'T3E Interface — Heures', `Bonjour,\n\n${liste}\n\nMerci de vérifier sur la plateforme.`);
 }
 
-module.exports = { isConfigured, envoyerNotificationEtape };
+// Etape 3, confirmation finale : envoie le lien de telechargement du
+// document final (ABCD-COPIE.xlsx) a jchoiniere — lien signe plutot que
+// piece jointe (evite les limites de taille SMTP, coherent avec le reste du
+// site qui privilegie deja les liens signes Supabase pour les gros fichiers).
+async function envoyerDocumentFinal(lienTelechargement, feuille) {
+  const destinataire = process.env.HEURES_NOTIF_FINAL || '';
+  await envoyer(
+    destinataire,
+    'T3E Interface — Suivi des heures finalisé',
+    `Bonjour,\n\nLe suivi des heures est à jour (semaine ${feuille.semaine_debut} au ${feuille.semaine_fin} intégrée et confirmée).\n\nTélécharger : ${lienTelechargement}\n\n(Lien valide 5 minutes — retéléchargez depuis la plateforme si besoin.)`
+  );
+}
+
+module.exports = { isConfigured, envoyerNotificationEtape, envoyerDocumentFinal };

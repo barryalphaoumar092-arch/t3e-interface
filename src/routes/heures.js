@@ -4,7 +4,10 @@ const crypto = require('crypto');
 const { downloadBuffer, uploadBuffer, createSignedUrl, removeFile, BUCKETS } = require('../services/storage');
 const { lireClasseurBrut, corrigerDepot } = require('../services/heures-excel-writer');
 const { MASTER_KEY, ajouterSemaineDansMaitre } = require('../services/heures-maitre-writer');
-const { envoyerNotificationEtape } = require('../services/heures-email');
+const { ajouterSemaineDansSuivi } = require('../services/heures-suivi-writer');
+const { envoyerNotificationEtape, envoyerDocumentFinal } = require('../services/heures-email');
+
+const SUIVI_KEY = 'ABCD-COPIE.xlsx';
 
 // Cles generees exclusivement par /api/upload-url (dest=temp) : jamais de
 // separateur de chemin — meme garde que soumissions.js/bordereaux.js.
@@ -142,13 +145,98 @@ router.get('/:id/telecharger-maitre', async (req, res) => {
   res.redirect(url);
 });
 
+// Bootstrap (une seule fois) pour ABCD-COPIE.xlsx — meme principe que
+// /admin/importer-maitre.
+router.post('/admin/importer-suivi', async (req, res) => {
+  const { fichier_key } = req.body || {};
+  if (!cleTempValide(fichier_key)) return res.status(400).send('Fichier invalide.');
+  const buffer = await downloadBuffer(BUCKETS.UPLOADS_TEMP, fichier_key);
+  if (!buffer) return res.status(404).send('Fichier introuvable.');
+  await uploadBuffer(BUCKETS.HEURES_MAITRES, SUIVI_KEY, buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.redirect('/heures');
+});
+
+// Etape 3 : ajoute la semaine dans ABCD-COPIE.xlsx (repartition par metier
+// via categorie_employe) + controle de coherence obligatoire (le total
+// ecrit doit correspondre au total brut classifiable de la semaine — jamais
+// de publication silencieuse en cas d'ecart, voir plan).
+async function appliquerEtape3(db, id) {
+  const r = await db.execute({ sql: 'SELECT * FROM feuilles_temps WHERE id = ?', args: [id] });
+  if (r.rows.length === 0) return { ok: false, erreur: 'Feuille de temps introuvable' };
+  const row = r.rows[0];
+
+  async function marquerErreur(message) {
+    console.error('[heures] Echec etape 3', id, ':', message);
+    try {
+      await db.execute({ sql: `UPDATE feuilles_temps SET statut = 'erreur', generation_erreur = ? WHERE id = ?`, args: [message, id] });
+    } catch (_) {}
+    return { ok: false, erreur: message };
+  }
+
+  try {
+    const bufferCorrige = await downloadBuffer(BUCKETS.HEURES_CORRIGEES, row.fichier_corrige_key);
+    if (!bufferCorrige) return marquerErreur('fichier corrigé introuvable');
+    const bufferSuivi = await downloadBuffer(BUCKETS.HEURES_MAITRES, SUIVI_KEY);
+    if (!bufferSuivi) return marquerErreur(`fichier de suivi non initialisé — utiliser /heures/admin/importer-suivi (clé attendue: ${SUIVI_KEY})`);
+
+    const { buffer, totalEcrit, totalAClasser, totalNonClasse } = await ajouterSemaineDansSuivi(bufferSuivi, bufferCorrige, { debut: row.semaine_debut, fin: row.semaine_fin });
+
+    const ecart = Math.round((totalEcrit - totalAClasser) * 100) / 100;
+    if (Math.abs(ecart) > 0.1) {
+      return marquerErreur(`Écart de cohérence détecté : ${totalEcrit}h écrites dans ABCD-COPIE.xlsx vs ${totalAClasser}h attendues (${row.semaine_debut} au ${row.semaine_fin}) — écriture annulée, rien n'a été publié.`);
+    }
+
+    await uploadBuffer(BUCKETS.HEURES_MAITRES, SUIVI_KEY, buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+
+    const note = totalNonClasse > 0.1
+      ? `${totalNonClasse}h non classées par métier (catégorie employé non reconnue) — non incluses dans ABCD-COPIE, à vérifier manuellement.`
+      : null;
+
+    await db.execute({
+      sql: `UPDATE feuilles_temps SET etape = 3, statut = 'ajoute_suivi', generation_erreur = ?, updated_at = datetime('now') WHERE id = ?`,
+      args: [note, id],
+    });
+    return { ok: true };
+  } catch (e) {
+    return marquerErreur(e.message);
+  }
+}
+
+router.get('/:id/telecharger-suivi', async (req, res) => {
+  const url = await createSignedUrl(BUCKETS.HEURES_MAITRES, SUIVI_KEY, 300, SUIVI_KEY);
+  res.redirect(url);
+});
+
 router.post('/:id/valider-etape2', async (req, res) => {
   const db = req.db;
   await db.execute({
     sql: `UPDATE feuilles_temps SET statut = 'valide_etape2', valide_etape2_par = ?, updated_at = datetime('now') WHERE id = ?`,
     args: [req.session && req.session.utilisateur || '', req.params.id],
   });
+
+  const resultat = await appliquerEtape3(db, req.params.id);
+  if (!resultat.ok) console.error('[heures] etape 3 non declenchee automatiquement pour', req.params.id, ':', resultat.erreur);
+
   res.redirect('/heures/' + req.params.id);
+});
+
+// Confirmation finale (etape 3) : envoie le document final a jchoiniere et
+// clot le cycle pour cette semaine — la plateforme redevient "rien a faire"
+// jusqu'au prochain depot de Josiane (voir plan).
+router.post('/:id/valider-etape3', async (req, res) => {
+  const db = req.db;
+  const r = await db.execute({ sql: 'SELECT * FROM feuilles_temps WHERE id = ?', args: [req.params.id] });
+  if (r.rows.length === 0) return res.status(404).send('Introuvable');
+  const row = r.rows[0];
+
+  const lien = await createSignedUrl(BUCKETS.HEURES_MAITRES, SUIVI_KEY, 300, SUIVI_KEY);
+  try { await envoyerDocumentFinal(lien, row); } catch (e) { console.error('[heures] envoi document final echoue (non bloquant):', e.message); }
+
+  await db.execute({
+    sql: `UPDATE feuilles_temps SET statut = 'termine', valide_etape3_par = ?, updated_at = datetime('now') WHERE id = ?`,
+    args: [req.session && req.session.utilisateur || '', row.id],
+  });
+  res.redirect('/heures/' + row.id);
 });
 
 // Etape 1b : Josiane a associe une semaine (debut/fin, format YYYY-MM-DD) a

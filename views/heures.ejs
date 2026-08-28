@@ -22,6 +22,8 @@
   <div class="card card-body mt-2">
     <p class="small text-muted mb-2">À utiliser une seule fois pour initialiser la référence sur la plateforme (ou pour resynchroniser manuellement) — <code>Feuilles Maître heures - 2026.xlsx</code>.</p>
     <input type="file" id="inputMaitre" class="form-control" accept=".xlsx">
+    <p class="small text-muted mt-3 mb-2">Idem pour le Suivi des heures (<code>ABCD-COPIE.xlsx</code>).</p>
+    <input type="file" id="inputSuivi" class="form-control" accept=".xlsx">
   </div>
 </details>
 
@@ -91,6 +93,20 @@ inputMaitre.addEventListener('change', async function () {
   var info = await window.t3eDirectUpload.uploadDirect(file, 'temp');
   var form = document.createElement('form');
   form.method = 'POST'; form.action = '/heures/admin/importer-maitre';
+  var input = document.createElement('input');
+  input.type = 'hidden'; input.name = 'fichier_key'; input.value = info.key;
+  form.appendChild(input);
+  document.body.appendChild(form);
+  form.submit();
+});
+
+var inputSuivi = document.getElementById('inputSuivi');
+inputSuivi.addEventListener('change', async function () {
+  var file = inputSuivi.files[0];
+  if (!file) return;
+  var info = await window.t3eDirectUpload.uploadDirect(file, 'temp');
+  var form = document.createElement('form');
+  form.method = 'POST'; form.action = '/heures/admin/importer-suivi';
   var input = document.createElement('input');
   input.type = 'hidden'; input.name = 'fichier_key'; input.value = info.key;
   form.appendChild(input);
