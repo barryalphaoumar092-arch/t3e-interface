@@ -20,7 +20,27 @@
 // depend plus des methodes splice internes d'ExcelJS.
 const XLSX = require('xlsx');
 const ExcelJS = require('exceljs');
+const JSZip = require('jszip');
 const { COLONNES_GARDEES, estProjetExclu, estCodeStandard, construirePivotStatique } = require('./heures-corrector');
+
+// Contournement d'un bug connu d'ExcelJS : le chargement d'un classeur avec
+// des "formules partagees" (colonnes calculees du logiciel de temps, ex.
+// Total_H-C/Total-C/Total_T) peut jeter "Shared Formula master must exist
+// above and/or left of clone for cell XX" -- constate en test reel. On ne
+// s'interesse jamais aux formules ici (seulement aux VALEURS deja mises en
+// cache dans le fichier), donc on les retire du XML avant chargement : plus
+// aucune formule partagee a resoudre, ExcelJS lit directement la valeur
+// mise en cache (<v>) sans erreur.
+async function retirerFormules(buffer) {
+  const zip = await JSZip.loadAsync(buffer);
+  const chemins = Object.keys(zip.files).filter(p => /^xl\/worksheets\/sheet\d+\.xml$/.test(p));
+  for (const chemin of chemins) {
+    let xml = await zip.file(chemin).async('string');
+    xml = xml.replace(/<f\b[^>]*\/>/g, '').replace(/<f\b[^>]*>[\s\S]*?<\/f>/g, '');
+    zip.file(chemin, xml);
+  }
+  return zip.generateAsync({ type: 'nodebuffer' });
+}
 
 function lireClasseurBrut(buffer) {
   const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true });
@@ -39,11 +59,12 @@ function clonerStyle(style) {
 
 async function corrigerDepot(buffer, mappingSemaines) {
   const resultats = [];
+  const bufferSansFormules = await retirerFormules(buffer);
 
   for (const [nomOnglet, semaine] of Object.entries(mappingSemaines)) {
     try {
       const wbSource = new ExcelJS.Workbook();
-      await wbSource.xlsx.load(buffer);
+      await wbSource.xlsx.load(bufferSansFormules);
       const wsSource = wbSource.getWorksheet(nomOnglet);
       if (!wsSource) { resultats.push({ nomOnglet, erreur: `onglet "${nomOnglet}" introuvable dans le fichier` }); continue; }
 
