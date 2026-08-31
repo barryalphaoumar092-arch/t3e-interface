@@ -23,16 +23,48 @@ var infosLignes = f.lignes_corrigees ? JSON.parse(f.lignes_corrigees) : null;
 <div class="alert alert-info"><span class="spinner-border spinner-border-sm me-2"></span>Correction en cours…</div>
 <script>setTimeout(function () { location.reload(); }, 6000);</script>
 <% } else if (f.statut === 'erreur') { %>
+<%
+// etape n'est bumpe qu'APRES un succes — donc une erreur a etape===1 peut
+// venir soit de l'etape 1 elle-meme (correction), soit de l'etape 2
+// (ecriture Feuille Maitre, qui echoue avant de bumper etape) : on les
+// distingue via lignes_corrigees (rempli seulement si l'etape 1 a reussi).
+var echecEtape1Correction = f.etape === 1 && !f.lignes_corrigees;
+var echecEtape2 = f.etape === 1 && !!f.lignes_corrigees;
+var echecEtape3 = f.etape === 2;
+var estDoublon = /existe(nt)? déjà/.test(f.generation_erreur || '');
+%>
 <div class="alert alert-danger"><i class="bi bi-exclamation-octagon"></i> <%= f.generation_erreur %></div>
-<% if (f.etape === 1) { %>
+
+<% if (echecEtape1Correction) { %>
 <form method="POST" action="/heures/<%= f.id %>/relancer">
   <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-arrow-clockwise"></i> Réessayer</button>
 </form>
-<% } else if (f.etape === 2) { %>
-<p class="small text-muted">Après avoir corrigé le problème (ex. ajouté un projet manquant dans ABCD-COPIE.xlsx), relancez l'étape 3 :</p>
-<form method="POST" action="/heures/<%= f.id %>/relancer-etape3">
-  <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-arrow-clockwise"></i> Réessayer l'étape 3</button>
+<% } %>
+
+<% if (echecEtape2) { %>
+<a href="/heures/<%= f.id %>/telecharger-maitre" class="btn btn-sm btn-outline-secondary me-2"><i class="bi bi-download"></i> Voir la Feuille Maître actuelle</a>
+<form method="POST" action="/heures/<%= f.id %>/relancer-etape2" class="d-inline">
+  <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-arrow-clockwise"></i> Réessayer</button>
 </form>
+<% if (estDoublon) { %>
+<form method="POST" action="/heures/<%= f.id %>/relancer-etape2" class="d-inline ms-2" onsubmit="return confirm('Confirmez-vous que cette semaine est déjà présente intentionnellement (ex. données de test) et que la plateforme peut continuer sans la réécrire ?')">
+  <input type="hidden" name="confirmer" value="1">
+  <button type="submit" class="btn btn-sm btn-outline-warning"><i class="bi bi-check2"></i> C'est normal, continuer quand même</button>
+</form>
+<% } %>
+<% } %>
+
+<% if (echecEtape3) { %>
+<a href="/heures/<%= f.id %>/telecharger-suivi" class="btn btn-sm btn-outline-secondary me-2"><i class="bi bi-download"></i> Voir le Suivi des heures actuel</a>
+<form method="POST" action="/heures/<%= f.id %>/relancer-etape3" class="d-inline">
+  <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-arrow-clockwise"></i> Réessayer</button>
+</form>
+<% if (estDoublon) { %>
+<form method="POST" action="/heures/<%= f.id %>/relancer-etape3" class="d-inline ms-2" onsubmit="return confirm('Confirmez-vous que cette semaine est déjà présente intentionnellement (ex. données de test) dans ABCD-COPIE.xlsx et que la plateforme peut passer à la révision sans réécrire ?')">
+  <input type="hidden" name="confirmer" value="1">
+  <button type="submit" class="btn btn-sm btn-outline-warning"><i class="bi bi-check2"></i> C'est normal, continuer quand même</button>
+</form>
+<% } %>
 <% } %>
 <% } %>
 

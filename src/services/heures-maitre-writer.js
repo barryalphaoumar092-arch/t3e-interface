@@ -170,13 +170,15 @@ async function trouverCheminFeuille(zip, nomFeuille) {
 // en fin — l'ordre chronologique strict de ce detail brut est secondaire
 // (les deux PivotTables du fichier resument par date independamment de
 // l'ordre des lignes source).
-async function ajouterSemaineDansMaitre(bufferMaitre, bufferCorrige, semaine) {
+async function ajouterSemaineDansMaitre(bufferMaitre, bufferCorrige, semaine, options) {
   const { entetes: entetesCorrige, lignes: lignesCorrigees } = lireFeuilleCorrigee(bufferCorrige);
   const mapping = construireMapping(entetesCorrige);
 
   // Garde-fou : si des lignes existantes du maitre couvrent DEJA cette
   // periode (colonne "Date"), c'est un depot en double — on refuse plutot
-  // que de dupliquer silencieusement des heures deja comptabilisees.
+  // que de dupliquer silencieusement des heures deja comptabilisees, SAUF
+  // si l'utilisateur a explicitement confirme vouloir continuer quand meme
+  // (options.ignorerDoublon — ex: semaine de test deja presente, cas legitime).
   const idxDateMaitre = COLONNES_MAITRE.indexOf('Date'); // 1ere occurrence
   const wbVerif = XLSX.read(bufferMaitre, { type: 'buffer', cellDates: true });
   const feuilleVerif = wbVerif.Sheets[NOM_FEUILLE_MAITRE];
@@ -188,8 +190,10 @@ async function ajouterSemaineDansMaitre(bufferMaitre, bufferCorrige, semaine) {
     const d = v instanceof Date ? v : new Date(v);
     return !isNaN(d) && d >= debut && d <= fin;
   });
-  if (dejaPresent) {
-    throw new Error(`Des lignes couvrant la période ${semaine.debut} au ${semaine.fin} existent déjà dans Feuilles Maître heures - 2026.xlsx — dépôt en double, rien n'a été modifié.`);
+  if (dejaPresent && !(options && options.ignorerDoublon)) {
+    const err = new Error(`Des lignes couvrant la période ${semaine.debut} au ${semaine.fin} existent déjà dans Feuilles Maître heures - 2026.xlsx — dépôt en double, rien n'a été modifié.`);
+    err.doublon = true;
+    throw err;
   }
 
   const zip = await JSZip.loadAsync(bufferMaitre);

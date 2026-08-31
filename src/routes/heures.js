@@ -124,17 +124,17 @@ router.post('/admin/importer-maitre', async (req, res) => {
 // Toujours synchrone (pas de Render pour ce module). Le fichier maitre etant
 // gros (~9000 lignes), on accepte le cout en temps sur la fonction Vercel —
 // a surveiller si ca approche les 60s en usage reel.
-async function appliquerEtape2(db, id) {
+async function appliquerEtape2(db, id, options) {
   const r = await db.execute({ sql: 'SELECT * FROM feuilles_temps WHERE id = ?', args: [id] });
   if (r.rows.length === 0) return { ok: false, erreur: 'Feuille de temps introuvable' };
   const row = r.rows[0];
 
-  async function marquerErreur(message) {
+  async function marquerErreur(message, doublon) {
     console.error('[heures] Echec etape 2', id, ':', message);
     try {
       await db.execute({ sql: `UPDATE feuilles_temps SET statut = 'erreur', generation_erreur = ? WHERE id = ?`, args: [message, id] });
     } catch (_) {}
-    return { ok: false, erreur: message };
+    return { ok: false, erreur: message, doublon: !!doublon };
   }
 
   try {
@@ -143,7 +143,7 @@ async function appliquerEtape2(db, id) {
     const bufferMaitre = await downloadBuffer(BUCKETS.HEURES_MAITRES, MASTER_KEY);
     if (!bufferMaitre) return marquerErreur(`fichier maître non initialisé — utiliser /heures/admin/importer-maitre (clé attendue: ${MASTER_KEY})`);
 
-    const { buffer, nbLignesAjoutees } = await ajouterSemaineDansMaitre(bufferMaitre, bufferCorrige, { debut: row.semaine_debut, fin: row.semaine_fin });
+    const { buffer, nbLignesAjoutees } = await ajouterSemaineDansMaitre(bufferMaitre, bufferCorrige, { debut: row.semaine_debut, fin: row.semaine_fin }, options);
     // On ne remplace le fichier de reference qu'apres avoir construit AVEC
     // SUCCES la nouvelle version en memoire (bufferMaitre original jamais
     // modifie en place — ajouterSemaineDansMaitre travaille sur sa propre
@@ -161,9 +161,20 @@ async function appliquerEtape2(db, id) {
     try { await envoyerNotificationEtape(2, [row]); } catch (e) { console.error('[heures] notification etape 2 echouee (non bloquant):', e.message); }
     return { ok: true, nbLignesAjoutees };
   } catch (e) {
-    return marquerErreur(e.message);
+    return marquerErreur(e.message, e.doublon);
   }
 }
+
+// Relance l'etape 2 — avec confirmation="1" pour forcer malgre un doublon
+// deja detecte (ex : semaine de test deja ajoutee manuellement — cas
+// legitime confirme par l'utilisateur apres avoir consulte le fichier).
+router.post('/:id/relancer-etape2', async (req, res) => {
+  const db = req.db;
+  const options = req.body && req.body.confirmer === '1' ? { ignorerDoublon: true } : undefined;
+  const resultat = await appliquerEtape2(db, req.params.id, options);
+  if (!resultat.ok) console.error('[heures] relance etape 2 echouee pour', req.params.id, ':', resultat.erreur);
+  res.redirect('/heures/' + req.params.id);
+});
 
 router.get('/:id/telecharger-maitre', async (req, res) => {
   const url = await createSignedUrl(BUCKETS.HEURES_MAITRES, MASTER_KEY, 300, MASTER_KEY);
@@ -185,17 +196,30 @@ router.post('/admin/importer-suivi', async (req, res) => {
 // via categorie_employe) + controle de coherence obligatoire (le total
 // ecrit doit correspondre au total brut classifiable de la semaine — jamais
 // de publication silencieuse en cas d'ecart, voir plan).
-async function appliquerEtape3(db, id) {
+async function appliquerEtape3(db, id, options) {
   const r = await db.execute({ sql: 'SELECT * FROM feuilles_temps WHERE id = ?', args: [id] });
   if (r.rows.length === 0) return { ok: false, erreur: 'Feuille de temps introuvable' };
   const row = r.rows[0];
 
-  async function marquerErreur(message) {
+  async function marquerErreur(message, doublon) {
     console.error('[heures] Echec etape 3', id, ':', message);
     try {
       await db.execute({ sql: `UPDATE feuilles_temps SET statut = 'erreur', generation_erreur = ? WHERE id = ?`, args: [message, id] });
     } catch (_) {}
-    return { ok: false, erreur: message };
+    return { ok: false, erreur: message, doublon: !!doublon };
+  }
+
+  // Passer sans ecrire (semaine deja presente, confirme par l'utilisateur
+  // apres avoir consulte le fichier) : contrairement a la Feuille Maitre,
+  // il est IMPOSSIBLE de "forcer" une ecriture ici sans corrompre le
+  // Tableau (deux colonnes de meme nom) — on marque simplement l'etape
+  // comme deja couverte, sans toucher au fichier.
+  if (options && options.ignorerDoublon) {
+    await db.execute({
+      sql: `UPDATE feuilles_temps SET etape = 3, statut = 'ajoute_suivi', generation_erreur = ? WHERE id = ?`,
+      args: [`Semaine déjà présente dans ABCD-COPIE.xlsx — passage à la révision sans nouvelle écriture (confirmé manuellement).`, id],
+    });
+    return { ok: true, ignoree: true };
   }
 
   try {
@@ -227,15 +251,17 @@ async function appliquerEtape3(db, id) {
     });
     return { ok: true };
   } catch (e) {
-    return marquerErreur(e.message);
+    return marquerErreur(e.message, e.doublon);
   }
 }
 
 // Relance l'etape 3 (ex: apres avoir ajoute manuellement dans Excel un
-// projet manquant signale par le controle de coherence).
+// projet manquant signale par le controle de coherence, ou confirmer="1"
+// pour passer sans ecrire malgre un doublon deja detecte).
 router.post('/:id/relancer-etape3', async (req, res) => {
   const db = req.db;
-  const resultat = await appliquerEtape3(db, req.params.id);
+  const options = req.body && req.body.confirmer === '1' ? { ignorerDoublon: true } : undefined;
+  const resultat = await appliquerEtape3(db, req.params.id, options);
   if (!resultat.ok) console.error('[heures] relance etape 3 echouee pour', req.params.id, ':', resultat.erreur);
   res.redirect('/heures/' + req.params.id);
 });

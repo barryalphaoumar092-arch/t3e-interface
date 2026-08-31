@@ -180,7 +180,15 @@ async function ajouterSemaineDansSuivi(bufferSuivi, bufferCorrige, semaine) {
   const feuilleVerif = wbVerif.Sheets[NOM_FEUILLE];
   const enteteVerif = XLSX.utils.sheet_to_json(feuilleVerif, { header: 1, range: 0 })[0] || [];
   if (enteteVerif.slice(PREMIERE_COL_SEMAINE - 1).some(v => normaliser(v) === labelSemaine)) {
-    throw new Error(`La semaine "${labelSemaine}" existe déjà dans ABCD-COPIE.xlsx — dépôt en double, rien n'a été modifié. Si cette semaine doit vraiment être corrigée, supprimez d'abord manuellement sa colonne dans Excel.`);
+    // Contrairement a la Feuille Maitre, il est IMPOSSIBLE de "forcer" ici :
+    // deux colonnes de Tableau avec le meme nom sont invalides pour Excel,
+    // peu importe l'intention — jamais de contournement qui corromprait le
+    // fichier. err.doublon permet a la route appelante de proposer de
+    // passer a l'etape suivante SANS ecrire (semaine deja presente = deja
+    // couverte), plutot que de re-essayer en boucle.
+    const err = new Error(`La semaine "${labelSemaine}" existe déjà dans ABCD-COPIE.xlsx — dépôt en double, rien n'a été modifié. Si cette semaine doit vraiment être corrigée, supprimez d'abord manuellement sa colonne dans Excel.`);
+    err.doublon = true;
+    throw err;
   }
 
   // Lecture (XLSX/SheetJS, jamais de re-ecriture par cette lib) des lignes
