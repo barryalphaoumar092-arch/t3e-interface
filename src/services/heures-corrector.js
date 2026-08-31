@@ -15,7 +15,7 @@
 // apparait deux fois dans le brut (colonnes 30 et 33) -- les deux sont
 // conservees separement (voir resolveHeaders).
 const COLONNES_GARDEES = [
-  'No, Projet', 'Task', 'User', 'Started at', 'Completed at', 'datetimeinput_0',
+  ' ', 'No, Projet', 'Task', 'User', 'Started at', 'Completed at', 'datetimeinput_0',
   'contremaitre', 'nom', 'prénom', 'numéro_employé', 'catégorie_employé',
   'déplacement', 'début_hors_chantier', 'début_chantier', 'fin_chantier',
   'fin_hors_chantier', 'Diner?', 'total_hors_chantier', 'total_chantier',

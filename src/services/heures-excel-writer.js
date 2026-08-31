@@ -75,8 +75,13 @@ async function corrigerDepot(buffer, mappingSemaines) {
       // Colonnes a garder, dans l'ORDRE d'origine (verifie : l'ordre des 44
       // colonnes de reference est deja un sous-ensemble ordonne des colonnes
       // brutes — aucun reordonnancement necessaire, seulement un filtre).
+      // Trim des deux cotes pour que la colonne d'en-tete vide (" ", en tete
+      // de fichier, largeur 36 — presente dans le brut ET la reference)
+      // matche correctement (sinon cle="" ne trouve jamais comptesGardees[" "]
+      // et cette colonne etait silencieusement perdue — bug constate en test
+      // reel : rendu s'arretant a AQ au lieu de AR).
       const comptesGardees = {};
-      COLONNES_GARDEES.forEach(nom => { comptesGardees[nom] = (comptesGardees[nom] || 0) + 1; });
+      COLONNES_GARDEES.forEach(nom => { const cle = nom.trim(); comptesGardees[cle] = (comptesGardees[cle] || 0) + 1; });
       const vusBrut = {};
       const colsAGarder = [];
       entetesBrutes.forEach((nom, i) => {
