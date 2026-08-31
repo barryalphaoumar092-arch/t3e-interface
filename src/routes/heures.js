@@ -223,7 +223,7 @@ router.post('/:id/valider-etape2', async (req, res) => {
 
 // Confirmation finale (etape 3) : envoie le document final a jchoiniere et
 // clot le cycle pour cette semaine — la plateforme redevient "rien a faire"
-// jusqu'au prochain depot de Josiane (voir plan).
+// jusqu'au prochain depot d'une feuille de temps (voir plan).
 router.post('/:id/valider-etape3', async (req, res) => {
   const db = req.db;
   const r = await db.execute({ sql: 'SELECT * FROM feuilles_temps WHERE id = ?', args: [req.params.id] });
@@ -240,7 +240,7 @@ router.post('/:id/valider-etape3', async (req, res) => {
   res.redirect('/heures/' + row.id);
 });
 
-// Etape 1b : Josiane a associe une semaine (debut/fin, format YYYY-MM-DD) a
+// Etape 1b : une semaine (debut/fin, format YYYY-MM-DD) a ete associee a
 // chaque onglet retenu — cree UNE ligne par onglet et lance la correction.
 router.post('/deposer', async (req, res) => {
   const db = req.db;

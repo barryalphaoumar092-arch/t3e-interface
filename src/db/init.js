@@ -270,7 +270,8 @@ async function initDb() {
 
   const migrationsHeures = [
     // Module « Heures » (feuilles de temps) — voir plan squishy-skipping-cook.
-    // Un depot (Josiane) peut contenir plusieurs semaines (onglets) ; chaque
+    // Un depot (Joel/projets, feuille de temps recue par courriel de
+    // Josiane) peut contenir plusieurs semaines (onglets) ; chaque
     // semaine devient sa PROPRE ligne des l'etape 1, suivie independamment a
     // travers les 3 etapes (correction -> feuille maitre -> suivi des heures).
     `CREATE TABLE IF NOT EXISTS feuilles_temps (
