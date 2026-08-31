@@ -203,7 +203,18 @@ async function ajouterSemaineDansSuivi(bufferSuivi, bufferCorrige, semaine) {
       : celluleNouvelleColonne(numLigne, valeur);
     // Insere juste apres la cellule H{numLigne} (H est toujours avant I,
     // jamais decalee) — recherche du fermant de cette cellule specifique.
-    const regexH = new RegExp(`(<c r="H${numLigne}"[^>]*(?:/>|>.*?</c>))`);
+    //
+    // PIEGE (corrige apres l'avoir constate en test reel — desordre de
+    // colonnes dans plusieurs lignes, fichier rejete par Excel) : un
+    // quantificateur GLOUTON [^>]* avant l'alternative "/>" consomme aussi
+    // le caractere "/", empechant "/>" de matcher pour une cellule H VIDE
+    // (auto-fermante, ex. <c r="H62" s="14"/>) — l'expression tombe alors
+    // dans la branche ">.*?</c>" qui avale tout jusqu'au PROCHAIN </c> du
+    // reste de la ligne, deplaçant l'insertion au mauvais endroit. Deux
+    // alternatives SEPAREES avec quantificateur LAZY [^>]*? evitent ce piege
+    // (le lazy s'arrete des que "/>" peut matcher, sans jamais consommer le
+    // "/" necessaire).
+    const regexH = new RegExp(`(<c r="H${numLigne}"[^>]*?/>|<c r="H${numLigne}"[^>]*>.*?</c>)`);
     const avecNouvelleCellule = regexH.test(contenuDecale)
       ? contenuDecale.replace(regexH, `$1${nouvelleCellule}`)
       : nouvelleCellule + contenuDecale; // securite si H absente (ne devrait pas arriver)
