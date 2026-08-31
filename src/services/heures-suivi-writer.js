@@ -170,6 +170,19 @@ async function ajouterSemaineDansSuivi(bufferSuivi, bufferCorrige, semaine) {
   const { parProjetMetier, totalBrut, totalNonClasse } = calculerRepartitionMetier(bufferCorrige);
   const labelSemaine = `${formatCourt(semaine.debut)} au ${formatCourt(semaine.fin)}`;
 
+  // Garde-fou OBLIGATOIRE : une semaine deja presente comme colonne de
+  // Tableau1 produirait un NOM DE COLONNE EN DOUBLE si on l'ajoutait a
+  // nouveau — invalide (Excel exige des noms de colonnes de tableau
+  // uniques), constate en test reel (fichier rejete par Excel, aucune
+  // erreur XML detectable, seul un examen approfondi du Tableau la
+  // revelait). On verifie AVANT toute manipulation XML, jamais apres.
+  const wbVerif = XLSX.read(bufferSuivi, { type: 'buffer' });
+  const feuilleVerif = wbVerif.Sheets[NOM_FEUILLE];
+  const enteteVerif = XLSX.utils.sheet_to_json(feuilleVerif, { header: 1, range: 0 })[0] || [];
+  if (enteteVerif.slice(PREMIERE_COL_SEMAINE - 1).some(v => normaliser(v) === labelSemaine)) {
+    throw new Error(`La semaine "${labelSemaine}" existe déjà dans ABCD-COPIE.xlsx — dépôt en double, rien n'a été modifié. Si cette semaine doit vraiment être corrigée, supprimez d'abord manuellement sa colonne dans Excel.`);
+  }
+
   // Lecture (XLSX/SheetJS, jamais de re-ecriture par cette lib) des lignes
   // existantes pour retrouver quel numero de ligne correspond a quel
   // (projet, metier) — necessaire pour savoir OU ecrire chaque valeur.

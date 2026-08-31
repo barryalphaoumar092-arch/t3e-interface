@@ -174,6 +174,24 @@ async function ajouterSemaineDansMaitre(bufferMaitre, bufferCorrige, semaine) {
   const { entetes: entetesCorrige, lignes: lignesCorrigees } = lireFeuilleCorrigee(bufferCorrige);
   const mapping = construireMapping(entetesCorrige);
 
+  // Garde-fou : si des lignes existantes du maitre couvrent DEJA cette
+  // periode (colonne "Date"), c'est un depot en double — on refuse plutot
+  // que de dupliquer silencieusement des heures deja comptabilisees.
+  const idxDateMaitre = COLONNES_MAITRE.indexOf('Date'); // 1ere occurrence
+  const wbVerif = XLSX.read(bufferMaitre, { type: 'buffer', cellDates: true });
+  const feuilleVerif = wbVerif.Sheets[NOM_FEUILLE_MAITRE];
+  const lignesVerif = XLSX.utils.sheet_to_json(feuilleVerif, { header: 1, defval: null });
+  const debut = new Date(semaine.debut), fin = new Date(semaine.fin);
+  const dejaPresent = lignesVerif.slice(1).some(ligne => {
+    const v = ligne[idxDateMaitre];
+    if (!v) return false;
+    const d = v instanceof Date ? v : new Date(v);
+    return !isNaN(d) && d >= debut && d <= fin;
+  });
+  if (dejaPresent) {
+    throw new Error(`Des lignes couvrant la période ${semaine.debut} au ${semaine.fin} existent déjà dans Feuilles Maître heures - 2026.xlsx — dépôt en double, rien n'a été modifié.`);
+  }
+
   const zip = await JSZip.loadAsync(bufferMaitre);
   const cheminFeuille = await trouverCheminFeuille(zip, NOM_FEUILLE_MAITRE);
   let xml = await zip.file(cheminFeuille).async('string');
