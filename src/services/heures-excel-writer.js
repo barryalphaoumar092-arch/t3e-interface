@@ -127,15 +127,25 @@ async function corrigerDepot(buffer, mappingSemaines) {
         });
       });
 
-      // Pivot (Feuil2) — feuille neuve, aucune mise en forme a preserver.
+      // Pivot (Feuil2) — feuille neuve, aucune mise en forme a preserver de
+      // l'original. Reproduit precisement l'apparence d'un vrai PivotTable
+      // Excel en mode "compact" (verifie cellule par cellule sur un fichier
+      // de reference reel via Excel COM) : PAS de gras, PAS de bordure —
+      // seule l'indentation croissante (0=projet, 1=employe, 2=date) cree
+      // l'effet d'arbre visuel. Largeurs de colonnes copiees de la reference.
       const entetesFinales = colsAGarder.map((_, i) => String(wsCible.getCell(1, i + 1).value || ''));
       const lignesFinales = rowsAGarder.map((_, r) => colsAGarder.map((_, c) => wsCible.getCell(r + 2, c + 1).value));
       const pivot = construirePivotStatique(entetesFinales, lignesFinales);
       const feuilPivot = wbCible.addWorksheet('Feuil2');
+      feuilPivot.getColumn(1).width = 27.86;
+      feuilPivot.getColumn(2).width = 15.86;
       feuilPivot.addRow([]);
       feuilPivot.addRow([]);
-      for (const ligne of pivot) feuilPivot.addRow(ligne);
-      feuilPivot.getRow(3).font = { bold: true };
+      for (const { texte, valeur, niveau } of pivot) {
+        const ligne = feuilPivot.addRow([texte, valeur]);
+        ligne.getCell(1).alignment = { indent: niveau };
+        ligne.getCell(2).numFmt = 'General';
+      }
 
       const labelSemaine = `${semaine.debut} au ${semaine.fin}`;
       const fichier = Buffer.from(await wbCible.xlsx.writeBuffer());

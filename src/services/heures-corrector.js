@@ -124,18 +124,23 @@ function parseHeuresNombre(v) {
 // niveau, une colonne "Somme de Hours"). PAS un vrai PivotTable Excel natif
 // (risque technique non valide avec exceljs sans environnement de test local
 // — voir plan, fallback assume).
+// Retourne des lignes {texte, valeur, niveau} — niveau = profondeur d'indentation
+// (0=projet, 1=employe, 2=date), reproduisant la mise en forme "compacte" d'un
+// vrai PivotTable Excel (indentation croissante, PAS de gras/bordure — verifie
+// cellule par cellule sur un fichier de reference reel via Excel COM).
+// La colonne "Date" (pas "Started at", qui contient une heure) est utilisee,
+// pour matcher exactement le champ utilise par le vrai PivotTable de reference.
 function construirePivotStatique(entetes, lignes) {
   const idxProjet = entetes.indexOf('No, Projet');
   const idxUser = entetes.indexOf('User');
-  const idxDate = entetes.indexOf('Started at');
+  const idxDate = entetes.indexOf('Date');
   const idxHeures = entetes.indexOf('Hours');
 
   const parProjet = new Map();
   for (const ligne of lignes) {
     const projet = String(ligne[idxProjet] || '').trim();
     const user = String(ligne[idxUser] || '').trim();
-    const dateBrute = ligne[idxDate];
-    const date = dateBrute ? String(dateBrute).slice(0, 10) : '';
+    const date = String(ligne[idxDate] || '').trim().slice(0, 10);
     const heures = parseHeuresNombre(ligne[idxHeures]);
     if (!projet) continue;
 
@@ -148,13 +153,13 @@ function construirePivotStatique(entetes, lignes) {
     u.dates.set(date, (u.dates.get(date) || 0) + heures);
   }
 
-  const rows = [['Étiquettes de lignes', 'Somme de Hours']];
+  const rows = [{ texte: 'Étiquettes de lignes', valeur: 'Somme de Hours', niveau: 0 }];
   for (const [projet, p] of parProjet) {
-    rows.push([projet, Math.round(p.total * 100) / 100]);
+    rows.push({ texte: projet, valeur: Math.round(p.total * 100) / 100, niveau: 0 });
     for (const [user, u] of p.users) {
-      rows.push([user, Math.round(u.total * 100) / 100]);
+      rows.push({ texte: user, valeur: Math.round(u.total * 100) / 100, niveau: 1 });
       for (const [date, h] of u.dates) {
-        if (date) rows.push([date, Math.round(h * 100) / 100]);
+        if (date) rows.push({ texte: date, valeur: Math.round(h * 100) / 100, niveau: 2 });
       }
     }
   }
