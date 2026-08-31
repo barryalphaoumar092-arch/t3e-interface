@@ -180,11 +180,14 @@ async function appliquerEtape3(db, id) {
     const bufferSuivi = await downloadBuffer(BUCKETS.HEURES_MAITRES, SUIVI_KEY);
     if (!bufferSuivi) return marquerErreur(`fichier de suivi non initialisé — utiliser /heures/admin/importer-suivi (clé attendue: ${SUIVI_KEY})`);
 
-    const { buffer, totalEcrit, totalAClasser, totalNonClasse } = await ajouterSemaineDansSuivi(bufferSuivi, bufferCorrige, { debut: row.semaine_debut, fin: row.semaine_fin });
+    const { buffer, totalEcrit, totalAClasser, totalNonClasse, projetsNonTrouves } = await ajouterSemaineDansSuivi(bufferSuivi, bufferCorrige, { debut: row.semaine_debut, fin: row.semaine_fin });
 
     const ecart = Math.round((totalEcrit - totalAClasser) * 100) / 100;
     if (Math.abs(ecart) > 0.1) {
-      return marquerErreur(`Écart de cohérence détecté : ${totalEcrit}h écrites dans ABCD-COPIE.xlsx vs ${totalAClasser}h attendues (${row.semaine_debut} au ${row.semaine_fin}) — écriture annulée, rien n'a été publié.`);
+      const detailProjets = projetsNonTrouves && projetsNonTrouves.length
+        ? ` Projet(s) absent(s) de ABCD-COPIE.xlsx (à ajouter manuellement si besoin) : ${projetsNonTrouves.join(', ')}.`
+        : '';
+      return marquerErreur(`Écart de cohérence détecté : ${totalEcrit}h écrites dans ABCD-COPIE.xlsx vs ${totalAClasser}h attendues (${row.semaine_debut} au ${row.semaine_fin}) — écriture annulée, rien n'a été publié.${detailProjets}`);
     }
 
     await uploadBuffer(BUCKETS.HEURES_MAITRES, SUIVI_KEY, buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -202,6 +205,15 @@ async function appliquerEtape3(db, id) {
     return marquerErreur(e.message);
   }
 }
+
+// Relance l'etape 3 (ex: apres avoir ajoute manuellement dans Excel un
+// projet manquant signale par le controle de coherence).
+router.post('/:id/relancer-etape3', async (req, res) => {
+  const db = req.db;
+  const resultat = await appliquerEtape3(db, req.params.id);
+  if (!resultat.ok) console.error('[heures] relance etape 3 echouee pour', req.params.id, ':', resultat.erreur);
+  res.redirect('/heures/' + req.params.id);
+});
 
 router.get('/:id/telecharger-suivi', async (req, res) => {
   const url = await createSignedUrl(BUCKETS.HEURES_MAITRES, SUIVI_KEY, 300, SUIVI_KEY);

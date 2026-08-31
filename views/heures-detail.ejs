@@ -28,6 +28,11 @@ var infosLignes = f.lignes_corrigees ? JSON.parse(f.lignes_corrigees) : null;
 <form method="POST" action="/heures/<%= f.id %>/relancer">
   <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-arrow-clockwise"></i> Réessayer</button>
 </form>
+<% } else if (f.etape === 2) { %>
+<p class="small text-muted">Après avoir corrigé le problème (ex. ajouté un projet manquant dans ABCD-COPIE.xlsx), relancez l'étape 3 :</p>
+<form method="POST" action="/heures/<%= f.id %>/relancer-etape3">
+  <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-arrow-clockwise"></i> Réessayer l'étape 3</button>
+</form>
 <% } %>
 <% } %>
 
