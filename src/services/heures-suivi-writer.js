@@ -106,24 +106,48 @@ async function trouverCheminFeuille(zip, nomFeuille) {
   return `xl/worksheets/${mRel[1]}`;
 }
 
-// Decale toutes les references de colonnes (>= I) dans le contenu d'UNE
-// ligne <row>...</row> : les attributs r="XN" des cellules, ET le texte des
-// formules <f>...</f> (portee generique — toute sequence LETTRES+chiffres
-// a l'interieur d'une formule est forcement une reference de cellule/plage,
-// jamais du texte libre, contrairement au reste du XML).
-function decalerLigneXml(ligneXml) {
-  let out = ligneXml.replace(/r="([A-Z]{1,3})(\d+)"/g, (m, lettres, chiffre) => `r="${decalerRef(lettres)}${chiffre}"`);
-  out = out.replace(/<f([^>]*)>([^<]*)<\/f>/g, (m, attrs, formule) => {
-    const formuleDecalee = formule.replace(/([A-Z]{1,3})(\d*)/g, (m2, lettres, chiffres) => {
-      // Ignore les identifiants type "Tableau1"/noms de fonctions deja geres
-      // par le fait qu'ils ne matchent PAS le motif LETTRES(chiffres?) seul
-      // entoure de crochets structures — les refs structurees Tableau1[[...]]
-      // ne contiennent pas de token LETTRES+chiffres isole, donc jamais
-      // touchees par ce remplacement (verifie sur les formules reelles).
-      return decalerRef(lettres) + chiffres;
-    });
-    return `<f${attrs}>${formuleDecalee}</f>`;
-  });
+// Decale le texte d'une formule (attribut ref="" des formules partagees
+// INCLUS, ex: <f t="shared" ref="X2:X10" si="0">) et son contenu textuel —
+// toute sequence LETTRES+chiffres y est forcement une reference de
+// cellule/plage, jamais du texte libre.
+function decalerFormule(formuleXml) {
+  return formuleXml.replace(/([A-Z]{1,3})(\d*)/g, (m, lettres, chiffres) => decalerRef(lettres) + chiffres);
+}
+
+// Decoupe le contenu d'UNE ligne <row>...</row> en tableau ordonne de
+// {colIndex, ref, xml} — un element par cellule <c .../> ou <c ...>...</c>.
+//
+// PIEGES DECOUVERTS ET CORRIGES (constates en test reel, fichier rejete par
+// Excel — desordre de colonnes que seule une inspection ligne par ligne
+// revelait, aucune erreur de syntaxe XML) :
+// - Un quantificateur [^>]* GLOUTON avant l'alternative "/>" consomme aussi
+//   le "/" necessaire, empechant "/>" de matcher pour une cellule VIDE
+//   auto-fermante (tres frequente) — la regex tombe alors dans l'autre
+//   branche et avale tout jusqu'au PROCHAIN </c> ailleurs dans la ligne.
+// - Splicer une nouvelle cellule DANS une chaine de caracteres (au lieu de
+//   manipuler une structure) rend ce genre d'erreur quasi impossible a
+//   detecter sans comparer ligne par ligne au resultat attendu.
+// Solution : tokeniser TOUTE la ligne en tableau structure une seule fois
+// (jamais de recherche/insertion ad-hoc dans une chaine), avec DEUX
+// alternatives SEPAREES et un quantificateur LAZY qui s'arrete des que
+// possible sans jamais consommer le "/" necessaire.
+const REGEX_CELLULE = /<c r="([A-Z]{1,3})\d+"[^>]*?\/>|<c r="([A-Z]{1,3})\d+"[^>]*>.*?<\/c>/g;
+
+function tokeniserLigne(contenuLigne) {
+  const cellules = [];
+  for (const m of contenuLigne.matchAll(REGEX_CELLULE)) {
+    const lettres = m[1] || m[2];
+    cellules.push({ colIndex: nombreDeColonne(lettres), xml: m[0] });
+  }
+  return cellules;
+}
+
+// Decale les refs (attribut r="") ET le contenu des formules <f> d'UNE
+// cellule deja tokenisee — jamais de manipulation de chaine en dehors de
+// cette cellule isolee (plus de risque de deborder sur la cellule suivante).
+function decalerCelluleXml(celluleXml) {
+  let out = celluleXml.replace(/^<c r="([A-Z]{1,3})(\d+)"/, (m, lettres, chiffre) => `<c r="${decalerRef(lettres)}${chiffre}"`);
+  out = out.replace(/<f([^>]*)>([^<]*)<\/f>/g, (m, attrs, formule) => `<f${decalerFormule(attrs)}>${decalerFormule(formule)}</f>`);
   return out;
 }
 
@@ -190,35 +214,38 @@ async function ajouterSemaineDansSuivi(bufferSuivi, bufferCorrige, semaine) {
     xml = xml.replace(mCols[0], `<cols>${nouveauCol}${colsDecales}</cols>`);
   }
 
-  // Traite le sheetData ligne par ligne : decale toutes les refs de colonnes
-  // >= I, puis insere la nouvelle cellule (valeur si trouvee, sinon vide)
-  // juste apres la cellule H (Hrs Réelles).
+  // Traite le sheetData ligne par ligne via un tableau structure de cellules
+  // (jamais de recherche/insertion ad-hoc dans une chaine de caracteres —
+  // voir les commentaires de tokeniserLigne pour l'historique des bugs que
+  // cette approche corrige) : decale chaque cellule de colonne >= I, puis
+  // insere la nouvelle cellule juste apres H (Hrs Réelles) en comparant les
+  // colIndex, jamais en cherchant un motif textuel.
   xml = xml.replace(/<row r="(\d+)"([^>]*)>(.*?)<\/row>/gs, (m, numLigneStr, attrsRow, contenu) => {
     const numLigne = parseInt(numLigneStr, 10);
     const attrsDecales = attrsRow.replace(/spans="1:(\d+)"/, (m2, n) => `spans="1:${parseInt(n, 10) + 1}"`);
-    const contenuDecale = decalerLigneXml(contenu);
+
+    const cellules = tokeniserLigne(contenu);
+    const celluleXmlFinale = cellules.map(c =>
+      c.colIndex >= PREMIERE_COL_SEMAINE ? { colIndex: c.colIndex + 1, xml: decalerCelluleXml(c.xml) } : c
+    );
+
     const valeur = numLigne === 1 ? null : (valeurParLigne.has(numLigne) ? valeurParLigne.get(numLigne) : null);
     const nouvelleCellule = numLigne === 1
       ? `<c r="I1" t="inlineStr"><is><t xml:space="preserve">${echapperXml(labelSemaine)}</t></is></c>`
       : celluleNouvelleColonne(numLigne, valeur);
-    // Insere juste apres la cellule H{numLigne} (H est toujours avant I,
-    // jamais decalee) — recherche du fermant de cette cellule specifique.
-    //
-    // PIEGE (corrige apres l'avoir constate en test reel — desordre de
-    // colonnes dans plusieurs lignes, fichier rejete par Excel) : un
-    // quantificateur GLOUTON [^>]* avant l'alternative "/>" consomme aussi
-    // le caractere "/", empechant "/>" de matcher pour une cellule H VIDE
-    // (auto-fermante, ex. <c r="H62" s="14"/>) — l'expression tombe alors
-    // dans la branche ">.*?</c>" qui avale tout jusqu'au PROCHAIN </c> du
-    // reste de la ligne, deplaçant l'insertion au mauvais endroit. Deux
-    // alternatives SEPAREES avec quantificateur LAZY [^>]*? evitent ce piege
-    // (le lazy s'arrete des que "/>" peut matcher, sans jamais consommer le
-    // "/" necessaire).
-    const regexH = new RegExp(`(<c r="H${numLigne}"[^>]*?/>|<c r="H${numLigne}"[^>]*>.*?</c>)`);
-    const avecNouvelleCellule = regexH.test(contenuDecale)
-      ? contenuDecale.replace(regexH, `$1${nouvelleCellule}`)
-      : nouvelleCellule + contenuDecale; // securite si H absente (ne devrait pas arriver)
-    return `<row r="${numLigneStr}"${attrsDecales}>${avecNouvelleCellule}</row>`;
+
+    // Insere au bon endroit selon l'ordre des colIndex (juste avant la 1ere
+    // cellule decalee >= J, c-a-d juste apres H) — jamais par recherche
+    // textuelle, toujours par comparaison numerique de position.
+    let inseree = false;
+    const parties = [];
+    for (const c of celluleXmlFinale) {
+      if (!inseree && c.colIndex > PREMIERE_COL_SEMAINE) { parties.push(nouvelleCellule); inseree = true; }
+      parties.push(c.xml);
+    }
+    if (!inseree) parties.push(nouvelleCellule); // securite si la ligne s'arrete avant/a H
+
+    return `<row r="${numLigneStr}"${attrsDecales}>${parties.join('')}</row>`;
   });
 
   // Mise en forme conditionnelle rouge PERMANENTE (Hrs Réelles > Hrs
