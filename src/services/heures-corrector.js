@@ -37,16 +37,21 @@ const COLONNES_SUPPRIMEES_CONNUES = [
 
 // Codes projet a exclure automatiquement (confirmes absents de tous les
 // fichiers deja corriges) : commence par R- ou I-, ou se termine par SHOP.
+// RS- et Garantie- ajoutes suite a une comparaison cellule par cellule avec
+// les fichiers deja corriges manuellement (voir session) : ces codes (avec
+// de vraies heures associees) sont absents de TOUS les fichiers de
+// reference, confirmes par l'utilisateur comme categories non-projet
+// (comme R-/I-/SHOP) a exclure systematiquement.
 function estProjetExclu(code) {
   const c = String(code || '').trim();
   if (!c) return false;
-  return /^R-/i.test(c) || /^I-/i.test(c) || /SHOP$/i.test(c);
+  return /^R-/i.test(c) || /^I-/i.test(c) || /SHOP$/i.test(c) || /^RS-/i.test(c) || /^Garantie-/i.test(c);
 }
 
 // Un code "standard" ressemble a NN-NNN (ex: 26-057) ou NN-NNNN. Tout code
 // non standard qui n'est PAS deja exclu par estProjetExclu() est ambigu —
 // jamais decide silencieusement, toujours remonte au reviseur (voir plan :
-// "26-00JC", "26-040P", "Garantie-2" rencontres cette session).
+// "26-00JC", "26-040P" rencontres cette session).
 function estCodeStandard(code) {
   return /^\d{2}-\d{3,5}[A-Z]?$/i.test(String(code || '').trim());
 }
