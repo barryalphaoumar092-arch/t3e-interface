@@ -90,15 +90,27 @@ async function corrigerDepot(buffer, mappingSemaines) {
         if (vusBrut[cle] <= (comptesGardees[cle] || 0)) colsAGarder.push(i + 1);
       });
 
-      // Lignes a garder (exclut R-/I-/SHOP et lignes vides) + signalement
-      // des codes non standards (ni exclus, ni reconnus).
+      // Lignes a garder (exclut R-/I-/SHOP et lignes VRAIMENT vides) +
+      // signalement des codes non standards (ni exclus, ni reconnus).
+      //
+      // IMPORTANT : une ligne separatrice/de remplissage du brut a TOUTES
+      // ses colonnes vides — une ligne avec des donnees reelles (employe,
+      // heures) mais un code projet vide N'EST PAS une ligne vide (constate
+      // en test reel : une entree "walnut" / code vide, 5,25h, etait
+      // silencieusement perdue alors que le fichier de reference la garde).
+      // On ne supprime que les vraies lignes vides (aucune colonne remplie),
+      // jamais sur le seul critere du code projet.
       const rowsAGarder = [];
       const lignesExclues = [];
       const codesAConfirmerSet = new Set();
       const nbLignesSource = wsSource.rowCount;
       for (let r = 2; r <= nbLignesSource; r++) {
+        const rowVals = wsSource.getRow(r).values || [];
+        const ligneEntierementVide = rowVals.every(v => v === null || v === undefined || v === '');
+        if (ligneEntierementVide) continue;
+
         const code = String(wsSource.getCell(r, idxProjetBrut).value || '').trim();
-        if (!code) continue; // ligne vide (separateur brut)
+        if (!code) { codesAConfirmerSet.add('(code projet vide)'); rowsAGarder.push(r); continue; }
         if (estProjetExclu(code)) { lignesExclues.push({ code }); continue; }
         if (!estCodeStandard(code)) codesAConfirmerSet.add(code);
         rowsAGarder.push(r);
