@@ -9,19 +9,21 @@ const { envoyerNotificationEtape, envoyerDocumentFinal } = require('../services/
 
 const SUIVI_KEY = 'ABCD-COPIE.xlsx';
 
-// Avant CHAQUE ecriture dans un fichier de reference (Feuille Maitre ou
-// Suivi des heures), on sauvegarde une copie horodatee de la version
-// ACTUELLE (avant modification) dans le meme bucket — jamais de
-// modification "a chaud" sans filet : si une ecriture s'avere mauvaise
-// malgre les controles, la version precedente reste recuperable
-// (telechargement manuel depuis Supabase Storage, dossier "sauvegardes/").
-async function sauvegarderAvantEcriture(cle, buffer) {
-  const horodatage = new Date().toISOString().replace(/[:.]/g, '-');
-  const cleBackup = `sauvegardes/${horodatage}-${cle}`;
+// UNE SEULE sauvegarde par fichier — l'etat d'ORIGINE, tel qu'il etait
+// avant que la plateforme ne commence a le modifier. Jamais de nouvelle
+// copie a chaque semaine (ca polluerait le stockage) : la copie
+// "sauvegardes/original-{cle}" n'est creee que la toute premiere fois
+// (si elle n'existe pas deja), puis conservee telle quelle indefiniment —
+// le fichier de travail (MASTER_KEY/SUIVI_KEY), lui, evolue normalement
+// chaque semaine.
+async function sauvegarderOriginalSiAbsent(cle, buffer) {
+  const cleBackup = `sauvegardes/original-${cle}`;
   try {
+    const dejaPresent = await downloadBuffer(BUCKETS.HEURES_MAITRES, cleBackup);
+    if (dejaPresent) return;
     await uploadBuffer(BUCKETS.HEURES_MAITRES, cleBackup, buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   } catch (e) {
-    console.error('[heures] sauvegarde avant ecriture echouee (non bloquant):', e.message);
+    console.error('[heures] sauvegarde de l\'original echouee (non bloquant):', e.message);
   }
 }
 
@@ -147,7 +149,7 @@ async function appliquerEtape2(db, id) {
     // modifie en place — ajouterSemaineDansMaitre travaille sur sa propre
     // copie JSZip) — et on sauvegarde la version actuelle juste avant, au
     // cas ou.
-    await sauvegarderAvantEcriture(MASTER_KEY, bufferMaitre);
+    await sauvegarderOriginalSiAbsent(MASTER_KEY, bufferMaitre);
     await uploadBuffer(BUCKETS.HEURES_MAITRES, MASTER_KEY, buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 
     await db.execute({
@@ -212,7 +214,7 @@ async function appliquerEtape3(db, id) {
       return marquerErreur(`Écart de cohérence détecté : ${totalEcrit}h écrites dans ABCD-COPIE.xlsx vs ${totalAClasser}h attendues (${row.semaine_debut} au ${row.semaine_fin}) — écriture annulée, rien n'a été publié.${detailProjets}`);
     }
 
-    await sauvegarderAvantEcriture(SUIVI_KEY, bufferSuivi);
+    await sauvegarderOriginalSiAbsent(SUIVI_KEY, bufferSuivi);
     await uploadBuffer(BUCKETS.HEURES_MAITRES, SUIVI_KEY, buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 
     const note = totalNonClasse > 0.1
