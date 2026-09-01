@@ -26,7 +26,7 @@ router.get('/admin/diagnostic-smtp-envoi', async (req, res) => {
     await transporteur.verify();
     const info = await transporteur.sendMail({
       from: process.env.SMTP_USER,
-      to: 'jchoiniere@toiturestroisetoiles.com',
+      to: 'jzoue@toiturestroisetoiles.com',
       subject: 'T3E Interface — Test diagnostic SMTP',
       text: 'Ceci est un test de diagnostic. Si vous recevez ce message, la configuration SMTP fonctionne.',
     });
