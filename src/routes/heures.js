@@ -9,6 +9,33 @@ const { envoyerNotificationEtape, envoyerDocumentFinal, DESTINATAIRES_FINAL_POSS
 
 const SUIVI_KEY = 'ABCD-COPIE.xlsx';
 
+// DIAGNOSTIC TEMPORAIRE — tente un vrai envoi et RENVOIE l'erreur exacte
+// (le flux normal l'avale silencieusement pour ne jamais bloquer la
+// confirmation d'etape 3 a cause d'un probleme SMTP). A retirer une fois
+// le diagnostic termine.
+router.get('/admin/diagnostic-smtp-envoi', async (req, res) => {
+  let nodemailer;
+  try { nodemailer = require('nodemailer'); } catch (e) { return res.json({ erreur: 'nodemailer introuvable: ' + e.message }); }
+  const transporteur = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: parseInt(process.env.SMTP_PORT || '587', 10),
+    secure: false,
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+  });
+  try {
+    await transporteur.verify();
+    const info = await transporteur.sendMail({
+      from: process.env.SMTP_USER,
+      to: 'jchoiniere@toiturestroisetoiles.com',
+      subject: 'T3E Interface — Test diagnostic SMTP',
+      text: 'Ceci est un test de diagnostic. Si vous recevez ce message, la configuration SMTP fonctionne.',
+    });
+    res.json({ ok: true, messageId: info.messageId, response: info.response, accepted: info.accepted, rejected: info.rejected });
+  } catch (e) {
+    res.json({ ok: false, erreur: e.message, code: e.code, command: e.command, responseCode: e.responseCode, response: e.response });
+  }
+});
+
 // UNE SEULE sauvegarde par fichier — l'etat d'ORIGINE, tel qu'il etait
 // avant que la plateforme ne commence a le modifier. Jamais de nouvelle
 // copie a chaque semaine (ca polluerait le stockage) : la copie
