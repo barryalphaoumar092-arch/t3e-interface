@@ -5,9 +5,20 @@ const { downloadBuffer, uploadBuffer, createSignedUrl, removeFile, BUCKETS } = r
 const { lireClasseurBrut, corrigerDepot } = require('../services/heures-excel-writer');
 const { MASTER_KEY, ajouterSemaineDansMaitre } = require('../services/heures-maitre-writer');
 const { ajouterSemaineDansSuivi } = require('../services/heures-suivi-writer');
-const { envoyerNotificationEtape, envoyerDocumentFinal, DESTINATAIRES_FINAL_POSSIBLES } = require('../services/heures-email');
+const { envoyerNotificationEtape, envoyerDocumentFinal, DESTINATAIRES_FINAL_POSSIBLES, isConfigured } = require('../services/heures-email');
 
 const SUIVI_KEY = 'ABCD-COPIE.xlsx';
+
+// DIAGNOSTIC TEMPORAIRE — verifie la config SMTP sans envoyer de courriel.
+// A retirer une fois le diagnostic termine.
+router.get('/admin/diagnostic-smtp', (req, res) => {
+  res.json({
+    smtpConfigure: isConfigured(),
+    smtpHostPresent: !!process.env.SMTP_HOST,
+    smtpUserPresent: !!process.env.SMTP_USER,
+    smtpPassPresent: !!process.env.SMTP_PASS,
+  });
+});
 
 // UNE SEULE sauvegarde par fichier — l'etat d'ORIGINE, tel qu'il etait
 // avant que la plateforme ne commence a le modifier. Jamais de nouvelle
