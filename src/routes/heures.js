@@ -5,7 +5,7 @@ const { downloadBuffer, uploadBuffer, createSignedUrl, removeFile, BUCKETS } = r
 const { lireClasseurBrut, corrigerDepot } = require('../services/heures-excel-writer');
 const { MASTER_KEY, ajouterSemaineDansMaitre } = require('../services/heures-maitre-writer');
 const { ajouterSemaineDansSuivi } = require('../services/heures-suivi-writer');
-const { envoyerNotificationEtape, envoyerDocumentFinal } = require('../services/heures-email');
+const { envoyerNotificationEtape, envoyerDocumentFinal, DESTINATAIRES_FINAL_POSSIBLES } = require('../services/heures-email');
 
 const SUIVI_KEY = 'ABCD-COPIE.xlsx';
 
@@ -293,8 +293,18 @@ router.post('/:id/valider-etape3', async (req, res) => {
   if (r.rows.length === 0) return res.status(404).send('Introuvable');
   const row = r.rows[0];
 
+  // Destinataires CHOISIS par Joel/projets sur le formulaire (demande
+  // utilisateur — jamais d'envoi automatique a une liste fixe) — au moins
+  // un destinataire valide requis, sinon on bloque plutot que de "confirmer"
+  // silencieusement sans jamais avoir prevenu personne.
+  const brut = req.body && req.body.destinataires;
+  const cles = (Array.isArray(brut) ? brut : (brut ? [brut] : [])).filter(c => DESTINATAIRES_FINAL_POSSIBLES[c]);
+  if (cles.length === 0) {
+    return res.status(400).send('Veuillez sélectionner au moins un destinataire avant de confirmer. <a href="javascript:history.back()">Retour</a>');
+  }
+
   const lien = await createSignedUrl(BUCKETS.HEURES_MAITRES, SUIVI_KEY, 300, SUIVI_KEY);
-  try { await envoyerDocumentFinal(lien, row); } catch (e) { console.error('[heures] envoi document final echoue (non bloquant):', e.message); }
+  try { await envoyerDocumentFinal(lien, row, cles); } catch (e) { console.error('[heures] envoi document final echoue (non bloquant):', e.message); }
 
   await db.execute({
     sql: `UPDATE feuilles_temps SET statut = 'termine', valide_etape3_par = ?, updated_at = datetime('now') WHERE id = ?`,
@@ -361,7 +371,7 @@ router.get('/:id', async (req, res) => {
   const db = req.db;
   const r = await db.execute({ sql: 'SELECT * FROM feuilles_temps WHERE id = ?', args: [req.params.id] });
   if (r.rows.length === 0) return res.status(404).send('Introuvable');
-  res.render('heures-detail', { f: r.rows[0] });
+  res.render('heures-detail', { f: r.rows[0], DESTINATAIRES_FINAL_POSSIBLES });
 });
 
 router.get('/:id/telecharger', async (req, res) => {

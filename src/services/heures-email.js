@@ -27,7 +27,18 @@ function getTransporteur() {
 const DESTINATAIRES_ETAPE = {
   1: process.env.HEURES_NOTIF_REVISION || '',   // Joel + projets : feuilles pretes a reviser
   2: process.env.HEURES_NOTIF_REVISION || '',   // Joel + projets : ajout fait dans la feuille maitre
-  3: process.env.HEURES_NOTIF_FINAL || '',      // document final (suivi des heures)
+};
+
+// Destinataires possibles pour le document final (etape 3) — Joel/projets
+// choisissent explicitement a qui l'envoyer avant chaque envoi (demande
+// utilisateur), plutot qu'une liste fixe automatique. Cle = identifiant
+// stable utilise par le formulaire de selection, jamais l'email brut
+// directement (evite qu'un champ de formulaire trafique envoie a une
+// adresse arbitraire).
+const DESTINATAIRES_FINAL_POSSIBLES = {
+  jeremy: { nom: 'Jeremy', email: 'jchoiniere@toiturestroisetoiles.com' },
+  giancarlo: { nom: 'GianCarlo', email: 'gbellini@toiturestroisetoiles.com' },
+  maxime: { nom: 'Maxime', email: 'mvachon@toiturestroisetoiles.com' },
 };
 
 const BASE_URL = (process.env.SITE_BASE_URL || 'https://t3e-interface.vercel.app').replace(/\/$/, '');
@@ -57,16 +68,25 @@ async function envoyerNotificationEtape(etape, feuilles) {
 }
 
 // Etape 3, confirmation finale : envoie le lien de telechargement du
-// document final (ABCD-COPIE.xlsx) a jchoiniere — lien signe plutot que
-// piece jointe (evite les limites de taille SMTP, coherent avec le reste du
-// site qui privilegie deja les liens signes Supabase pour les gros fichiers).
-async function envoyerDocumentFinal(lienTelechargement, feuille) {
-  const destinataire = process.env.HEURES_NOTIF_FINAL || '';
+// document final (ABCD-COPIE.xlsx) aux destinataires CHOISIS par Joel/
+// projets au moment de l'envoi (voir DESTINATAIRES_FINAL_POSSIBLES) — lien
+// signe plutot que piece jointe (evite les limites de taille SMTP, coherent
+// avec le reste du site qui privilegie deja les liens signes Supabase pour
+// les gros fichiers). cles : sous-ensemble des cles de
+// DESTINATAIRES_FINAL_POSSIBLES ; les cles inconnues sont ignorees (jamais
+// d'envoi a une adresse non prevue).
+async function envoyerDocumentFinal(lienTelechargement, feuille, cles) {
+  const destinataires = (cles || [])
+    .map(cle => DESTINATAIRES_FINAL_POSSIBLES[cle])
+    .filter(Boolean)
+    .map(d => d.email)
+    .join(', ');
+  if (!destinataires) { console.log('[heures-email] aucun destinataire selectionne, envoi final ignore'); return; }
   await envoyer(
-    destinataire,
+    destinataires,
     'T3E Interface — Suivi des heures finalisé',
     `Bonjour,\n\nLe suivi des heures est à jour (semaine ${feuille.semaine_debut} au ${feuille.semaine_fin} intégrée et confirmée).\n\nTélécharger : ${lienTelechargement}\n\n(Lien valide 5 minutes — retéléchargez depuis la plateforme si besoin.)`
   );
 }
 
-module.exports = { isConfigured, envoyerNotificationEtape, envoyerDocumentFinal };
+module.exports = { isConfigured, envoyerNotificationEtape, envoyerDocumentFinal, DESTINATAIRES_FINAL_POSSIBLES };
