@@ -9,28 +9,6 @@ const { envoyerNotificationEtape, envoyerDocumentFinal, DESTINATAIRES_FINAL_POSS
 
 const SUIVI_KEY = 'ABCD-COPIE.xlsx';
 
-// DIAGNOSTIC TEMPORAIRE — tente un vrai envoi Resend et RENVOIE l'erreur
-// exacte. A retirer une fois le diagnostic termine.
-router.get('/admin/diagnostic-resend', async (req, res) => {
-  if (!process.env.RESEND_API_KEY) return res.json({ ok: false, erreur: 'RESEND_API_KEY manquante' });
-  try {
-    const resp = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from: process.env.RESEND_FROM || 'T3E Interface <onboarding@resend.dev>',
-        to: ['projets@toiturestroisetoiles.com'],
-        subject: 'T3E Interface — Test diagnostic Resend',
-        text: 'Ceci est un test de diagnostic. Si vous recevez ce message, la configuration Resend fonctionne.',
-      }),
-    });
-    const corps = await resp.text();
-    res.json({ ok: resp.ok, status: resp.status, corps });
-  } catch (e) {
-    res.json({ ok: false, erreur: e.message });
-  }
-});
-
 // UNE SEULE sauvegarde par fichier — l'etat d'ORIGINE, tel qu'il etait
 // avant que la plateforme ne commence a le modifier. Jamais de nouvelle
 // copie a chaque semaine (ca polluerait le stockage) : la copie
