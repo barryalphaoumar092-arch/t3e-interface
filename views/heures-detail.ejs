@@ -137,7 +137,12 @@ var estDoublon = /existe(nt)? déjà/.test(f.generation_erreur || '');
 <% } %>
 
 <% if (f.statut === 'termine') { %>
+<% if (f.generation_erreur) { %>
+<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> <%= f.generation_erreur %></div>
+<a href="/heures/<%= f.id %>/telecharger-suivi" class="btn btn-sm btn-outline-secondary"><i class="bi bi-download"></i> Télécharger le Suivi des heures pour l'envoyer manuellement</a>
+<% } else { %>
 <div class="alert alert-success"><i class="bi bi-check2-all"></i> Terminé — le document final a été envoyé. Rien à faire tant qu'une nouvelle feuille de temps n'est pas déposée.</div>
+<% } %>
 <% } %>
 
 <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>

@@ -304,11 +304,20 @@ router.post('/:id/valider-etape3', async (req, res) => {
   }
 
   const lien = await createSignedUrl(BUCKETS.HEURES_MAITRES, SUIVI_KEY, 300, SUIVI_KEY);
-  try { await envoyerDocumentFinal(lien, row, cles); } catch (e) { console.error('[heures] envoi document final echoue (non bloquant):', e.message); }
+  // L'echec de l'envoi ne bloque PAS la confirmation (le fichier/la
+  // decision restent valides independamment du courriel) — mais l'erreur
+  // est desormais VISIBLE dans l'interface plutot qu'avalee silencieusement
+  // (constate en test reel : un envoi echoue sans exception visible avait
+  // laisse croire que le courriel etait parti alors que non).
+  let erreurEnvoi = null;
+  try { await envoyerDocumentFinal(lien, row, cles); } catch (e) {
+    console.error('[heures] envoi document final echoue:', e.message);
+    erreurEnvoi = `Le document est confirmé, mais l'envoi du courriel a échoué : ${e.message}`;
+  }
 
   await db.execute({
-    sql: `UPDATE feuilles_temps SET statut = 'termine', valide_etape3_par = ?, updated_at = datetime('now') WHERE id = ?`,
-    args: [req.session && req.session.utilisateur || '', row.id],
+    sql: `UPDATE feuilles_temps SET statut = 'termine', valide_etape3_par = ?, generation_erreur = ?, updated_at = datetime('now') WHERE id = ?`,
+    args: [req.session && req.session.utilisateur || '', erreurEnvoi, row.id],
   });
   res.redirect('/heures/' + row.id);
 });

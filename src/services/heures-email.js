@@ -1,26 +1,27 @@
-// Notifications email du module "Heures" — SMTP Office 365 de T3E (aucune
-// configuration email n'existait ailleurs dans le repo). Sans configuration
-// (variables manquantes), les fonctions n'envoient rien et logguent
-// simplement — le site continue de fonctionner normalement (meme principe
-// que isConfigured() dans claude-client.js pour l'IA).
-let nodemailer;
-try { nodemailer = require('nodemailer'); } catch (_) { nodemailer = null; }
-
+// Notifications email du module "Heures" — via l'API Resend (service tiers
+// d'envoi transactionnel). Remplace une tentative initiale via SMTP Office
+// 365, qui a echoue en test reel : Microsoft desactive l'authentification
+// SMTP classique par defaut au niveau du TENANT depuis quelques annees
+// (mesure de securite globale, erreur "SmtpClientAuthentication is disabled
+// for the Tenant") — la reactiver demande un acces admin Microsoft 365 que
+// l'utilisateur n'a pas. Resend fonctionne via une simple cle API HTTP,
+// aucune negociation avec un administrateur necessaire.
+//
+// Sans configuration (RESEND_API_KEY manquante), les fonctions n'envoient
+// rien et logguent simplement — le site continue de fonctionner normalement
+// (meme principe que isConfigured() dans claude-client.js pour l'IA).
 function isConfigured() {
-  return !!(nodemailer && process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+  return !!process.env.RESEND_API_KEY;
 }
 
-let _transporteur = null;
-function getTransporteur() {
-  if (_transporteur) return _transporteur;
-  _transporteur = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: parseInt(process.env.SMTP_PORT || '587', 10),
-    secure: false,
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-  });
-  return _transporteur;
-}
+// Adresse d'expedition — un domaine personnalise verifie (ex.
+// notifications@toiturestroisetoiles.com) est necessaire pour envoyer a
+// n'importe quel destinataire ; sans domaine verifie, Resend restreint
+// l'envoi a l'adresse du compte Resend lui-meme (mode "test"). A fournir
+// via RESEND_FROM une fois le domaine verifie — par defaut, l'adresse
+// generique de test Resend (fonctionne seulement pour tester, pas pour les
+// vrais destinataires T3E).
+const FROM = process.env.RESEND_FROM || 'T3E Interface <onboarding@resend.dev>';
 
 // Destinataires par etape — variables d'environnement (a fournir avant mise
 // en production, voir plan) : listes separees par virgules.
@@ -44,15 +45,22 @@ const DESTINATAIRES_FINAL_POSSIBLES = {
 const BASE_URL = (process.env.SITE_BASE_URL || 'https://t3e-interface.vercel.app').replace(/\/$/, '');
 
 async function envoyer(destinataires, sujet, texte) {
-  if (!destinataires) { console.log('[heures-email] aucun destinataire configure, notification ignoree:', sujet); return; }
-  if (!isConfigured()) { console.log('[heures-email] SMTP non configure, notification ignoree:', sujet); return; }
-  const transporteur = getTransporteur();
-  await transporteur.sendMail({
-    from: process.env.SMTP_USER,
-    to: destinataires,
-    subject: sujet,
-    text: texte,
+  if (!destinataires) { console.log('[heures-email] aucun destinataire configuré, notification ignorée:', sujet); return; }
+  if (!isConfigured()) { console.log('[heures-email] Resend non configuré (RESEND_API_KEY manquante), notification ignorée:', sujet); return; }
+
+  const to = destinataires.split(',').map(s => s.trim()).filter(Boolean);
+  const resp = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ from: FROM, to, subject: sujet, text: texte }),
   });
+  if (!resp.ok) {
+    const corps = await resp.text().catch(() => '');
+    throw new Error(`Resend a répondu ${resp.status}: ${corps.slice(0, 300)}`);
+  }
 }
 
 // feuilles : lignes `feuilles_temps` concernees (une notification peut
@@ -81,7 +89,7 @@ async function envoyerDocumentFinal(lienTelechargement, feuille, cles) {
     .filter(Boolean)
     .map(d => d.email)
     .join(', ');
-  if (!destinataires) { console.log('[heures-email] aucun destinataire selectionne, envoi final ignore'); return; }
+  if (!destinataires) { console.log('[heures-email] aucun destinataire sélectionné, envoi final ignoré'); return; }
   await envoyer(
     destinataires,
     'T3E Interface — Suivi des heures finalisé',
