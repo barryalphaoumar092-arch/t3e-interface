@@ -54,13 +54,33 @@ function analyserBlocsProjets(bufferSuivi) {
   return blocs;
 }
 
+// Liste des codes projet (colonne "No, Projet") presents dans le fichier
+// corrige (etape 1) d'UN depot — sert a restreindre la detection ci-dessous
+// au depot en cours plutot qu'a tout ABCD-COPIE (des centaines de projets
+// historiques sans rapport avec la semaine consultee).
+function extraireProjetsDepot(bufferCorrige) {
+  const wb = XLSX.read(bufferCorrige, { type: 'buffer' });
+  const feuille = wb.Sheets[wb.SheetNames[0]];
+  const lignes = XLSX.utils.sheet_to_json(feuille, { defval: null });
+  const projets = new Set();
+  for (const ligne of lignes) {
+    const projet = normaliser(ligne['No, Projet']);
+    if (projet) projets.add(projet);
+  }
+  return projets;
+}
+
 // bufferSuivi : contenu actuel de ABCD-COPIE.xlsx. Retourne la liste des
 // projets ou AU MOINS UN des 4 metiers a une case "Hrs Budgetees" vide —
 // jamais de faux positif si toutes les valeurs sont deja presentes.
-function detecterProjetsSansBudget(bufferSuivi) {
+// filtreProjets (optionnel) : Set de codes projet — si fourni, ne retourne
+// que les projets du depot en cours (voir extraireProjetsDepot), pas tout
+// l'historique d'ABCD-COPIE.
+function detecterProjetsSansBudget(bufferSuivi, filtreProjets) {
   const blocs = analyserBlocsProjets(bufferSuivi);
   const resultat = [];
   for (const [projet, bloc] of blocs) {
+    if (filtreProjets && !filtreProjets.has(projet)) continue;
     const manquants = METIERS_BUDGET.filter(m => {
       const info = bloc.metiers[m];
       return !info || info.budgetee === null || info.budgetee === undefined || info.budgetee === '';
@@ -258,4 +278,4 @@ async function ecrireHeuresBudgetees(bufferSuivi, projet, valeursMue) {
   return { buffer, ecrit, celluesRougies };
 }
 
-module.exports = { detecterProjetsSansBudget, ecrireHeuresBudgetees, METIERS_BUDGET };
+module.exports = { detecterProjetsSansBudget, ecrireHeuresBudgetees, extraireProjetsDepot, METIERS_BUDGET };

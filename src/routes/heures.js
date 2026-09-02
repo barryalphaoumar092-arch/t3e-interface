@@ -6,7 +6,7 @@ const { lireClasseurBrut, corrigerDepot } = require('../services/heures-excel-wr
 const { MASTER_KEY, ajouterSemaineDansMaitre } = require('../services/heures-maitre-writer');
 const { ajouterSemaineDansSuivi } = require('../services/heures-suivi-writer');
 const { envoyerNotificationEtape, envoyerDocumentFinal, DESTINATAIRES_FINAL_POSSIBLES } = require('../services/heures-email');
-const { detecterProjetsSansBudget, ecrireHeuresBudgetees } = require('../services/heures-budget-writer');
+const { detecterProjetsSansBudget, ecrireHeuresBudgetees, extraireProjetsDepot } = require('../services/heures-budget-writer');
 const { extraireHeuresMueXlsx, extraireHeuresMuePdf } = require('../services/heures-mue-extractor');
 
 const SUIVI_KEY = 'ABCD-COPIE.xlsx';
@@ -275,6 +275,21 @@ router.get('/:id/telecharger-suivi', async (req, res) => {
 
 router.post('/:id/valider-etape2', async (req, res) => {
   const db = req.db;
+
+  // Re-depot optionnel (dest=temp) : le reviseur a telecharge la Feuille
+  // Maitre, l'a corrigee a la main dans Excel, et la re-uploade ici avant de
+  // valider — remplace la version stockee AVANT de declencher l'etape 3
+  // (meme principe que le re-depot deja en place a l'etape 1).
+  const { fichier_key } = req.body || {};
+  if (fichier_key && cleTempValide(fichier_key)) {
+    const buffer = await downloadBuffer(BUCKETS.UPLOADS_TEMP, fichier_key);
+    if (buffer) {
+      const bufferActuel = await downloadBuffer(BUCKETS.HEURES_MAITRES, MASTER_KEY);
+      if (bufferActuel) await sauvegarderOriginalSiAbsent(MASTER_KEY, bufferActuel);
+      await uploadBuffer(BUCKETS.HEURES_MAITRES, MASTER_KEY, buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    }
+  }
+
   await db.execute({
     sql: `UPDATE feuilles_temps SET statut = 'valide_etape2', valide_etape2_par = ?, updated_at = datetime('now') WHERE id = ?`,
     args: [req.session && req.session.utilisateur || '', req.params.id],
@@ -342,6 +357,20 @@ router.post('/:id/valider-etape3', async (req, res) => {
   const r = await db.execute({ sql: 'SELECT * FROM feuilles_temps WHERE id = ?', args: [req.params.id] });
   if (r.rows.length === 0) return res.status(404).send('Introuvable');
   const row = r.rows[0];
+
+  // Re-depot optionnel (dest=temp) : le reviseur a telecharge le Suivi des
+  // heures (ABCD-COPIE), l'a corrige a la main dans Excel — remplace la
+  // version stockee AVANT d'envoyer le courriel final (meme principe qu'a
+  // l'etape 1/2).
+  const { fichier_key } = req.body || {};
+  if (fichier_key && cleTempValide(fichier_key)) {
+    const buffer = await downloadBuffer(BUCKETS.UPLOADS_TEMP, fichier_key);
+    if (buffer) {
+      const bufferActuel = await downloadBuffer(BUCKETS.HEURES_MAITRES, SUIVI_KEY);
+      if (bufferActuel) await sauvegarderOriginalSiAbsent(SUIVI_KEY, bufferActuel);
+      await uploadBuffer(BUCKETS.HEURES_MAITRES, SUIVI_KEY, buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    }
+  }
 
   // Destinataires CHOISIS par Joel/projets sur le formulaire (demande
   // utilisateur — jamais d'envoi automatique a une liste fixe) — au moins
@@ -433,12 +462,20 @@ router.get('/:id', async (req, res) => {
   const row = r.rows[0];
 
   // Detection lecture seule, jamais bloquante — seulement affichee quand la
-  // revision de l'etape 3 est atteignable.
+  // revision de l'etape 3 est atteignable, et restreinte aux projets du
+  // depot en cours (pas tout l'historique d'ABCD-COPIE — des centaines de
+  // projets sans rapport avec la semaine consultee).
   let projetsSansBudget = [];
   if (row.statut === 'ajoute_suivi' || row.statut === 'termine') {
     try {
       const bufferSuivi = await downloadBuffer(BUCKETS.HEURES_MAITRES, SUIVI_KEY);
-      if (bufferSuivi) projetsSansBudget = detecterProjetsSansBudget(bufferSuivi);
+      const bufferCorrige = row.fichier_corrige_key ? await downloadBuffer(BUCKETS.HEURES_CORRIGEES, row.fichier_corrige_key) : null;
+      if (bufferSuivi && bufferCorrige) {
+        const projetsDepot = extraireProjetsDepot(bufferCorrige);
+        projetsSansBudget = detecterProjetsSansBudget(bufferSuivi, projetsDepot);
+      } else if (bufferSuivi) {
+        projetsSansBudget = detecterProjetsSansBudget(bufferSuivi);
+      }
     } catch (e) {
       console.error('[heures] detection projets sans budget echouee (non bloquant):', e.message);
     }

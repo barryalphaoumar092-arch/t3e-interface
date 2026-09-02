@@ -107,7 +107,10 @@ var estDoublon = /existe(nt)? déjà/.test(f.generation_erreur || '');
   <h5><i class="bi bi-journal-check"></i> Révision de l'étape 2 — Feuille Maître mise à jour</h5>
   <p>Les lignes de cette semaine ont été ajoutées à <code>Feuilles Maître heures - 2026.xlsx</code> (par ordre chronologique).</p>
   <a href="/heures/<%= f.id %>/telecharger-maitre" class="btn btn-success mb-3"><i class="bi bi-download"></i> Télécharger la Feuille Maître</a>
-  <form method="POST" action="/heures/<%= f.id %>/valider-etape2">
+  <form method="POST" action="/heures/<%= f.id %>/valider-etape2" id="formValiderEtape2">
+    <p class="text-muted small">Si vous avez modifié le fichier téléchargé, re-déposez-le ci-dessous avant de confirmer — sinon confirmez directement.</p>
+    <input type="file" id="inputReviseEtape2" class="form-control mb-2" accept=".xlsx">
+    <input type="hidden" name="fichier_key" id="ficheirKeyReviseEtape2">
     <button type="submit" class="btn btn-primary"><i class="bi bi-check2-circle"></i> Confirmer l'étape 2</button>
   </form>
 </div>
@@ -123,7 +126,10 @@ var estDoublon = /existe(nt)? déjà/.test(f.generation_erreur || '');
   <h5><i class="bi bi-bar-chart-steps"></i> Révision de l'étape 3 — Suivi des heures (ABCD-COPIE.xlsx)</h5>
   <% if (f.generation_erreur) { %><div class="alert alert-warning small"><%= f.generation_erreur %></div><% } %>
   <a href="/heures/<%= f.id %>/telecharger-suivi" class="btn btn-success mb-3"><i class="bi bi-download"></i> Télécharger le Suivi des heures</a>
-  <form method="POST" action="/heures/<%= f.id %>/valider-etape3">
+  <form method="POST" action="/heures/<%= f.id %>/valider-etape3" id="formValiderEtape3">
+    <p class="text-muted small">Si vous avez modifié le fichier téléchargé, re-déposez-le ci-dessous avant de confirmer — sinon confirmez directement.</p>
+    <input type="file" id="inputReviseEtape3" class="form-control mb-2" accept=".xlsx">
+    <input type="hidden" name="fichier_key" id="ficheirKeyReviseEtape3">
     <p class="mb-1"><strong>Envoyer le document final à :</strong></p>
     <% Object.keys(DESTINATAIRES_FINAL_POSSIBLES).forEach(function (cle) { %>
     <div class="form-check">
@@ -172,16 +178,24 @@ var estDoublon = /existe(nt)? déjà/.test(f.generation_erreur || '');
 <script>
 window.T3E_SUPABASE_URL = "<%= SUPABASE_URL %>";
 window.T3E_SUPABASE_ANON_KEY = "<%= SUPABASE_ANON_KEY %>";
-var inputRevise = document.getElementById('inputRevise');
-if (inputRevise) {
-  document.getElementById('formValider').addEventListener('submit', async function (e) {
-    if (!inputRevise.files[0]) return; // pas de re-upload, valider tel quel
+// Meme mecanisme de re-depot optionnel (dest=temp) sur les 3 etapes : si un
+// fichier corrige est choisi, on l'upload avant de soumettre le formulaire ;
+// sinon on valide/confirme tel quel (comportement inchange).
+function brancherReDepot(idInput, idForm, idChampCache) {
+  var input = document.getElementById(idInput);
+  var form = document.getElementById(idForm);
+  if (!input || !form) return;
+  form.addEventListener('submit', async function (e) {
+    if (!input.files[0]) return;
     e.preventDefault();
-    var info = await window.t3eDirectUpload.uploadDirect(inputRevise.files[0], 'temp');
-    document.getElementById('ficheirKeyRevise').value = info.key;
+    var info = await window.t3eDirectUpload.uploadDirect(input.files[0], 'temp');
+    document.getElementById(idChampCache).value = info.key;
     e.target.submit();
   });
 }
+brancherReDepot('inputRevise', 'formValider', 'ficheirKeyRevise');
+brancherReDepot('inputReviseEtape2', 'formValiderEtape2', 'ficheirKeyReviseEtape2');
+brancherReDepot('inputReviseEtape3', 'formValiderEtape3', 'ficheirKeyReviseEtape3');
 
 document.querySelectorAll('.input-mue').forEach(function (input) {
   input.addEventListener('change', async function () {
