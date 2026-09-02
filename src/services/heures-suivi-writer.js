@@ -1,5 +1,6 @@
 // Etape 3 : ajout de la semaine (deja dans la Feuille Maitre a l'etape 2)
-// dans "ABCD-COPIE.xlsx" (resume par projet/metier/semaine).
+// dans "Suivi des Heures.xlsx" (anciennement ABCD-COPIE.xlsx — resume par
+// projet/metier/semaine).
 //
 // ATTENTION — meme piege que la Feuille Maitre (voir heures-maitre-writer.js)
 // mais PIRE : ce fichier contient un vrai Tableau structure Excel
@@ -32,8 +33,12 @@ const JSZip = require('jszip');
 
 const NOM_FEUILLE = 'Feuil1';
 const TABLE_NOM = 'Tableau1';
-const COL_PROJET = 1, COL_DESCRIPTION = 2, COL_METIER = 4, COL_HRS_BUDGETEES = 5, COL_HRS_REELLES = 8;
-const PREMIERE_COL_SEMAINE = 9; // "I"
+// Structure "Suivi des Heures.xlsx" (restructuree cette session, remplace
+// ABCD-COPIE.xlsx) : une colonne "Difference" (Budgetees - Reelles) a ete
+// inseree entre "Hrs Totale" et "Hrs Reelles", decalant cette derniere de H
+// a I, et les colonnes de semaines de I: vers J:.
+const COL_PROJET = 1, COL_DESCRIPTION = 2, COL_METIER = 4, COL_HRS_BUDGETEES = 5, COL_HRS_REELLES = 9;
+const PREMIERE_COL_SEMAINE = 10; // "J"
 const METIERS_ORDRE = ['TOTAL', 'Couvreur', 'Ferblantier', 'Menuiser', 'Grutier'];
 
 const MAP_CATEGORIE_METIER = { '210': 'Couvreur', '230': 'Ferblantier', '160': 'Menuiser', '264': 'Grutier' };
@@ -108,10 +113,19 @@ async function trouverCheminFeuille(zip, nomFeuille) {
 
 // Decale le texte d'une formule (attribut ref="" des formules partagees
 // INCLUS, ex: <f t="shared" ref="X2:X10" si="0">) et son contenu textuel —
-// toute sequence LETTRES+chiffres y est forcement une reference de
-// cellule/plage, jamais du texte libre.
+// toute sequence LETTRES+CHIFFRES (chiffres OBLIGATOIRES) y est forcement
+// une reference de cellule/plage, jamais du texte libre.
+//
+// ATTENTION (bug reel constate en test) : rendre les chiffres OPTIONNELS
+// (comme une premiere version le faisait) fait matcher n'importe quel nom
+// de fonction (SUM, SUBTOTAL, TEXT...) ou mot d'une reference de tableau
+// structuree (Tableau1[[#This Row],[Hrs Réelles]] -> "This"/"Row") comme
+// une fausse reference de colonne, et les CORROMPT (ex: "SUM" devient un
+// autre triplet de lettres au hasard). Les chiffres obligatoires eliminent
+// tout risque : une vraie reference de cellule a TOUJOURS au moins un
+// chiffre colle aux lettres, jamais un nom de fonction/mot.
 function decalerFormule(formuleXml) {
-  return formuleXml.replace(/([A-Z]{1,3})(\d*)/g, (m, lettres, chiffres) => decalerRef(lettres) + chiffres);
+  return formuleXml.replace(/([A-Z]{1,3})(\d+)/g, (m, lettres, chiffres) => decalerRef(lettres) + chiffres);
 }
 
 // Decoupe le contenu d'UNE ligne <row>...</row> en tableau ordonne de
@@ -142,11 +156,19 @@ function tokeniserLigne(contenuLigne) {
   return cellules;
 }
 
-// Decale les refs (attribut r="") ET le contenu des formules <f> d'UNE
-// cellule deja tokenisee — jamais de manipulation de chaine en dehors de
-// cette cellule isolee (plus de risque de deborder sur la cellule suivante).
-function decalerCelluleXml(celluleXml) {
-  let out = celluleXml.replace(/^<c r="([A-Z]{1,3})(\d+)"/, (m, lettres, chiffre) => `<c r="${decalerRef(lettres)}${chiffre}"`);
+// Decale le contenu des formules <f> d'UNE cellule deja tokenisee — jamais
+// de manipulation de chaine en dehors de cette cellule isolee (plus de
+// risque de deborder sur la cellule suivante). repositionner=true decale
+// AUSSI l'attribut r="" de la cellule elle-meme (cellule dans la zone
+// semaines qui se deplace physiquement) ; repositionner=false ajuste
+// SEULEMENT le texte de la formule sans deplacer la cellule — necessaire
+// pour une cellule FIXE (ex: "Hrs Réelles") dont la formule reference
+// pourtant une plage de semaines (ex: SUM(J3:AO3)) qui, elle, se decale.
+function decalerCelluleXml(celluleXml, repositionner) {
+  let out = celluleXml;
+  if (repositionner) {
+    out = out.replace(/^<c r="([A-Z]{1,3})(\d+)"/, (m, lettres, chiffre) => `<c r="${decalerRef(lettres)}${chiffre}"`);
+  }
   out = out.replace(/<f([^>]*)>([^<]*)<\/f>/g, (m, attrs, formule) => `<f${decalerFormule(attrs)}>${decalerFormule(formule)}</f>`);
   return out;
 }
@@ -154,15 +176,15 @@ function decalerCelluleXml(celluleXml) {
 // Construit la cellule XML pour la nouvelle colonne (semaine) a la ligne
 // donnee — valeur numerique si fournie, sinon cellule vide.
 function celluleNouvelleColonne(numLigne, valeur) {
-  const ref = `I${numLigne}`;
+  const ref = `${lettreDeColonne(PREMIERE_COL_SEMAINE)}${numLigne}`;
   if (valeur === null || valeur === undefined) return `<c r="${ref}"/>`;
   return `<c r="${ref}"><v>${valeur}</v></c>`;
 }
 
-// bufferSuivi : contenu actuel de ABCD-COPIE.xlsx. Retourne
+// bufferSuivi : contenu actuel de Suivi des Heures.xlsx. Retourne
 // { buffer, totalEcrit, totalAClasser, totalNonClasse, projetsNonTrouves }.
 // projetsNonTrouves : projets du fichier corrige SANS ligne existante dans
-// ABCD-COPIE — jamais ajoutes automatiquement (creer un nouveau bloc de 5
+// Suivi des Heures — jamais ajoutes automatiquement (creer un nouveau bloc de 5
 // lignes demanderait de re-decaler numeros de ligne + table + dimension en
 // plus du decalage de colonnes, risque juge excessif) — remontes au
 // reviseur pour ajout manuel dans Excel si necessaire.
@@ -186,7 +208,7 @@ async function ajouterSemaineDansSuivi(bufferSuivi, bufferCorrige, semaine) {
     // fichier. err.doublon permet a la route appelante de proposer de
     // passer a l'etape suivante SANS ecrire (semaine deja presente = deja
     // couverte), plutot que de re-essayer en boucle.
-    const err = new Error(`La semaine "${labelSemaine}" existe déjà dans ABCD-COPIE.xlsx — dépôt en double, rien n'a été modifié. Si cette semaine doit vraiment être corrigée, supprimez d'abord manuellement sa colonne dans Excel.`);
+    const err = new Error(`La semaine "${labelSemaine}" existe déjà dans Suivi des Heures.xlsx — dépôt en double, rien n'a été modifié. Si cette semaine doit vraiment être corrigée, supprimez d'abord manuellement sa colonne dans Excel.`);
     err.doublon = true;
     throw err;
   }
@@ -238,33 +260,40 @@ async function ajouterSemaineDansSuivi(bufferSuivi, bufferCorrige, semaine) {
   // Traite le sheetData ligne par ligne via un tableau structure de cellules
   // (jamais de recherche/insertion ad-hoc dans une chaine de caracteres —
   // voir les commentaires de tokeniserLigne pour l'historique des bugs que
-  // cette approche corrige) : decale chaque cellule de colonne >= I, puis
-  // insere la nouvelle cellule juste apres H (Hrs Réelles) en comparant les
-  // colIndex, jamais en cherchant un motif textuel.
+  // cette approche corrige) : decale chaque cellule de colonne >= PREMIERE_COL_SEMAINE,
+  // puis insere la nouvelle cellule juste apres Hrs Réelles (COL_HRS_REELLES)
+  // en comparant les colIndex, jamais en cherchant un motif textuel.
   xml = xml.replace(/<row r="(\d+)"([^>]*)>(.*?)<\/row>/gs, (m, numLigneStr, attrsRow, contenu) => {
     const numLigne = parseInt(numLigneStr, 10);
     const attrsDecales = attrsRow.replace(/spans="1:(\d+)"/, (m2, n) => `spans="1:${parseInt(n, 10) + 1}"`);
 
     const cellules = tokeniserLigne(contenu);
-    const celluleXmlFinale = cellules.map(c =>
-      c.colIndex >= PREMIERE_COL_SEMAINE ? { colIndex: c.colIndex + 1, xml: decalerCelluleXml(c.xml) } : c
-    );
+    // Meme une cellule qui NE bouge PAS (ex: "Hrs Réelles", colonne fixe)
+    // peut avoir une formule referencant la plage des semaines (ex:
+    // SUM(J3:AO3)) — son TEXTE doit etre ajuste dans tous les cas ; seule
+    // la cellule elle-meme (attribut r=) se repositionne si sa propre
+    // colonne est dans la zone des semaines.
+    const celluleXmlFinale = cellules.map(c => {
+      const repositionner = c.colIndex >= PREMIERE_COL_SEMAINE;
+      return { colIndex: repositionner ? c.colIndex + 1 : c.colIndex, xml: decalerCelluleXml(c.xml, repositionner) };
+    });
 
     const valeur = numLigne === 1 ? null : (valeurParLigne.has(numLigne) ? valeurParLigne.get(numLigne) : null);
     const nouvelleCellule = numLigne === 1
-      ? `<c r="I1" t="inlineStr"><is><t xml:space="preserve">${echapperXml(labelSemaine)}</t></is></c>`
+      ? `<c r="${lettreDeColonne(PREMIERE_COL_SEMAINE)}1" t="inlineStr"><is><t xml:space="preserve">${echapperXml(labelSemaine)}</t></is></c>`
       : celluleNouvelleColonne(numLigne, valeur);
 
     // Insere au bon endroit selon l'ordre des colIndex (juste avant la 1ere
-    // cellule decalee >= J, c-a-d juste apres H) — jamais par recherche
-    // textuelle, toujours par comparaison numerique de position.
+    // cellule decalee >= PREMIERE_COL_SEMAINE+1, c-a-d juste apres Hrs
+    // Réelles) — jamais par recherche textuelle, toujours par comparaison
+    // numerique de position.
     let inseree = false;
     const parties = [];
     for (const c of celluleXmlFinale) {
       if (!inseree && c.colIndex > PREMIERE_COL_SEMAINE) { parties.push(nouvelleCellule); inseree = true; }
       parties.push(c.xml);
     }
-    if (!inseree) parties.push(nouvelleCellule); // securite si la ligne s'arrete avant/a H
+    if (!inseree) parties.push(nouvelleCellule); // securite si la ligne s'arrete avant Hrs Réelles
 
     return `<row r="${numLigneStr}"${attrsDecales}>${parties.join('')}</row>`;
   });
@@ -279,7 +308,8 @@ async function ajouterSemaineDansSuivi(bufferSuivi, bufferCorrige, semaine) {
   // Tableau), impossible de les reutiliser : on ajoute un NOUVEAU dxf rouge
   // a la fin de la collection existante (jamais de reindexation des dxfId
   // deja references ailleurs — seulement un ajout en fin de liste).
-  if (!/<conditionalFormatting sqref="H2:H\d+">/.test(xml)) {
+  const colReelles = lettreDeColonne(COL_HRS_REELLES);
+  if (!new RegExp(`<conditionalFormatting sqref="${colReelles}2:${colReelles}\\d+">`).test(xml)) {
     const stylesXml = await zip.file('xl/styles.xml').async('string');
     const mDxfs = /<dxfs count="(\d+)">(.*?)<\/dxfs>/.exec(stylesXml);
     const dxfRouge = '<dxf><fill><patternFill patternType="solid"><bgColor rgb="FFFF0000"/></patternFill></fill></dxf>';
@@ -295,7 +325,7 @@ async function ajouterSemaineDansSuivi(bufferSuivi, bufferCorrige, semaine) {
     zip.file('xl/styles.xml', stylesXmlModifie);
 
     const dernierRow = parseInt(/A1:[A-Z]{1,3}(\d+)/.exec(dimensionApres)[1], 10);
-    const regleXml = `<conditionalFormatting sqref="H2:H${dernierRow}"><cfRule type="expression" dxfId="${nouvelDxfId}" priority="1"><formula>AND(ISNUMBER(E2),ISNUMBER(H2),H2&gt;E2)</formula></cfRule></conditionalFormatting>`;
+    const regleXml = `<conditionalFormatting sqref="${colReelles}2:${colReelles}${dernierRow}"><cfRule type="expression" dxfId="${nouvelDxfId}" priority="1"><formula>AND(ISNUMBER(E2),ISNUMBER(${colReelles}2),${colReelles}2&gt;E2)</formula></cfRule></conditionalFormatting>`;
     if (/<pageMargins/.test(xml)) {
       xml = xml.replace('<pageMargins', regleXml + '<pageMargins');
     } else {
@@ -319,13 +349,21 @@ async function ajouterSemaineDansSuivi(bufferSuivi, bufferCorrige, semaine) {
       tableXml = tableXml.replace(mCount[0], `<tableColumns count="${nouveauCompte}">`);
     }
     const nouveauTableColumn = `<tableColumn id="${nouvelId}" name="${echapperXml(labelSemaine)}"/>`;
-    // Insere juste apres la 8e <tableColumn> (les colonnes fixes) — trouve
-    // la fin de la 8e occurrence.
-    let compte = 0;
-    tableXml = tableXml.replace(/<tableColumn[^/]*\/>/g, (m) => {
-      compte++;
-      return compte === 8 ? m + nouveauTableColumn : m;
-    });
+    // Insere juste apres la 9e <tableColumn> (les colonnes fixes : Projet,
+    // Description, Charge de projet, METIER, Budgetees, Modifiees, Totale,
+    // Difference, Reelles). ATTENTION : une colonne de Tableau calculee (ex.
+    // "Difference") est serialisee AVEC ENFANTS
+    // (<tableColumn ...><calculatedColumnFormula>...</calculatedColumnFormula></tableColumn>),
+    // pas auto-fermante — un regex qui ne matche que "/>" la sauterait
+    // silencieusement et decalerait tout le comptage (constate en test reel
+    // sur ce fichier). Meme motif double (auto-fermant OU avec enfants) que
+    // REGEX_CELLULE plus haut, matche TOUTES les formes.
+    const REGEX_TABLE_COLONNE = /<tableColumn\b[^>]*?\/>|<tableColumn\b[^>]*?>.*?<\/tableColumn>/g;
+    const colonnes = [...tableXml.matchAll(REGEX_TABLE_COLONNE)];
+    if (colonnes.length < 9) throw new Error(`Tableau1 attendu avec au moins 9 colonnes fixes, ${colonnes.length} trouvee(s) — insertion annulee par securite`);
+    const neuvieme = colonnes[8][0];
+    const idxInsertion = colonnes[8].index + neuvieme.length;
+    tableXml = tableXml.slice(0, idxInsertion) + nouveauTableColumn + tableXml.slice(idxInsertion);
     zip.file(cheminTable, tableXml);
   }
 

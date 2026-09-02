@@ -76,7 +76,7 @@ async function envoyerNotificationEtape(etape, feuilles) {
 }
 
 // Etape 3, confirmation finale : envoie le lien de telechargement du
-// document final (ABCD-COPIE.xlsx) aux destinataires CHOISIS par Joel/
+// document final (Suivi des Heures.xlsx) aux destinataires CHOISIS par Joel/
 // projets au moment de l'envoi (voir DESTINATAIRES_FINAL_POSSIBLES) — lien
 // signe plutot que piece jointe (evite les limites de taille SMTP, coherent
 // avec le reste du site qui privilegie deja les liens signes Supabase pour

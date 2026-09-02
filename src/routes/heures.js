@@ -9,7 +9,12 @@ const { envoyerNotificationEtape, envoyerDocumentFinal, DESTINATAIRES_FINAL_POSS
 const { detecterProjetsSansBudget, ecrireHeuresBudgetees, extraireProjetsDepot } = require('../services/heures-budget-writer');
 const { extraireHeuresMueXlsx, extraireHeuresMuePdf } = require('../services/heures-mue-extractor');
 
-const SUIVI_KEY = 'ABCD-COPIE.xlsx';
+// Renomme cette session : remplace ABCD-COPIE.xlsx (structure a 5 lignes/
+// projet) par Suivi des Heures.xlsx (structure restructuree a 6 lignes/
+// projet + colonne Difference — voir heures-suivi-writer.js). Cle Supabase
+// DIFFERENTE de l'ancienne : l'ancien contenu reste intact sous
+// "ABCD-COPIE.xlsx" (backup implicite, jamais relu par aucune route).
+const SUIVI_KEY = 'Suivi des Heures.xlsx';
 
 // UNE SEULE sauvegarde par fichier — l'etat d'ORIGINE, tel qu'il etait
 // avant que la plateforme ne commence a le modifier. Jamais de nouvelle
@@ -183,7 +188,7 @@ router.get('/:id/telecharger-maitre', async (req, res) => {
   res.redirect(url);
 });
 
-// Bootstrap (une seule fois) pour ABCD-COPIE.xlsx — meme principe que
+// Bootstrap (une seule fois) pour Suivi des Heures.xlsx — meme principe que
 // /admin/importer-maitre.
 router.post('/admin/importer-suivi', async (req, res) => {
   const { fichier_key } = req.body || {};
@@ -194,7 +199,7 @@ router.post('/admin/importer-suivi', async (req, res) => {
   res.redirect('/heures');
 });
 
-// Etape 3 : ajoute la semaine dans ABCD-COPIE.xlsx (repartition par metier
+// Etape 3 : ajoute la semaine dans Suivi des Heures.xlsx (repartition par metier
 // via categorie_employe) + controle de coherence obligatoire (le total
 // ecrit doit correspondre au total brut classifiable de la semaine — jamais
 // de publication silencieuse en cas d'ecart, voir plan).
@@ -219,7 +224,7 @@ async function appliquerEtape3(db, id, options) {
   if (options && options.ignorerDoublon) {
     await db.execute({
       sql: `UPDATE feuilles_temps SET etape = 3, statut = 'ajoute_suivi', generation_erreur = ? WHERE id = ?`,
-      args: [`Semaine déjà présente dans ABCD-COPIE.xlsx — passage à la révision sans nouvelle écriture (confirmé manuellement).`, id],
+      args: [`Semaine déjà présente dans Suivi des Heures.xlsx — passage à la révision sans nouvelle écriture (confirmé manuellement).`, id],
     });
     return { ok: true, ignoree: true };
   }
@@ -235,16 +240,16 @@ async function appliquerEtape3(db, id, options) {
     const ecart = Math.round((totalEcrit - totalAClasser) * 100) / 100;
     if (Math.abs(ecart) > 0.1) {
       const detailProjets = projetsNonTrouves && projetsNonTrouves.length
-        ? ` Projet(s) absent(s) de ABCD-COPIE.xlsx (à ajouter manuellement si besoin) : ${projetsNonTrouves.join(', ')}.`
+        ? ` Projet(s) absent(s) de Suivi des Heures.xlsx (à ajouter manuellement si besoin) : ${projetsNonTrouves.join(', ')}.`
         : '';
-      return marquerErreur(`Écart de cohérence détecté : ${totalEcrit}h écrites dans ABCD-COPIE.xlsx vs ${totalAClasser}h attendues (${row.semaine_debut} au ${row.semaine_fin}) — écriture annulée, rien n'a été publié.${detailProjets}`);
+      return marquerErreur(`Écart de cohérence détecté : ${totalEcrit}h écrites dans Suivi des Heures.xlsx vs ${totalAClasser}h attendues (${row.semaine_debut} au ${row.semaine_fin}) — écriture annulée, rien n'a été publié.${detailProjets}`);
     }
 
     await sauvegarderOriginalSiAbsent(SUIVI_KEY, bufferSuivi);
     await uploadBuffer(BUCKETS.HEURES_MAITRES, SUIVI_KEY, buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 
     const note = totalNonClasse > 0.1
-      ? `${totalNonClasse}h non classées par métier (catégorie employé non reconnue) — non incluses dans ABCD-COPIE, à vérifier manuellement.`
+      ? `${totalNonClasse}h non classées par métier (catégorie employé non reconnue) — non incluses dans Suivi des Heures, à vérifier manuellement.`
       : null;
 
     await db.execute({
@@ -303,7 +308,7 @@ router.post('/:id/valider-etape2', async (req, res) => {
 
 // Etape 3 (optionnelle, non bloquante) : le reviseur uploade un MUE 4.2
 // (dest=temp) pour un projet dont les "Hrs Budgetees" sont manquantes dans
-// ABCD-COPIE — le site n'a aucun acces au reseau \\t3e.ca\dfs\... et ne peut
+// Suivi des Heures — le site n'a aucun acces au reseau \\t3e.ca\dfs\... et ne peut
 // jamais aller chercher ce fichier lui-meme. Extraction SEULEMENT ici,
 // jamais d'ecriture : les valeurs sont toujours presentees pour
 // confirmation/correction avant d'etre enregistrees (voir /confirmer-budget).
@@ -324,7 +329,7 @@ router.post('/:id/extraire-mue', async (req, res) => {
 });
 
 // Ecriture confirmee (par le reviseur, valeurs modifiables) des heures
-// budgetees d'UN projet dans ABCD-COPIE.xlsx — jamais bloquante pour l'envoi
+// budgetees d'UN projet dans Suivi des Heures.xlsx — jamais bloquante pour l'envoi
 // du courriel final (voir /valider-etape3, toujours disponible independamment).
 router.post('/:id/confirmer-budget', async (req, res) => {
   const db = req.db;
@@ -359,7 +364,7 @@ router.post('/:id/valider-etape3', async (req, res) => {
   const row = r.rows[0];
 
   // Re-depot optionnel (dest=temp) : le reviseur a telecharge le Suivi des
-  // heures (ABCD-COPIE), l'a corrige a la main dans Excel — remplace la
+  // heures (Suivi des Heures), l'a corrige a la main dans Excel — remplace la
   // version stockee AVANT d'envoyer le courriel final (meme principe qu'a
   // l'etape 1/2).
   const { fichier_key } = req.body || {};
@@ -463,7 +468,7 @@ router.get('/:id', async (req, res) => {
 
   // Detection lecture seule, jamais bloquante — seulement affichee quand la
   // revision de l'etape 3 est atteignable, et restreinte aux projets du
-  // depot en cours (pas tout l'historique d'ABCD-COPIE — des centaines de
+  // depot en cours (pas tout l'historique d'Suivi des Heures — des centaines de
   // projets sans rapport avec la semaine consultee).
   let projetsSansBudget = [];
   if (row.statut === 'ajoute_suivi' || row.statut === 'termine') {

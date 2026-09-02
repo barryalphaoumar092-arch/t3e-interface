@@ -60,7 +60,7 @@ var estDoublon = /existe(nt)? déjà/.test(f.generation_erreur || '');
   <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-arrow-clockwise"></i> Réessayer</button>
 </form>
 <% if (estDoublon) { %>
-<form method="POST" action="/heures/<%= f.id %>/relancer-etape3" class="d-inline ms-2" onsubmit="return confirm('Confirmez-vous que cette semaine est déjà présente intentionnellement (ex. données de test) dans ABCD-COPIE.xlsx et que la plateforme peut passer à la révision sans réécrire ?')">
+<form method="POST" action="/heures/<%= f.id %>/relancer-etape3" class="d-inline ms-2" onsubmit="return confirm('Confirmez-vous que cette semaine est déjà présente intentionnellement (ex. données de test) dans Suivi des Heures.xlsx et que la plateforme peut passer à la révision sans réécrire ?')">
   <input type="hidden" name="confirmer" value="1">
   <button type="submit" class="btn btn-sm btn-outline-warning"><i class="bi bi-check2"></i> C'est normal, continuer quand même</button>
 </form>
@@ -123,7 +123,7 @@ var estDoublon = /existe(nt)? déjà/.test(f.generation_erreur || '');
 
 <% if (f.statut === 'ajoute_suivi') { %>
 <div class="card card-body mb-3">
-  <h5><i class="bi bi-bar-chart-steps"></i> Révision de l'étape 3 — Suivi des heures (ABCD-COPIE.xlsx)</h5>
+  <h5><i class="bi bi-bar-chart-steps"></i> Révision de l'étape 3 — Suivi des heures (Suivi des Heures.xlsx)</h5>
   <% if (f.generation_erreur) { %><div class="alert alert-warning small"><%= f.generation_erreur %></div><% } %>
   <a href="/heures/<%= f.id %>/telecharger-suivi" class="btn btn-success mb-3"><i class="bi bi-download"></i> Télécharger le Suivi des heures</a>
   <form method="POST" action="/heures/<%= f.id %>/valider-etape3" id="formValiderEtape3">
@@ -145,7 +145,7 @@ var estDoublon = /existe(nt)? déjà/.test(f.generation_erreur || '');
 <div class="card card-body mb-3">
   <h5><i class="bi bi-exclamation-triangle text-warning"></i> Heures budgétées manquantes</h5>
   <p class="small text-muted mb-3">
-    Ces projets ont au moins un métier sans "Hrs Budgétées" dans ABCD-COPIE.xlsx.
+    Ces projets ont au moins un métier sans "Hrs Budgétées" dans Suivi des Heures.xlsx.
     Cette étape est <strong>facultative</strong> et ne bloque pas l'envoi du document final ci-dessus.
     Pour compléter un projet, uploadez son fichier MUE 4.2 (le site n'a pas accès au réseau, vous devez le déposer ici).
   </p>

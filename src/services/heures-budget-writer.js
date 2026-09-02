@@ -1,4 +1,4 @@
-// Complete les "Hrs Budgetees" manquantes dans ABCD-COPIE.xlsx pour un
+// Complete les "Hrs Budgetees" manquantes dans Suivi des Heures.xlsx pour un
 // projet donne, a partir des valeurs extraites (et confirmees/corrigees par
 // le reviseur) d'un MUE 4.2 — voir heures-mue-extractor.js.
 //
@@ -8,8 +8,8 @@
 // ciblee, ici encore plus simple que l'insertion de colonne : on edite des
 // cellules EXISTANTES (colonne E), jamais de decalage de colonne.
 //
-// ATTENTION (regle utilisateur, absolue) : ne JAMAIS toucher a la colonne H
-// (Hrs Reelles) autrement que pour appliquer/retirer le remplissage rouge
+// ATTENTION (regle utilisateur, absolue) : ne JAMAIS toucher a la colonne
+// "Hrs Reelles" (COL_HRS_REELLES) autrement que pour appliquer/retirer le remplissage rouge
 // quand elle depasse E — jamais modifier sa valeur.
 const XLSX = require('xlsx');
 const JSZip = require('jszip');
@@ -23,7 +23,7 @@ const ROUGE_RGB = 'FFFF0000';
 
 function normaliser(s) { return String(s == null ? '' : s).trim(); }
 
-// Lit ABCD-COPIE et regroupe les lignes par bloc projet (TOTAL + 4 metiers).
+// Lit Suivi des Heures et regroupe les lignes par bloc projet (TOTAL + 4 metiers).
 // Retourne Map projet -> { total: {ligne, budgetee}, metiers: { Couvreur: {ligne, budgetee}, ... } }.
 function analyserBlocsProjets(bufferSuivi) {
   const wb = XLSX.read(bufferSuivi, { type: 'buffer' });
@@ -56,7 +56,7 @@ function analyserBlocsProjets(bufferSuivi) {
 
 // Liste des codes projet (colonne "No, Projet") presents dans le fichier
 // corrige (etape 1) d'UN depot — sert a restreindre la detection ci-dessous
-// au depot en cours plutot qu'a tout ABCD-COPIE (des centaines de projets
+// au depot en cours plutot qu'a tout Suivi des Heures (des centaines de projets
 // historiques sans rapport avec la semaine consultee).
 function extraireProjetsDepot(bufferCorrige) {
   const wb = XLSX.read(bufferCorrige, { type: 'buffer' });
@@ -70,12 +70,12 @@ function extraireProjetsDepot(bufferCorrige) {
   return projets;
 }
 
-// bufferSuivi : contenu actuel de ABCD-COPIE.xlsx. Retourne la liste des
+// bufferSuivi : contenu actuel de Suivi des Heures.xlsx. Retourne la liste des
 // projets ou AU MOINS UN des 4 metiers a une case "Hrs Budgetees" vide —
 // jamais de faux positif si toutes les valeurs sont deja presentes.
 // filtreProjets (optionnel) : Set de codes projet — si fourni, ne retourne
 // que les projets du depot en cours (voir extraireProjetsDepot), pas tout
-// l'historique d'ABCD-COPIE.
+// l'historique d'Suivi des Heures.
 function detecterProjetsSansBudget(bufferSuivi, filtreProjets) {
   const blocs = analyserBlocsProjets(bufferSuivi);
   const resultat = [];
@@ -185,7 +185,7 @@ function ecrireCelluleDansLigne(xml, numLigne, colCible, construireXmlCellule) {
   return xml.replace(m[0], `<row r="${numLigne}"${m[1]}>${parties.join('')}</row>`);
 }
 
-// bufferSuivi : contenu actuel de ABCD-COPIE.xlsx.
+// bufferSuivi : contenu actuel de Suivi des Heures.xlsx.
 // projet : code projet (ex "26-062").
 // valeursMue : { couv, ferb, meu, grue, atelier } — deja confirmees/corrigees
 // par le reviseur (jamais ecrites sans validation humaine).
@@ -193,7 +193,7 @@ function ecrireCelluleDansLigne(xml, numLigne, colCible, construireXmlCellule) {
 async function ecrireHeuresBudgetees(bufferSuivi, projet, valeursMue) {
   const blocs = analyserBlocsProjets(bufferSuivi);
   const bloc = blocs.get(normaliser(projet));
-  if (!bloc || !bloc.total) throw new Error(`Projet "${projet}" introuvable dans ABCD-COPIE.xlsx`);
+  if (!bloc || !bloc.total) throw new Error(`Projet "${projet}" introuvable dans Suivi des Heures.xlsx`);
 
   const valeursParMetier = {
     Couvreur: valeursMue.couv,
@@ -207,7 +207,7 @@ async function ecrireHeuresBudgetees(bufferSuivi, projet, valeursMue) {
   let xml = await zip.file(cheminFeuille).async('string');
 
   const colE = lettreDeColonne(COL_HRS_BUDGETEES);
-  const colH = lettreDeColonne(COL_HRS_REELLES);
+  const colReelles = lettreDeColonne(COL_HRS_REELLES);
 
   const ecrit = {};
   let totalBudgete = 0;
@@ -260,7 +260,7 @@ async function ecrireHeuresBudgetees(bufferSuivi, projet, valeursMue) {
     if (!Number.isFinite(h) || !Number.isFinite(budgetee) || h <= budgetee) continue;
 
     xml = ecrireCelluleDansLigne(xml, numLigne, COL_HRS_REELLES, (existanteXml) => {
-      if (!existanteXml) return `<c r="${colH}${numLigne}"/>`; // ne devrait pas arriver (H a une valeur)
+      if (!existanteXml) return `<c r="${colReelles}${numLigne}"/>`; // ne devrait pas arriver (Hrs Réelles a une valeur)
       const styleActuel = extraireStyleIndex(existanteXml);
       const nouveauStyle = gestionnaireStyle.indexPourStyleRouge(styleActuel);
       const avecNouveauStyle = /\ss="\d+"/.test(existanteXml)
