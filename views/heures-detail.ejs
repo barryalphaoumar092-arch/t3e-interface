@@ -134,6 +134,28 @@ var estDoublon = /existe(nt)? déjà/.test(f.generation_erreur || '');
     <button type="submit" class="btn btn-primary mt-2"><i class="bi bi-check2-circle"></i> Confirmer et envoyer le document final</button>
   </form>
 </div>
+
+<% if (projetsSansBudget && projetsSansBudget.length > 0) { %>
+<div class="card card-body mb-3">
+  <h5><i class="bi bi-exclamation-triangle text-warning"></i> Heures budgétées manquantes</h5>
+  <p class="small text-muted mb-3">
+    Ces projets ont au moins un métier sans "Hrs Budgétées" dans ABCD-COPIE.xlsx.
+    Cette étape est <strong>facultative</strong> et ne bloque pas l'envoi du document final ci-dessus.
+    Pour compléter un projet, uploadez son fichier MUE 4.2 (le site n'a pas accès au réseau, vous devez le déposer ici).
+  </p>
+  <% projetsSansBudget.forEach(function (p) { %>
+  <div class="border rounded p-3 mb-2" data-projet-bloc="<%= p.projet %>">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div><strong><%= p.projet %></strong> — métiers manquants : <%= p.metiersManquants.join(', ') %></div>
+      <div>
+        <input type="file" class="form-control form-control-sm d-inline-block w-auto input-mue" accept=".xlsx,.pdf" data-projet="<%= p.projet %>">
+      </div>
+    </div>
+    <div class="mue-resultat mt-2" style="display:none"></div>
+  </div>
+  <% }) %>
+</div>
+<% } %>
 <% } %>
 
 <% if (f.statut === 'termine') { %>
@@ -160,6 +182,62 @@ if (inputRevise) {
     e.target.submit();
   });
 }
+
+document.querySelectorAll('.input-mue').forEach(function (input) {
+  input.addEventListener('change', async function () {
+    if (!input.files[0]) return;
+    var bloc = input.closest('[data-projet-bloc]');
+    var zoneResultat = bloc.querySelector('.mue-resultat');
+    var projet = input.dataset.projet;
+    zoneResultat.style.display = 'block';
+    zoneResultat.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Upload et extraction en cours…';
+    try {
+      var info = await window.t3eDirectUpload.uploadDirect(input.files[0], 'temp');
+      var resp = await fetch(window.location.pathname + '/extraire-mue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fichier_key: info.key, fichier_nom: input.files[0].name }),
+      });
+      var data = await resp.json();
+      if (!resp.ok) { zoneResultat.innerHTML = '<div class="alert alert-warning small mb-0">' + (data.error || 'Extraction échouée') + '</div>'; return; }
+
+      var v = data.valeurs || {};
+      function champ(nom, label, valeur) {
+        return '<div class="col-6 col-md-2"><label class="form-label small mb-0">' + label + '</label>' +
+          '<input type="number" step="0.1" class="form-control form-control-sm" name="' + nom + '" value="' + (valeur === null || valeur === undefined ? '' : valeur) + '"></div>';
+      }
+      zoneResultat.innerHTML =
+        '<form class="row g-2 align-items-end form-confirmer-budget" data-projet="' + projet + '">' +
+        champ('couv', 'Couvreur (COUV)', v.couv) +
+        champ('ferb', 'FERB', v.ferb) +
+        champ('atelier', 'Atelier', v.atelier) +
+        champ('meu', 'Menuiser (MEU)', v.meu) +
+        champ('grue', 'Grutier (Grue)', v.grue) +
+        '<div class="col-12 col-md-2"><button type="submit" class="btn btn-sm btn-primary w-100">Confirmer et enregistrer</button></div>' +
+        '<div class="col-12 form-confirmer-msg small"></div>' +
+        '</form>';
+
+      zoneResultat.querySelector('.form-confirmer-budget').addEventListener('submit', async function (ev) {
+        ev.preventDefault();
+        var fd = new FormData(ev.target);
+        var msg = zoneResultat.querySelector('.form-confirmer-msg');
+        msg.textContent = 'Enregistrement…';
+        var params = new URLSearchParams();
+        params.set('projet', projet);
+        for (var pair of fd.entries()) params.set(pair[0], pair[1]);
+        var respConfirmer = await fetch(window.location.pathname + '/confirmer-budget', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: params.toString(),
+        });
+        if (respConfirmer.redirected || respConfirmer.ok) { location.reload(); }
+        else { msg.textContent = 'Échec de l\'enregistrement.'; }
+      });
+    } catch (e) {
+      zoneResultat.innerHTML = '<div class="alert alert-warning small mb-0">Erreur : ' + e.message + '</div>';
+    }
+  });
+});
 </script>
 
 <%- include('partials/footer', { scripts: [] }) %>

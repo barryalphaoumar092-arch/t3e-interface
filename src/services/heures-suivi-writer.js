@@ -334,4 +334,9 @@ async function ajouterSemaineDansSuivi(bufferSuivi, bufferCorrige, semaine) {
   return { buffer, labelSemaine, totalEcrit, totalAClasser, totalNonClasse, projetsNonTrouves: Array.from(projetsNonTrouves) };
 }
 
-module.exports = { calculerRepartitionMetier, ajouterSemaineDansSuivi, MAP_CATEGORIE_METIER };
+module.exports = {
+  calculerRepartitionMetier, ajouterSemaineDansSuivi, MAP_CATEGORIE_METIER,
+  // Reutilises par heures-budget-writer.js (memes pieges XML, meme fichier).
+  NOM_FEUILLE, COL_PROJET, COL_METIER, COL_HRS_BUDGETEES, COL_HRS_REELLES,
+  trouverCheminFeuille, tokeniserLigne, nombreDeColonne, lettreDeColonne,
+};

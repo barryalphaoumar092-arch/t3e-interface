@@ -6,6 +6,8 @@ const { lireClasseurBrut, corrigerDepot } = require('../services/heures-excel-wr
 const { MASTER_KEY, ajouterSemaineDansMaitre } = require('../services/heures-maitre-writer');
 const { ajouterSemaineDansSuivi } = require('../services/heures-suivi-writer');
 const { envoyerNotificationEtape, envoyerDocumentFinal, DESTINATAIRES_FINAL_POSSIBLES } = require('../services/heures-email');
+const { detecterProjetsSansBudget, ecrireHeuresBudgetees } = require('../services/heures-budget-writer');
+const { extraireHeuresMueXlsx, extraireHeuresMuePdf } = require('../services/heures-mue-extractor');
 
 const SUIVI_KEY = 'ABCD-COPIE.xlsx';
 
@@ -284,6 +286,54 @@ router.post('/:id/valider-etape2', async (req, res) => {
   res.redirect('/heures/' + req.params.id);
 });
 
+// Etape 3 (optionnelle, non bloquante) : le reviseur uploade un MUE 4.2
+// (dest=temp) pour un projet dont les "Hrs Budgetees" sont manquantes dans
+// ABCD-COPIE — le site n'a aucun acces au reseau \\t3e.ca\dfs\... et ne peut
+// jamais aller chercher ce fichier lui-meme. Extraction SEULEMENT ici,
+// jamais d'ecriture : les valeurs sont toujours presentees pour
+// confirmation/correction avant d'etre enregistrees (voir /confirmer-budget).
+router.post('/:id/extraire-mue', async (req, res) => {
+  const { fichier_key, fichier_nom } = req.body || {};
+  if (!cleTempValide(fichier_key)) return res.status(400).json({ error: 'fichier_key invalide' });
+  const buffer = await downloadBuffer(BUCKETS.UPLOADS_TEMP, fichier_key);
+  if (!buffer) return res.status(404).json({ error: 'fichier introuvable' });
+
+  const estPdf = /\.pdf$/i.test(fichier_nom || '');
+  try {
+    const valeurs = estPdf ? await extraireHeuresMuePdf(buffer) : extraireHeuresMueXlsx(buffer);
+    res.json({ valeurs });
+  } catch (e) {
+    console.error('[heures] extraction MUE echouee:', e.message);
+    res.status(500).json({ error: `Extraction impossible : ${e.message}` });
+  }
+});
+
+// Ecriture confirmee (par le reviseur, valeurs modifiables) des heures
+// budgetees d'UN projet dans ABCD-COPIE.xlsx — jamais bloquante pour l'envoi
+// du courriel final (voir /valider-etape3, toujours disponible independamment).
+router.post('/:id/confirmer-budget', async (req, res) => {
+  const db = req.db;
+  const r = await db.execute({ sql: 'SELECT * FROM feuilles_temps WHERE id = ?', args: [req.params.id] });
+  if (r.rows.length === 0) return res.status(404).send('Introuvable');
+
+  const { projet, couv, ferb, meu, grue, atelier } = req.body || {};
+  if (!projet) return res.status(400).send('Projet manquant. <a href="javascript:history.back()">Retour</a>');
+
+  try {
+    const bufferSuivi = await downloadBuffer(BUCKETS.HEURES_MAITRES, SUIVI_KEY);
+    if (!bufferSuivi) return res.status(404).send('Suivi des heures introuvable.');
+    await sauvegarderOriginalSiAbsent(SUIVI_KEY, bufferSuivi);
+    const valeurs = { couv: parseFloat(couv), ferb: parseFloat(ferb), meu: parseFloat(meu), grue: parseFloat(grue), atelier: parseFloat(atelier) };
+    const resultat = await ecrireHeuresBudgetees(bufferSuivi, projet, valeurs);
+    await uploadBuffer(BUCKETS.HEURES_MAITRES, SUIVI_KEY, resultat.buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  } catch (e) {
+    console.error('[heures] confirmer-budget echoue pour', projet, ':', e.message);
+    return res.status(500).send(`Echec de l'enregistrement : ${e.message}. <a href="javascript:history.back()">Retour</a>`);
+  }
+
+  res.redirect('/heures/' + req.params.id);
+});
+
 // Confirmation finale (etape 3) : envoie le document final a jchoiniere et
 // clot le cycle pour cette semaine — la plateforme redevient "rien a faire"
 // jusqu'au prochain depot d'une feuille de temps (voir plan).
@@ -380,7 +430,21 @@ router.get('/:id', async (req, res) => {
   const db = req.db;
   const r = await db.execute({ sql: 'SELECT * FROM feuilles_temps WHERE id = ?', args: [req.params.id] });
   if (r.rows.length === 0) return res.status(404).send('Introuvable');
-  res.render('heures-detail', { f: r.rows[0], DESTINATAIRES_FINAL_POSSIBLES });
+  const row = r.rows[0];
+
+  // Detection lecture seule, jamais bloquante — seulement affichee quand la
+  // revision de l'etape 3 est atteignable.
+  let projetsSansBudget = [];
+  if (row.statut === 'ajoute_suivi' || row.statut === 'termine') {
+    try {
+      const bufferSuivi = await downloadBuffer(BUCKETS.HEURES_MAITRES, SUIVI_KEY);
+      if (bufferSuivi) projetsSansBudget = detecterProjetsSansBudget(bufferSuivi);
+    } catch (e) {
+      console.error('[heures] detection projets sans budget echouee (non bloquant):', e.message);
+    }
+  }
+
+  res.render('heures-detail', { f: row, DESTINATAIRES_FINAL_POSSIBLES, projetsSansBudget });
 });
 
 router.get('/:id/telecharger', async (req, res) => {
