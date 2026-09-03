@@ -10,11 +10,11 @@ const { detecterProjetsSansBudget, ecrireHeuresBudgetees, extraireProjetsDepot }
 const { extraireHeuresMueXlsx, extraireHeuresMuePdf } = require('../services/heures-mue-extractor');
 
 // Renomme cette session : remplace ABCD-COPIE.xlsx (structure a 5 lignes/
-// projet) par Suivi des Heures.xlsx (structure restructuree a 6 lignes/
+// projet) par Suivi des Heures Final.xlsx (structure restructuree a 6 lignes/
 // projet + colonne Difference — voir heures-suivi-writer.js). Cle Supabase
 // DIFFERENTE de l'ancienne : l'ancien contenu reste intact sous
 // "ABCD-COPIE.xlsx" (backup implicite, jamais relu par aucune route).
-const SUIVI_KEY = 'Suivi des Heures.xlsx';
+const SUIVI_KEY = 'Suivi des Heures Final.xlsx';
 
 // UNE SEULE sauvegarde par fichier — l'etat d'ORIGINE, tel qu'il etait
 // avant que la plateforme ne commence a le modifier. Jamais de nouvelle
@@ -188,7 +188,7 @@ router.get('/:id/telecharger-maitre', async (req, res) => {
   res.redirect(url);
 });
 
-// Bootstrap (une seule fois) pour Suivi des Heures.xlsx — meme principe que
+// Bootstrap (une seule fois) pour Suivi des Heures Final.xlsx — meme principe que
 // /admin/importer-maitre.
 router.post('/admin/importer-suivi', async (req, res) => {
   const { fichier_key } = req.body || {};
@@ -199,7 +199,7 @@ router.post('/admin/importer-suivi', async (req, res) => {
   res.redirect('/heures');
 });
 
-// Etape 3 : ajoute la semaine dans Suivi des Heures.xlsx (repartition par metier
+// Etape 3 : ajoute la semaine dans Suivi des Heures Final.xlsx (repartition par metier
 // via categorie_employe) + controle de coherence obligatoire (le total
 // ecrit doit correspondre au total brut classifiable de la semaine — jamais
 // de publication silencieuse en cas d'ecart, voir plan).
@@ -224,7 +224,7 @@ async function appliquerEtape3(db, id, options) {
   if (options && options.ignorerDoublon) {
     await db.execute({
       sql: `UPDATE feuilles_temps SET etape = 3, statut = 'ajoute_suivi', generation_erreur = ? WHERE id = ?`,
-      args: [`Semaine déjà présente dans Suivi des Heures.xlsx — passage à la révision sans nouvelle écriture (confirmé manuellement).`, id],
+      args: [`Semaine déjà présente dans Suivi des Heures Final.xlsx — passage à la révision sans nouvelle écriture (confirmé manuellement).`, id],
     });
     return { ok: true, ignoree: true };
   }
@@ -240,9 +240,9 @@ async function appliquerEtape3(db, id, options) {
     const ecart = Math.round((totalEcrit - totalAClasser) * 100) / 100;
     if (Math.abs(ecart) > 0.1) {
       const detailProjets = projetsNonTrouves && projetsNonTrouves.length
-        ? ` Projet(s) absent(s) de Suivi des Heures.xlsx (à ajouter manuellement si besoin) : ${projetsNonTrouves.join(', ')}.`
+        ? ` Projet(s) absent(s) de Suivi des Heures Final.xlsx (à ajouter manuellement si besoin) : ${projetsNonTrouves.join(', ')}.`
         : '';
-      return marquerErreur(`Écart de cohérence détecté : ${totalEcrit}h écrites dans Suivi des Heures.xlsx vs ${totalAClasser}h attendues (${row.semaine_debut} au ${row.semaine_fin}) — écriture annulée, rien n'a été publié.${detailProjets}`);
+      return marquerErreur(`Écart de cohérence détecté : ${totalEcrit}h écrites dans Suivi des Heures Final.xlsx vs ${totalAClasser}h attendues (${row.semaine_debut} au ${row.semaine_fin}) — écriture annulée, rien n'a été publié.${detailProjets}`);
     }
 
     await sauvegarderOriginalSiAbsent(SUIVI_KEY, bufferSuivi);
@@ -329,7 +329,7 @@ router.post('/:id/extraire-mue', async (req, res) => {
 });
 
 // Ecriture confirmee (par le reviseur, valeurs modifiables) des heures
-// budgetees d'UN projet dans Suivi des Heures.xlsx — jamais bloquante pour l'envoi
+// budgetees d'UN projet dans Suivi des Heures Final.xlsx — jamais bloquante pour l'envoi
 // du courriel final (voir /valider-etape3, toujours disponible independamment).
 router.post('/:id/confirmer-budget', async (req, res) => {
   const db = req.db;

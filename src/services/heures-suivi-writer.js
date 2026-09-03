@@ -312,7 +312,10 @@ async function ajouterSemaineDansSuivi(bufferSuivi, bufferCorrige, semaine) {
   if (!new RegExp(`<conditionalFormatting sqref="${colReelles}2:${colReelles}\\d+">`).test(xml)) {
     const stylesXml = await zip.file('xl/styles.xml').async('string');
     const mDxfs = /<dxfs count="(\d+)">(.*?)<\/dxfs>/.exec(stylesXml);
-    const dxfRouge = '<dxf><fill><patternFill patternType="solid"><bgColor rgb="FFFF0000"/></patternFill></fill></dxf>';
+    // Rouge attenue + gras — meme convention que la coloration statique
+    // appliquee manuellement cette session (RGB 214,90,90 = D65A5A), plus
+    // doux que le rouge pur d'origine et le texte reste lisible.
+    const dxfRouge = '<dxf><font><b/></font><fill><patternFill patternType="solid"><bgColor rgb="FFD65A5A"/></patternFill></fill></dxf>';
     let nouvelDxfId;
     let stylesXmlModifie;
     if (mDxfs) {

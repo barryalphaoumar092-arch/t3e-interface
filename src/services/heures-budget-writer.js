@@ -19,7 +19,7 @@ const {
 } = require('./heures-suivi-writer');
 
 const METIERS_BUDGET = ['Couvreur', 'Ferblantier', 'Menuiser', 'Grutier'];
-const ROUGE_RGB = 'FFFF0000';
+const ROUGE_RGB = 'FFD65A5A'; // rouge attenue, meme convention que le style manuel
 
 function normaliser(s) { return String(s == null ? '' : s).trim(); }
 
@@ -110,18 +110,38 @@ function creerGestionnaireStyleRouge(stylesXmlInitial) {
   let stylesXml = stylesXmlInitial;
   const cache = new Map(); // baseStyleIndex (ou 'defaut') -> nouvelIndex
 
+  // Rouge attenue (D65A5A) — meme convention que la coloration statique
+  // appliquee manuellement cette session sur le fichier reel, plus douce
+  // que le rouge pur d'origine (FFFF0000).
   function assurerFillRouge() {
     const mFills = /<fills count="(\d+)">([\s\S]*?)<\/fills>/.exec(stylesXml);
     if (!mFills) throw new Error('<fills> introuvable dans styles.xml');
     // Reutilise si deja cree lors d'un appel precedent (idempotent).
-    const dejaLa = /<fill><patternFill patternType="solid"><fgColor rgb="FFFF0000"\/><bgColor indexed="64"\/><\/patternFill><\/fill>/.exec(mFills[2]);
+    const dejaLa = /<fill><patternFill patternType="solid"><fgColor rgb="FFD65A5A"\/><bgColor indexed="64"\/><\/patternFill><\/fill>/.exec(mFills[2]);
     if (dejaLa) {
       const avant = mFills[2].slice(0, dejaLa.index);
       return (avant.match(/<fill>/g) || []).length;
     }
     const count = parseInt(mFills[1], 10);
-    const nouveauFill = '<fill><patternFill patternType="solid"><fgColor rgb="FFFF0000"/><bgColor indexed="64"/></patternFill></fill>';
+    const nouveauFill = '<fill><patternFill patternType="solid"><fgColor rgb="FFD65A5A"/><bgColor indexed="64"/></patternFill></fill>';
     stylesXml = stylesXml.replace(mFills[0], `<fills count="${count + 1}">${mFills[2]}${nouveauFill}</fills>`);
+    return count;
+  }
+
+  // Police en gras pour le texte des cellules rougies — meme convention que
+  // la coloration statique manuelle (texte plus visible sur fond rouge).
+  function assurerPoliceGrasseDepuis(fontIdBase) {
+    const mFonts = /<fonts count="(\d+)"([^>]*)>([\s\S]*?)<\/fonts>/.exec(stylesXml);
+    if (!mFonts) throw new Error('<fonts> introuvable dans styles.xml');
+    const entreesFonts = [...mFonts[3].matchAll(/<font>[\s\S]*?<\/font>/g)].map(m => m[0]);
+    const baseFont = entreesFonts[fontIdBase] || '<font><sz val="11"/><name val="Calibri"/></font>';
+    if (/<b\/>/.test(baseFont)) {
+      // Deja en gras : reutilise tel quel (evite un doublon inutile).
+      return fontIdBase;
+    }
+    const count = parseInt(mFonts[1], 10);
+    const policeGrasse = baseFont.replace('<font>', '<font><b/>');
+    stylesXml = stylesXml.replace(mFonts[0], `<fonts count="${count + 1}"${mFonts[2]}>${mFonts[3]}${policeGrasse}</fonts>`);
     return count;
   }
 
@@ -137,8 +157,12 @@ function creerGestionnaireStyleRouge(stylesXmlInitial) {
     const entrees = [...mXfs[2].matchAll(/<xf\b[^>]*?(?:\/>|>[\s\S]*?<\/xf>)/g)].map(m => m[0]);
     const base = baseStyleIndex !== null && entrees[baseStyleIndex] ? entrees[baseStyleIndex] : '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>';
 
-    // Clone la balise ouvrante en remplacant/ajoutant fillId + applyFill,
-    // en conservant tout le reste (police, bordures, format) intact.
+    const fontIdBase = (/fontId="(\d+)"/.exec(base) || [null, '0'])[1];
+    const idPoliceGrasse = assurerPoliceGrasseDepuis(parseInt(fontIdBase, 10));
+
+    // Clone la balise ouvrante en remplacant/ajoutant fillId+fontId (+ les
+    // "apply" correspondants), en conservant tout le reste (bordures,
+    // format) intact.
     let ligneOuvrante = base.match(/^<xf\b[^>]*?(?:\/>|>)/)[0];
     let nouvelleOuvrante = /fillId="\d+"/.test(ligneOuvrante)
       ? ligneOuvrante.replace(/fillId="\d+"/, `fillId="${idFillRouge}"`)
@@ -146,6 +170,12 @@ function creerGestionnaireStyleRouge(stylesXmlInitial) {
     nouvelleOuvrante = /applyFill="\d+"/.test(nouvelleOuvrante)
       ? nouvelleOuvrante.replace(/applyFill="\d+"/, 'applyFill="1"')
       : nouvelleOuvrante.replace(/\/?>$/, m => ` applyFill="1"${m}`);
+    nouvelleOuvrante = /fontId="\d+"/.test(nouvelleOuvrante)
+      ? nouvelleOuvrante.replace(/fontId="\d+"/, `fontId="${idPoliceGrasse}"`)
+      : nouvelleOuvrante.replace(/^<xf\b/, `<xf fontId="${idPoliceGrasse}"`);
+    nouvelleOuvrante = /applyFont="\d+"/.test(nouvelleOuvrante)
+      ? nouvelleOuvrante.replace(/applyFont="\d+"/, 'applyFont="1"')
+      : nouvelleOuvrante.replace(/\/?>$/, m => ` applyFont="1"${m}`);
     const nouvelleEntree = base.endsWith('/>') ? nouvelleOuvrante : nouvelleOuvrante + base.slice(ligneOuvrante.length);
 
     stylesXml = stylesXml.replace(mXfs[0], `<cellXfs count="${count + 1}">${mXfs[2]}${nouvelleEntree}</cellXfs>`);
