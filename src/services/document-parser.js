@@ -205,11 +205,19 @@ function extraireDescriptionCourteSansIA(texte, titre) {
   }
   if (!candidate) return '';
 
-  // Reste COURT : garde la 1ere clause (avant point/point-virgule), puis
-  // limite a ~12 mots sans jamais couper un mot en deux.
+  // Reste COURT : garde la 1ere clause (avant point/point-virgule). Si elle
+  // depasse ~12 mots, coupe a la DERNIERE VIRGULE avant la limite plutot que
+  // sur un compte de mots brut — sinon on tronque en pleine enumeration
+  // (constate : "adhésif à faible expansion, à deux composants, à base" —
+  // coupe avant "de [polyurethane]", une phrase incomplete plutot qu'un
+  // fragment court mais complet).
   let court = candidate.split(/[.;]/)[0].trim();
   const mots = court.split(/\s+/);
-  if (mots.length > 12) court = mots.slice(0, 12).join(' ');
+  if (mots.length > 12) {
+    const positionMot12 = mots.slice(0, 12).join(' ').length;
+    const virguleUtile = [...court.matchAll(/,/g)].map((m) => m.index).filter((i) => i <= positionMot12).pop();
+    court = virguleUtile !== undefined ? court.slice(0, virguleUtile) : mots.slice(0, 12).join(' ');
+  }
   return court.replace(/[,:;]\s*$/, '').trim();
 }
 
