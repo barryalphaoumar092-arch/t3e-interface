@@ -202,16 +202,30 @@ async function ajouterSemaineDansSuivi(bufferSuivi, bufferCorrige, semaine) {
   const wbVerif = XLSX.read(bufferSuivi, { type: 'buffer' });
   const feuilleVerif = wbVerif.Sheets[NOM_FEUILLE];
   const enteteVerif = XLSX.utils.sheet_to_json(feuilleVerif, { header: 1, range: 0 })[0] || [];
-  if (enteteVerif.slice(PREMIERE_COL_SEMAINE - 1).some(v => normaliser(v) === labelSemaine)) {
-    // Contrairement a la Feuille Maitre, il est IMPOSSIBLE de "forcer" ici :
-    // deux colonnes de Tableau avec le meme nom sont invalides pour Excel,
-    // peu importe l'intention — jamais de contournement qui corromprait le
-    // fichier. err.doublon permet a la route appelante de proposer de
-    // passer a l'etape suivante SANS ecrire (semaine deja presente = deja
-    // couverte), plutot que de re-essayer en boucle.
-    const err = new Error(`La semaine "${labelSemaine}" existe déjà dans Suivi des Heures.xlsx — dépôt en double, rien n'a été modifié. Si cette semaine doit vraiment être corrigée, supprimez d'abord manuellement sa colonne dans Excel.`);
-    err.doublon = true;
-    throw err;
+  const idxColExistante0 = enteteVerif.slice(PREMIERE_COL_SEMAINE - 1).findIndex(v => normaliser(v) === labelSemaine);
+  if (idxColExistante0 !== -1) {
+    // Colonne deja presente (en-tete) — cas rencontre pour des semaines
+    // historiques deposees tardivement : la colonne existe (creee lors de la
+    // restructuration de session) mais est VIDE (aucune donnee ecrite).
+    // Contrairement a l'insertion normale, on ne peut PAS re-inserer une
+    // colonne de meme nom (Tableau1 rejette les doublons de nom) — mais si
+    // la colonne existante est entierement vide sur les lignes de donnees,
+    // on peut la REMPLIR EN PLACE (aucun decalage de colonnes necessaire,
+    // aucune modification de table1.xml necessaire : la colonne existe deja
+    // avec le bon nom). Si elle contient deja de vraies valeurs, on bloque
+    // comme avant (jamais d'ecrasement silencieux de donnees existantes).
+    const colExistanteIdx = PREMIERE_COL_SEMAINE + idxColExistante0; // 1-based
+    const lignesVerif = XLSX.utils.sheet_to_json(feuilleVerif, { header: 1, defval: null });
+    const dejaRempli = lignesVerif.slice(1).some(l => {
+      const v = l[colExistanteIdx - 1];
+      return v !== null && v !== undefined && v !== '';
+    });
+    if (dejaRempli) {
+      const err = new Error(`La semaine "${labelSemaine}" existe déjà dans Suivi des Heures.xlsx — dépôt en double, rien n'a été modifié. Si cette semaine doit vraiment être corrigée, supprimez d'abord manuellement sa colonne dans Excel.`);
+      err.doublon = true;
+      throw err;
+    }
+    return remplirSemaineExistante(bufferSuivi, bufferCorrige, labelSemaine, colExistanteIdx, { totalBrut, totalNonClasse, parProjetMetier });
   }
 
   // Lecture (XLSX/SheetJS, jamais de re-ecriture par cette lib) des lignes
@@ -376,8 +390,74 @@ async function ajouterSemaineDansSuivi(bufferSuivi, bufferCorrige, semaine) {
   return { buffer, labelSemaine, totalEcrit, totalAClasser, totalNonClasse, projetsNonTrouves: Array.from(projetsNonTrouves) };
 }
 
+// Remplit une colonne de semaine EXISTANTE mais VIDE (colExistanteIdx,
+// 1-based, deja verifiee vide par l'appelant) — aucun decalage de colonnes,
+// aucune modification de table1.xml (la colonne et son nom existent deja) :
+// seule la valeur de chaque cellule de donnees est ecrite, en place.
+async function remplirSemaineExistante(bufferSuivi, bufferCorrige, labelSemaine, colExistanteIdx, precalcule) {
+  const { parProjetMetier, totalBrut, totalNonClasse } = precalcule || calculerRepartitionMetier(bufferCorrige);
+
+  const wbLecture = XLSX.read(bufferSuivi, { type: 'buffer' });
+  const feuilleLecture = wbLecture.Sheets[NOM_FEUILLE];
+  const lignesExistantes = XLSX.utils.sheet_to_json(feuilleLecture, { header: 1, defval: null });
+  const ligneParProjetMetier = new Map();
+  for (let i = 1; i < lignesExistantes.length; i++) {
+    const projet = normaliser(lignesExistantes[i][COL_PROJET - 1]);
+    const metier = normaliser(lignesExistantes[i][COL_METIER - 1]);
+    if (projet && metier && metier !== 'TOTAL') ligneParProjetMetier.set(`${projet}|${metier}`, i + 1);
+  }
+
+  const valeurParLigne = new Map();
+  let totalEcrit = 0;
+  const projetsNonTrouves = new Set();
+  for (const [cle, heures] of parProjetMetier) {
+    const numLigne = ligneParProjetMetier.get(cle);
+    if (numLigne === undefined) { projetsNonTrouves.add(cle.split('|')[0]); continue; }
+    valeurParLigne.set(numLigne, heures);
+    totalEcrit += heures;
+  }
+
+  const zip = await JSZip.loadAsync(bufferSuivi);
+  const cheminFeuille = await trouverCheminFeuille(zip, NOM_FEUILLE);
+  let xml = await zip.file(cheminFeuille).async('string');
+  const lettreCol = lettreDeColonne(colExistanteIdx);
+
+  // Meme tokenisation robuste que l'insertion normale (voir tokeniserLigne) :
+  // on localise, pour chaque ligne de donnees, la cellule de colonne
+  // colExistanteIdx (deja presente mais vide/auto-fermante) et on la
+  // REMPLACE par une cellule avec valeur — sans toucher a aucune autre
+  // cellule ni au reste de la structure du fichier.
+  xml = xml.replace(/<row r="(\d+)"([^>]*)>(.*?)<\/row>/gs, (m, numLigneStr, attrsRow, contenu) => {
+    const numLigne = parseInt(numLigneStr, 10);
+    if (numLigne === 1 || !valeurParLigne.has(numLigne)) return m;
+    const valeur = valeurParLigne.get(numLigne);
+    const cellules = tokeniserLigne(contenu);
+    const idxCible = cellules.findIndex(c => c.colIndex === colExistanteIdx);
+    const nouvelleCellule = `<c r="${lettreCol}${numLigne}"><v>${valeur}</v></c>`;
+    if (idxCible === -1) {
+      // Cellule absente du XML (ligne plus courte que la colonne) : inserer
+      // au bon endroit selon l'ordre des colIndex, jamais en fin de ligne.
+      let inseree = false;
+      const parties = [];
+      for (const c of cellules) {
+        if (!inseree && c.colIndex > colExistanteIdx) { parties.push(nouvelleCellule); inseree = true; }
+        parties.push(c.xml);
+      }
+      if (!inseree) parties.push(nouvelleCellule);
+      return `<row r="${numLigneStr}"${attrsRow}>${parties.join('')}</row>`;
+    }
+    cellules[idxCible] = { colIndex: colExistanteIdx, xml: nouvelleCellule };
+    return `<row r="${numLigneStr}"${attrsRow}>${cellules.map(c => c.xml).join('')}</row>`;
+  });
+
+  zip.file(cheminFeuille, xml);
+  const buffer = await zip.generateAsync({ type: 'nodebuffer' });
+  const totalAClasser = totalBrut - totalNonClasse;
+  return { buffer, labelSemaine, totalEcrit, totalAClasser, totalNonClasse, projetsNonTrouves: Array.from(projetsNonTrouves) };
+}
+
 module.exports = {
-  calculerRepartitionMetier, ajouterSemaineDansSuivi, MAP_CATEGORIE_METIER,
+  calculerRepartitionMetier, ajouterSemaineDansSuivi, remplirSemaineExistante, MAP_CATEGORIE_METIER,
   // Reutilises par heures-budget-writer.js (memes pieges XML, meme fichier).
   NOM_FEUILLE, COL_PROJET, COL_METIER, COL_HRS_BUDGETEES, COL_HRS_REELLES,
   trouverCheminFeuille, tokeniserLigne, nombreDeColonne, lettreDeColonne,
