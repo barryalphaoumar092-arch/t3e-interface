@@ -33,12 +33,13 @@ const JSZip = require('jszip');
 
 const NOM_FEUILLE = 'Feuil1';
 const TABLE_NOM = 'Tableau1';
-// Structure "Suivi des Heures.xlsx" (restructuree cette session, remplace
-// ABCD-COPIE.xlsx) : une colonne "Difference" (Budgetees - Reelles) a ete
-// inseree entre "Hrs Totale" et "Hrs Reelles", decalant cette derniere de H
-// a I, et les colonnes de semaines de I: vers J:.
-const COL_PROJET = 1, COL_DESCRIPTION = 2, COL_METIER = 4, COL_HRS_BUDGETEES = 5, COL_HRS_REELLES = 9;
-const PREMIERE_COL_SEMAINE = 10; // "J"
+// Structure "Suivi des Heures Final.xlsx" (restructuree cette session,
+// remplace ABCD-COPIE.xlsx) : colonnes "Difference" (Totale - Reelles) puis
+// "Ratio" (Reelles / Totale, %) inserees entre "Hrs Totale" et "Hrs
+// Reelles", decalant cette derniere de H a J, et les colonnes de semaines
+// de I: vers K:.
+const COL_PROJET = 1, COL_DESCRIPTION = 2, COL_METIER = 4, COL_HRS_BUDGETEES = 5, COL_HRS_REELLES = 10;
+const PREMIERE_COL_SEMAINE = 11; // "K"
 const METIERS_ORDRE = ['TOTAL', 'Couvreur', 'Ferblantier', 'Menuiser', 'Grutier'];
 
 const MAP_CATEGORIE_METIER = { '210': 'Couvreur', '230': 'Ferblantier', '160': 'Menuiser', '264': 'Grutier' };
@@ -352,10 +353,10 @@ async function ajouterSemaineDansSuivi(bufferSuivi, bufferCorrige, semaine) {
       tableXml = tableXml.replace(mCount[0], `<tableColumns count="${nouveauCompte}">`);
     }
     const nouveauTableColumn = `<tableColumn id="${nouvelId}" name="${echapperXml(labelSemaine)}"/>`;
-    // Insere juste apres la 9e <tableColumn> (les colonnes fixes : Projet,
+    // Insere juste apres la 10e <tableColumn> (les colonnes fixes : Projet,
     // Description, Charge de projet, METIER, Budgetees, Modifiees, Totale,
-    // Difference, Reelles). ATTENTION : une colonne de Tableau calculee (ex.
-    // "Difference") est serialisee AVEC ENFANTS
+    // Difference, Ratio, Reelles). ATTENTION : une colonne de Tableau
+    // calculee (ex. "Difference"/"Ratio") est serialisee AVEC ENFANTS
     // (<tableColumn ...><calculatedColumnFormula>...</calculatedColumnFormula></tableColumn>),
     // pas auto-fermante — un regex qui ne matche que "/>" la sauterait
     // silencieusement et decalerait tout le comptage (constate en test reel
@@ -363,9 +364,9 @@ async function ajouterSemaineDansSuivi(bufferSuivi, bufferCorrige, semaine) {
     // REGEX_CELLULE plus haut, matche TOUTES les formes.
     const REGEX_TABLE_COLONNE = /<tableColumn\b[^>]*?\/>|<tableColumn\b[^>]*?>.*?<\/tableColumn>/g;
     const colonnes = [...tableXml.matchAll(REGEX_TABLE_COLONNE)];
-    if (colonnes.length < 9) throw new Error(`Tableau1 attendu avec au moins 9 colonnes fixes, ${colonnes.length} trouvee(s) — insertion annulee par securite`);
-    const neuvieme = colonnes[8][0];
-    const idxInsertion = colonnes[8].index + neuvieme.length;
+    if (colonnes.length < 10) throw new Error(`Tableau1 attendu avec au moins 10 colonnes fixes, ${colonnes.length} trouvee(s) — insertion annulee par securite`);
+    const dixieme = colonnes[9][0];
+    const idxInsertion = colonnes[9].index + dixieme.length;
     tableXml = tableXml.slice(0, idxInsertion) + nouveauTableColumn + tableXml.slice(idxInsertion);
     zip.file(cheminTable, tableXml);
   }
