@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
-const { parseDevis, parsePdfBuffer } = require('../services/document-parser');
+const { parseDevis, parsePdfBuffer, extraireDescriptionCourteSansIA } = require('../services/document-parser');
 const { remplirBordereau } = require('../services/bordereau-filler');
 const { convertirDocxEnPdf } = require('../services/docx-to-pdf');
 const { convertirDocEnDocx, estDocLegacy, estDocxValide } = require('../services/doc-to-docx');
@@ -1142,6 +1142,19 @@ router.post('/analyser', async (req, res) => {
         const extrait = await extraireTitreDescriptionFT(buffersFT[0]);
         if (extrait?.TITRE) titre = extrait.TITRE;
         if (extrait?.DESCRIPTION) description = extrait.DESCRIPTION;
+        // Repli SANS IA (clé absente, appel/lecture échoués, ou réponse sans
+        // DESCRIPTION exploitable) : mieux qu'un titre dupliqué, une courte
+        // description tirée directement du texte de la fiche — jamais une
+        // phrase complète si on peut l'éviter (voir extraireDescriptionCourteSansIA).
+        if (!extrait?.DESCRIPTION) {
+          try {
+            const { text } = await parsePdfBuffer(buffersFT[0]);
+            const courte = extraireDescriptionCourteSansIA(text, titre);
+            if (courte) description = courte;
+          } catch (e2) {
+            console.warn('[analyser] Repli description sans IA échoué pour', mat.nom, ':', e2.message);
+          }
+        }
       }
     } catch (e) {
       console.warn('[analyser] Extraction TITRE/DESCRIPTION FT échouée pour', mat.nom, ':', e.message);

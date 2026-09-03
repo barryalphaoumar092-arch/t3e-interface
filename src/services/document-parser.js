@@ -165,4 +165,52 @@ async function texteParPage(buffer) {
   return pages;
 }
 
-module.exports = { parseDevis, parseTemplate, parsePdfBuffer, texteParPage, extractProjectInfo };
+// Extrait une description COURTE (quelques mots, jamais une phrase complète
+// si elle peut être évitée) à partir du texte brut d'une fiche technique —
+// repli SANS IA utilisé quand l'extraction IA échoue ou est indisponible
+// (voir bordereaux.js/extraireTitreDescriptionFT). Ne renvoie JAMAIS le
+// titre lui-même : mieux vaut une chaîne vide qu'une duplication.
+function extraireDescriptionCourteSansIA(texte, titre) {
+  if (!texte) return '';
+  const titreNorm = String(titre || '').trim().toLowerCase();
+  const lignes = texte.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+
+  const estBruit = (l) => {
+    if (!l || l.toLowerCase() === titreNorm) return true;
+    if (l.length < 8 || l.length > 160) return true;
+    // Specs/valeurs (unites, pourcentages, prix) plutot qu'une phrase descriptive.
+    if (/^\d/.test(l) || /\d+\s*(mm|cm|po|pi|kg|lb|%|\$)\b/i.test(l)) return true;
+    const nbChiffres = (l.match(/\d/g) || []).length;
+    if (nbChiffres > l.length * 0.3) return true;
+    if (!/[a-zàâäéèêëîïôöùûüç]{3}/i.test(l)) return true; // pas assez de vraies lettres
+    return false;
+  };
+
+  // 1) Label explicite "Description" / "Description du produit" — la ligne
+  // utile suit alors ce label sur l'une des lignes suivantes.
+  const idxLabel = lignes.findIndex((l) => /^description(\s+du\s+produit)?\s*:?$/i.test(l));
+  let candidate = null;
+  if (idxLabel !== -1) {
+    for (let i = idxLabel + 1; i < Math.min(idxLabel + 4, lignes.length); i++) {
+      if (!estBruit(lignes[i])) { candidate = lignes[i]; break; }
+    }
+  }
+  // 2) Sinon, premiere ligne substantielle apres l'occurrence du titre.
+  if (!candidate) {
+    const idxTitre = lignes.findIndex((l) => l.toLowerCase() === titreNorm);
+    const depart = idxTitre !== -1 ? idxTitre + 1 : 0;
+    for (let i = depart; i < Math.min(depart + 10, lignes.length); i++) {
+      if (!estBruit(lignes[i])) { candidate = lignes[i]; break; }
+    }
+  }
+  if (!candidate) return '';
+
+  // Reste COURT : garde la 1ere clause (avant point/point-virgule), puis
+  // limite a ~12 mots sans jamais couper un mot en deux.
+  let court = candidate.split(/[.;]/)[0].trim();
+  const mots = court.split(/\s+/);
+  if (mots.length > 12) court = mots.slice(0, 12).join(' ');
+  return court.replace(/[,:;]\s*$/, '').trim();
+}
+
+module.exports = { parseDevis, parseTemplate, parsePdfBuffer, texteParPage, extractProjectInfo, extraireDescriptionCourteSansIA };
