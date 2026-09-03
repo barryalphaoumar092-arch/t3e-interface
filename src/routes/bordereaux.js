@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
-const { parseDevis, parsePdfBuffer, extraireDescriptionCourteSansIA } = require('../services/document-parser');
+const { parseDevis, parsePdfBuffer, extraireDescriptionCourteSansIA, extraireProjetSansIA } = require('../services/document-parser');
 const { remplirBordereau } = require('../services/bordereau-filler');
 const { convertirDocxEnPdf } = require('../services/docx-to-pdf');
 const { convertirDocEnDocx, estDocLegacy, estDocxValide } = require('../services/doc-to-docx');
@@ -1076,8 +1076,14 @@ router.post('/analyser', async (req, res) => {
     iaErreur = e.message;
   }
 
-  const nomProjet = iaResult.NOM_DU_PROJET || nom_projet || '';
-  const numProjet = iaResult.NUMERO_DU_PROJET || '';
+  // Repli SANS IA si l'IA (limitee aux 3000 premiers caracteres du devis,
+  // voir extraireContextePertinent) n'a pas trouve ces infos — scanne le
+  // texte COMPLET du devis par motif deterministe avant d'abandonner.
+  const replisProjet = (!iaResult.NOM_DU_PROJET || !iaResult.NUMERO_DU_PROJET)
+    ? extraireProjetSansIA(texteDevis)
+    : { nomProjet: '', numProjet: '' };
+  const nomProjet = iaResult.NOM_DU_PROJET || nom_projet || replisProjet.nomProjet || '';
+  const numProjet = iaResult.NUMERO_DU_PROJET || replisProjet.numProjet || '';
   const contexteProduits = iaResult.produits || [];
 
   if (iaErreur) {

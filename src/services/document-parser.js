@@ -165,6 +165,27 @@ async function texteParPage(buffer) {
   return pages;
 }
 
+// Repli SANS IA pour NOM_DU_PROJET/NUMERO_DU_PROJET (bordereaux.js) : l'appel
+// IA ne reçoit que les 3000 premiers caractères du devis (limite de tokens
+// OpenAI — voir extraireContextePertinent) et peut donc rater ces infos si
+// elles apparaissent plus loin sur la page de garde. Scanne ici le texte
+// COMPLET du devis par motif déterministe (labels usuels des devis
+// québécois), en repli seulement si l'IA n'a rien trouvé.
+function extraireProjetSansIA(texteDevis) {
+  const texte = String(texteDevis || '');
+  const nettoyer = (s) => s.replace(/\s+/g, ' ').trim().slice(0, 100);
+
+  let nomProjet = '';
+  const mNom = /(?:Nom du projet|Projet|Objet)\s*:\s*([^\n\r]{3,100})/i.exec(texte);
+  if (mNom) nomProjet = nettoyer(mNom[1]);
+
+  let numProjet = '';
+  const mNum = /(?:N°?\.?\s*[Pp]rojet|Projet\s*n[o°]|Dossier|N\/R[ée]f\.?)\s*:?\s*([A-Za-z0-9][A-Za-z0-9\-\/. ]{1,20})/i.exec(texte);
+  if (mNum) numProjet = nettoyer(mNum[1]);
+
+  return { nomProjet, numProjet };
+}
+
 // Extrait une description COURTE (quelques mots, jamais une phrase complète
 // si elle peut être évitée) à partir du texte brut d'une fiche technique —
 // repli SANS IA utilisé quand l'extraction IA échoue ou est indisponible
@@ -221,4 +242,4 @@ function extraireDescriptionCourteSansIA(texte, titre) {
   return court.replace(/[,:;]\s*$/, '').trim();
 }
 
-module.exports = { parseDevis, parseTemplate, parsePdfBuffer, texteParPage, extractProjectInfo, extraireDescriptionCourteSansIA };
+module.exports = { parseDevis, parseTemplate, parsePdfBuffer, texteParPage, extractProjectInfo, extraireDescriptionCourteSansIA, extraireProjetSansIA };
