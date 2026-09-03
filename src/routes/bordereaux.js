@@ -27,13 +27,6 @@ async function telechargerVersFichierTemp(bucket, key, nomOriginal) {
   return tmpPath;
 }
 
-// Route de diagnostic TEMPORAIRE — verifie uniquement la PRESENCE de
-// OPENAI_API_KEY (jamais sa valeur) pour diagnostiquer un echec silencieux
-// d'extraction TITRE/DESCRIPTION. A retirer une fois le diagnostic termine.
-router.get('/admin/diagnostic-ia', (req, res) => {
-  res.json({ openaiConfiguree: !!process.env.OPENAI_API_KEY });
-});
-
 // ══════════════════════════════════════════════════════════════
 //  APPEL OPENAI GPT-4o — Contexte (section/article/remarque) pour
 //  des produits DÉJÀ CHOISIS par l'utilisateur (plus de détection auto)
