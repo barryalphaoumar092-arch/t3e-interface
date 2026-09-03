@@ -45,6 +45,15 @@ const METIERS_ORDRE = ['TOTAL', 'Couvreur', 'Ferblantier', 'Menuiser', 'Grutier'
 const MAP_CATEGORIE_METIER = { '210': 'Couvreur', '230': 'Ferblantier', '160': 'Menuiser', '264': 'Grutier' };
 
 function normaliser(s) { return String(s || '').trim(); }
+// Code projet avec une lettre de phase/variante en suffixe (ex: "26-040P")
+// designe le MEME projet que sa base numerique ("26-040") dans Suivi des
+// Heures — confirme par l'utilisateur. Utilise UNIQUEMENT en repli quand
+// aucune ligne exacte n'existe pour le code complet (jamais en priorite sur
+// une correspondance exacte).
+function codeBase(projet) {
+  const m = /^(\d{2}-\d{3,4})[A-Za-z]+$/.exec(projet);
+  return m ? m[1] : null;
+}
 function formatCourt(dateIso) { const [, m, j] = dateIso.split('-'); return `${m}-${j}`; }
 
 function nombreDeColonne(lettre) {
@@ -245,9 +254,14 @@ async function ajouterSemaineDansSuivi(bufferSuivi, bufferCorrige, semaine) {
   let totalEcrit = 0;
   const projetsNonTrouves = new Set();
   for (const [cle, heures] of parProjetMetier) {
-    const numLigne = ligneParProjetMetier.get(cle);
+    let numLigne = ligneParProjetMetier.get(cle);
+    if (numLigne === undefined) {
+      const [projet, metier] = cle.split('|');
+      const base = codeBase(projet);
+      if (base) numLigne = ligneParProjetMetier.get(`${base}|${metier}`);
+    }
     if (numLigne === undefined) { projetsNonTrouves.add(cle.split('|')[0]); continue; }
-    valeurParLigne.set(numLigne, heures);
+    valeurParLigne.set(numLigne, (valeurParLigne.get(numLigne) || 0) + heures);
     totalEcrit += heures;
   }
 
@@ -411,9 +425,14 @@ async function remplirSemaineExistante(bufferSuivi, bufferCorrige, labelSemaine,
   let totalEcrit = 0;
   const projetsNonTrouves = new Set();
   for (const [cle, heures] of parProjetMetier) {
-    const numLigne = ligneParProjetMetier.get(cle);
+    let numLigne = ligneParProjetMetier.get(cle);
+    if (numLigne === undefined) {
+      const [projet, metier] = cle.split('|');
+      const base = codeBase(projet);
+      if (base) numLigne = ligneParProjetMetier.get(`${base}|${metier}`);
+    }
     if (numLigne === undefined) { projetsNonTrouves.add(cle.split('|')[0]); continue; }
-    valeurParLigne.set(numLigne, heures);
+    valeurParLigne.set(numLigne, (valeurParLigne.get(numLigne) || 0) + heures);
     totalEcrit += heures;
   }
 
