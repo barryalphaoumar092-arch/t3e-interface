@@ -68,8 +68,19 @@ async function corrigerDepot(buffer, mappingSemaines) {
       const wsSource = wbSource.getWorksheet(nomOnglet);
       if (!wsSource) { resultats.push({ nomOnglet, erreur: `onglet "${nomOnglet}" introuvable dans le fichier` }); continue; }
 
-      const entetesBrutes = (wsSource.getRow(1).values || []).slice(1).map(v => (v === null || v === undefined ? '' : String(v)));
-      const idxProjetBrut = entetesBrutes.findIndex(h => h.trim() === 'No, Projet') + 1; // 1-based
+      // Array.from() D'ABORD : ExcelJS .values renvoie un tableau CREUX (trous
+      // reels, pas juste des valeurs undefined) pour les colonnes d'en-tete
+      // totalement vides. .slice()/.map() SAUTENT les trous (comportement
+      // historique JS sur les tableaux creux) et les laissent donc intacts —
+      // mais .findIndex() ci-dessous, LUI, NE les saute PAS (le spec ES2015+
+      // visite chaque index y compris les trous, callback recoit `undefined`)
+      // => h.trim() plantait sur ce trou (constate en test reel : "Cannot
+      // read properties of undefined (reading 'trim')" sur un fichier dont
+      // une colonne d'en-tete etait completement vide). Array.from() rend le
+      // tableau DENSE en amont (trous -> undefined explicite), eliminant
+      // l'incoherence a la source.
+      const entetesBrutes = Array.from(wsSource.getRow(1).values || []).slice(1).map(v => (v === null || v === undefined ? '' : String(v)));
+      const idxProjetBrut = entetesBrutes.findIndex(h => String(h || '').trim() === 'No, Projet') + 1; // 1-based
       if (idxProjetBrut === 0) { resultats.push({ nomOnglet, erreur: 'colonne "No, Projet" introuvable' }); continue; }
 
       // Colonnes a garder, dans l'ORDRE d'origine (verifie : l'ordre des 44
